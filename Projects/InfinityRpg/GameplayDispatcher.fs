@@ -291,10 +291,16 @@ module GameplayDispatcherModule =
             else NoTurn
 
         static let determinePlayerTurnFromInput playerInput world =
-            match playerInput with
-            | TouchInput touchPosition -> determinePlayerTurnFromTouch touchPosition world
-            | DetailInput direction -> determinePlayerTurnFromDetailNavigation direction world
-            | NoInput -> NoTurn
+            match (Simulants.Player.GetCharacterState world).ControlType with
+            | PlayerControlled ->
+                match playerInput with
+                | TouchInput touchPosition -> determinePlayerTurnFromTouch touchPosition world
+                | DetailInput direction -> determinePlayerTurnFromDetailNavigation direction world
+                | NoInput -> NoTurn
+            | Chaos ->
+                Log.debug ("Invalid ControlType 'Chaos' for player.")
+                NoTurn
+            | Uncontrolled -> NoTurn
 
         static let determinePlayerTurn world =
             match Simulants.Player.GetCharacterActivityState world with
@@ -346,6 +352,24 @@ module GameplayDispatcherModule =
                 (List.ofSeq enemies)
                 []
 
+        static let runCharacterDeath (character : Entity) world =
+            let chain = chain {
+                do! Chain.update $ character.SetCharacterState {character.GetCharacterState world with ControlType = Uncontrolled}
+                do! Chain.update $ character.SetCharacterActivityState NoActivity
+                do! Chain.update $ character.SetCharacterAnimationState {character.GetCharacterAnimationState world with AnimationType = CharacterAnimationSlain}
+                // insert appropriate loop here for delay
+                do! Chain.update $ 
+                    if character.Name = Simulants.Player.Name
+                    then World.transitionScreen Simulants.Title
+                    else World.destroyEntity character}
+            let stream =
+                Stream.until
+                    (Stream.make Simulants.Gameplay.DeselectEvent)
+                    (Stream.sum
+                        (Stream.make Simulants.HudHalt.ClickEvent)
+                        (Stream.make Simulants.Player.UpdateEvent))
+            Chain.runAssumingCascade chain stream world |> snd
+
         static let runCharacterReaction actionDescriptor (initiator : Entity) world =
             // TODO: implement animations
             if actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
@@ -357,9 +381,7 @@ module GameplayDispatcherModule =
                 let reactorDamage = 4 // NOTE: just hard-coding damage for now
                 let world = reactor.CharacterState.Update (fun state -> { state with HitPoints = state.HitPoints - reactorDamage }) world
                 if reactor.CharacterState.GetBy (fun state -> state.HitPoints <= 0) world then
-                    if reactor.Name = Simulants.Player.Name
-                    then World.transitionScreen Simulants.Title world
-                    else World.destroyEntity reactor world
+                    runCharacterDeath reactor world
                 else world
             else world
 
