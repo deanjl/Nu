@@ -14,7 +14,6 @@ module CharacterModel =
               Bounds_ : Vector4 }
 
         (* CharacterState Properties *)
-        member this.CharacterType = this.CharacterState.CharacterType
         member this.PartyIndex = this.CharacterState.PartyIndex
         member this.ExpPoints = this.CharacterState.ExpPoints
         member this.HitPoints = this.CharacterState.HitPoints
@@ -33,7 +32,6 @@ module CharacterModel =
         member this.ActionTime = this.CharacterState.ActionTime
         member this.AutoBattleOpt = this.CharacterState.AutoBattleOpt
         member this.CharacterIndex = this.CharacterState.CharacterIndex
-        member this.Name = this.CharacterState.Name
         member this.IsEnemy = this.CharacterState.IsEnemy
         member this.IsAlly = this.CharacterState.IsAlly
         member this.IsHealthy = this.CharacterState.IsHealthy
@@ -130,34 +128,17 @@ module CharacterModel =
                 characters |>
                 CharacterModel.evaluateAimType aimType target
 
-        static member evaluateTechPhysical techData source (target : CharacterModel) =
+        static member evaluateTech techData source (target : CharacterModel) =
             let power = source.CharacterState.Power
             if techData.Curative then
                 let healing = single power * techData.Scalar |> int |> max 1
                 (false, healing, target.CharacterIndex)
             else
                 let cancelled = techData.Cancels && CharacterState.runningTechAutoBattle target.CharacterState
-                let shield = target.CharacterState.Shield
+                let shield = target.CharacterState.Shield techData.EffectType
                 let damageUnscaled = power - shield
                 let damage = single damageUnscaled * techData.Scalar |> int |> max 1
                 (cancelled, -damage, target.CharacterIndex)
-
-        static member evaluateTechMagical techData source (target : CharacterModel) =
-            let magic = source.CharacterState.Magic
-            if techData.Curative then
-                let healing = single magic * techData.Scalar |> int |> max 1
-                (false, healing, target.CharacterIndex)
-            else
-                let cancelled = techData.Cancels && CharacterState.runningTechAutoBattle target.CharacterState
-                let shield = target.CharacterState.Shield
-                let damageUnscaled = magic - shield
-                let damage = single damageUnscaled * techData.Scalar |> int |> max 1
-                (cancelled, -damage, target.CharacterIndex)
-
-        static member evaluateTech techData source target =
-            match techData.EffectType with
-            | Physical -> CharacterModel.evaluateTechPhysical techData source target
-            | Magical -> CharacterModel.evaluateTechMagical techData source target
 
         static member evaluateTechMove techData source target characters =
             let targets =
@@ -172,8 +153,8 @@ module CharacterModel =
         static member getPoiseType character =
             CharacterState.getPoiseType character.CharacterState
 
-        static member getAttackResult source target =
-            CharacterState.getAttackResult source.CharacterState target.CharacterState
+        static member getAttackResult effectType source target =
+            CharacterState.getAttackResult effectType source.CharacterState target.CharacterState
 
         static member getAnimationIndex time character =
             CharacterAnimationState.index time character.AnimationState
@@ -253,10 +234,29 @@ module CharacterModel =
         static member animate time cycle character =
             { character with AnimationState = CharacterAnimationState.setCycle (Some time) cycle character.AnimationState }
 
-        static member make characterState animationState inputState bounds =
+        static member makeEnemy index enemyData =
+            let animationSheet = 
+                let characterType = Enemy enemyData.EnemyType
+                match Map.tryFind characterType data.Value.Characters with
+                | Some characterData -> characterData.AnimationSheet
+                | None -> Assets.BlueGoblinAnimationSheet
+            let enemy =
+                CharacterModel.make
+                    (EnemyIndex index)
+                    (Enemy enemyData.EnemyType)
+                    0
+                    None None [] // TODO: figure out if / how we should populate these 
+                    animationSheet
+                    Leftward
+                    (Math.makeBounds enemyData.EnemyPosition Constants.Gameplay.CharacterSize)
+            enemy
+
+        static member make characterIndex characterType expPoints weaponOpt armorOpt accessories animationSheet direction bounds =
+            let characterState = CharacterState.make characterIndex characterType expPoints weaponOpt armorOpt accessories animationSheet
+            let animationState = { TimeStart = 0L; AnimationSheet = animationSheet; AnimationCycle = ReadyCycle; Direction = direction }
             { CharacterState = characterState
               AnimationState = animationState
-              InputState_ = inputState
+              InputState_ = NoInput
               BoundsOriginal_ = bounds
               Bounds_ = bounds }
 

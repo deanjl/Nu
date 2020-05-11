@@ -62,44 +62,12 @@ module OmniBattle =
 
     type BattleDispatcher () =
         inherit ScreenDispatcher<BattleModel, BattleMessage, BattleCommand>
-            (let allies =
-                [CharacterModel.make
-                    { PartyIndex = 0; CharacterType = Ally Jinn; ActionTime = 600; ExpPoints = 0; HitPoints = 10; TechPoints = 10; Defending = false; Charging = false; PowerBuff = 1.0f; ShieldBuff = 1.0f; MagicBuff = 1.0f; CounterBuff = 1.0f; Techs = Set.ofList [HeadSlash; Cyclone]; Statuses = Set.empty; WeaponOpt = Some "WoodenSword"; ArmorOpt = Some "LeatherVest"; Accessories = []; AutoBattleOpt = None }
-                    { TimeStart = 0L; AnimationSheet = Assets.JinnAnimationSheet; AnimationCycle = ReadyCycle; Direction = Rightward }
-                    NoInput
-                    (Math.makeBounds (v2 -224.0f -168.0f) (v2 160.0f 160.0f))
-                 CharacterModel.make
-                    { PartyIndex = 1; CharacterType = Ally Glenn; ActionTime = 420; ExpPoints = 0; HitPoints = 10; TechPoints = 10; Defending = false; Charging = false; PowerBuff = 1.0f; ShieldBuff = 1.0f; MagicBuff = 1.0f; CounterBuff = 1.0f; Techs = Set.ofList [HeadSlash; Tremor]; Statuses = Set.empty; WeaponOpt = Some "OakRod"; ArmorOpt = Some "LeatherRobe"; Accessories = []; AutoBattleOpt = None }
-                    { TimeStart = 0L; AnimationSheet = Assets.GlennAnimationSheet; AnimationCycle = ReadyCycle; Direction = Leftward }
-                    NoInput
-                    (Math.makeBounds (v2 224.0f 64.0f) (v2 160.0f 160.0f))]
-             let enemies =
-                [CharacterModel.make
-                    { PartyIndex = 0; CharacterType = Enemy Goblin; ActionTime = 99; ExpPoints = 0; HitPoints = 5; TechPoints = 1; Defending = false; Charging = false; PowerBuff = 1.0f; ShieldBuff = 1.0f; MagicBuff = 1.0f; CounterBuff = 1.0f; Techs = Set.ofList [Bolt]; Statuses = Set.empty; WeaponOpt = Some "Melee"; ArmorOpt = None; Accessories = []; AutoBattleOpt = None; }
-                    { TimeStart = 0L; AnimationSheet = Assets.GoblinAnimationSheet; AnimationCycle = ReadyCycle; Direction = Leftward }
-                    NoInput
-                    (Math.makeBounds (v2 0.0f 0.0f) (v2 160.0f 160.0f))
-                 CharacterModel.make
-                    { PartyIndex = 1; CharacterType = Enemy Goblin; ActionTime = 0; ExpPoints = 0; HitPoints = 5; TechPoints = 1; Defending = false; Charging = false; PowerBuff = 1.0f; ShieldBuff = 1.0f; MagicBuff = 1.0f; CounterBuff = 1.0f; Techs = Set.ofList [Bolt]; Statuses = Set.empty; WeaponOpt = Some "Melee"; ArmorOpt = None; Accessories = []; AutoBattleOpt = None; }
-                    { TimeStart = 0L; AnimationSheet = Assets.GoblinAnimationSheet; AnimationCycle = ReadyCycle; Direction = Leftward }
-                    NoInput
-                    (Math.makeBounds (v2 176.0f -192.0f) (v2 160.0f 160.0f))
-                 CharacterModel.make
-                    { PartyIndex = 2; CharacterType = Enemy Goblin; ActionTime = 0; ExpPoints = 0; HitPoints = 5; TechPoints = 1; Defending = false; Charging = false; PowerBuff = 1.0f; ShieldBuff = 1.0f; MagicBuff = 1.0f; CounterBuff = 1.0f; Techs = Set.ofList [Bolt]; Statuses = Set.empty; WeaponOpt = Some "Melee"; ArmorOpt = None; Accessories = []; AutoBattleOpt = None; }
-                    { TimeStart = 0L; AnimationSheet = Assets.GoblinAnimationSheet; AnimationCycle = ReadyCycle; Direction = Leftward }
-                    NoInput
-                    (Math.makeBounds (v2 76.0f -92.0f) (v2 160.0f 160.0f))
-                 CharacterModel.make
-                    { PartyIndex = 3; CharacterType = Enemy Goblin; ActionTime = 0; ExpPoints = 0; HitPoints = 5; TechPoints = 1; Defending = false; Charging = false; PowerBuff = 1.0f; ShieldBuff = 1.0f; MagicBuff = 1.0f; CounterBuff = 1.0f; Techs = Set.ofList [Bolt]; Statuses = Set.empty; WeaponOpt = Some "Melee"; ArmorOpt = None; Accessories = []; AutoBattleOpt = None; }
-                    { TimeStart = 0L; AnimationSheet = Assets.GoblinAnimationSheet; AnimationCycle = ReadyCycle; Direction = Leftward }
-                    NoInput
-                    (Math.makeBounds (v2 176.0f -92.0f) (v2 160.0f 160.0f))]
-             let characters =
-                Map.ofList
-                    (List.mapi (fun i ally -> (AllyIndex i, ally)) allies @
-                     List.mapi (fun i enemy -> (EnemyIndex i, enemy)) enemies)
+            (// TODO: data-drive ally positions
+             let allies =
+                [CharacterModel.make (AllyIndex 0) (Ally Finn) 0 (Some "WoodenSword") (Some "LeatherVest") [] Assets.FinnAnimationSheet Rightward (Math.makeBounds (v2 -224.0f -168.0f) Constants.Gameplay.CharacterSize)
+                 CharacterModel.make (AllyIndex 1) (Ally Glenn) 0 (Some "StoneSword") (Some "LeatherMail") [] Assets.GlennAnimationSheet Leftward (Math.makeBounds (v2 224.0f 64.0f) Constants.Gameplay.CharacterSize)]
              let inventory = { Items = Map.ofList [(Consumable GreenHerb, 2); (Consumable RedHerb, 2)] }
-             let model = BattleModel.make (BattleReady 0L) characters None Queue.empty inventory 100
+             let model = BattleModel.make allies inventory 100 DebugBattle 0L
              model)
 
         static let tickAttack sourceIndex (targetIndexOpt : CharacterIndex option) time timeLocal model =
@@ -153,7 +121,7 @@ module OmniBattle =
         static let tickTech techType sourceIndex (targetIndexOpt : CharacterIndex option) (_ : int64) timeLocal model =
             match targetIndexOpt with
             | Some targetIndex ->
-                match Map.tryFind techType data.Value.TechAnimationData with
+                match Map.tryFind techType data.Value.TechAnimations with
                 | Some techData ->
                     let (model, msgs) =
                         if timeLocal = techData.TechStart then (model, [TechCharacter1 (sourceIndex, targetIndex, techType)])
@@ -415,7 +383,7 @@ module OmniBattle =
                             match item with
                             | "GreenHerb" -> ActionCommand.make (Consume GreenHerb) allyIndex (Some targetIndex)
                             | "RedHerb" -> ActionCommand.make (Consume RedHerb) allyIndex (Some targetIndex)
-                            | "HeadSlash" -> ActionCommand.make (Tech HeadSlash) allyIndex (Some targetIndex)
+                            | "Critical" -> ActionCommand.make (Tech Critical) allyIndex (Some targetIndex)
                             | "Cyclone" -> ActionCommand.make (Tech Cyclone) allyIndex (Some targetIndex)
                             | "Bolt" -> ActionCommand.make (Tech Bolt) allyIndex (Some targetIndex)
                             | "Tremor" -> ActionCommand.make (Tech Tremor) allyIndex (Some targetIndex)
@@ -471,7 +439,7 @@ module OmniBattle =
                 let time = World.getTickTime world
                 let source = BattleModel.getCharacter sourceIndex model
                 let target = BattleModel.getCharacter targetIndex model
-                let damage = CharacterModel.getAttackResult source target
+                let damage = CharacterModel.getAttackResult Physical source target
                 let model = BattleModel.updateCharacter (CharacterModel.updateHitPoints (fun hitPoints -> (hitPoints - damage, false))) targetIndex model
                 let (model, sigs) =
                     if target.HitPoints <= 0
@@ -504,7 +472,7 @@ module OmniBattle =
                 let target = BattleModel.getCharacter targetIndex model
                 let hopOpt =
                     match techType with
-                    | HeadSlash  | Cyclone -> Some { HopStart = source.Bottom; HopStop = target.BottomOffset2 }
+                    | Critical  | Cyclone -> Some { HopStart = source.Bottom; HopStop = target.BottomOffset2 }
                     | Bolt | Tremor -> None
                 match hopOpt with
                 | None ->
@@ -518,7 +486,7 @@ module OmniBattle =
 
             | TechCharacter2 (sourceIndex, targetIndex, techType) ->
                 match techType with
-                | HeadSlash ->
+                | Critical ->
                     let time = World.getTickTime world
                     let model = BattleModel.updateCharacter (CharacterModel.animate time AttackCycle) sourceIndex model
                     let playHitSoundDelay = 10L
@@ -584,7 +552,7 @@ module OmniBattle =
                 let target = BattleModel.getCharacter targetIndex model
                 let hopOpt =
                     match techType with
-                    | HeadSlash | Cyclone -> Some { HopStart = target.BottomOffset2; HopStop = source.BottomOriginal }
+                    | Critical | Cyclone -> Some { HopStart = target.BottomOffset2; HopStop = source.BottomOriginal }
                     | Bolt | Tremor -> None
                 match hopOpt with
                 | None -> just model
