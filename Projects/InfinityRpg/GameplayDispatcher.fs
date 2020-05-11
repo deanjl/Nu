@@ -550,23 +550,23 @@ module GameplayDispatcherModule =
              define Screen.OngoingRandState Rand.DefaultSeedState
              define Screen.ShallLoadGame false]
 
-        override this.Bindings (_, _, _) =
-            [Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
-             Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSimulantSelected Simulants.HudFeeler =|> fun evt -> cmd (HandlePlayerInput (TouchInput evt.Data))
-             Stream.make Simulants.HudDetailUp.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailUp => cmd (HandlePlayerInput (DetailInput Upward))
-             Stream.make Simulants.HudDetailRight.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailRight => cmd (HandlePlayerInput (DetailInput Rightward))
-             Stream.make Simulants.HudDetailDown.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailDown => cmd (HandlePlayerInput (DetailInput Downward))
-             Stream.make Simulants.HudDetailLeft.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailLeft => cmd (HandlePlayerInput (DetailInput Leftward))
+        override this.Channel (_, _, _) =
+            [Simulants.Player.CharacterActivityState.ChangeEvent => [cmd ToggleHaltButton]
+             Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSimulantSelected Simulants.HudFeeler =|> fun evt -> [cmd (HandlePlayerInput (TouchInput evt.Data))]
+             Stream.make Simulants.HudDetailUp.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailUp => [cmd (HandlePlayerInput (DetailInput Upward))]
+             Stream.make Simulants.HudDetailRight.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailRight => [cmd (HandlePlayerInput (DetailInput Rightward))]
+             Stream.make Simulants.HudDetailDown.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailDown => [cmd (HandlePlayerInput (DetailInput Downward))]
+             Stream.make Simulants.HudDetailLeft.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailLeft => [cmd (HandlePlayerInput (DetailInput Leftward))]
              Simulants.Gameplay.UpdateEvent =|> fun _ ->
-                if KeyboardState.isKeyDown KeyboardKey.Up then cmd (HandlePlayerInput (DetailInput Upward))
-                elif KeyboardState.isKeyDown KeyboardKey.Right then cmd (HandlePlayerInput (DetailInput Rightward))
-                elif KeyboardState.isKeyDown KeyboardKey.Down then cmd (HandlePlayerInput (DetailInput Downward))
-                elif KeyboardState.isKeyDown KeyboardKey.Left then cmd (HandlePlayerInput (DetailInput Leftward))
-                else cmd Nop
-             Simulants.Gameplay.SelectEvent => cmd RunGameplay
-             Simulants.HudSaveGame.ClickEvent =|> fun evt -> cmd (SaveGame evt.Subscriber)
-             Simulants.Title.SelectEvent => cmd QuittingGameplay
-             Simulants.Gameplay.DeselectEvent => cmd QuitGameplay]
+                if KeyboardState.isKeyDown KeyboardKey.Up then [cmd (HandlePlayerInput (DetailInput Upward))]
+                elif KeyboardState.isKeyDown KeyboardKey.Right then [cmd (HandlePlayerInput (DetailInput Rightward))]
+                elif KeyboardState.isKeyDown KeyboardKey.Down then [cmd (HandlePlayerInput (DetailInput Downward))]
+                elif KeyboardState.isKeyDown KeyboardKey.Left then [cmd (HandlePlayerInput (DetailInput Leftward))]
+                else [cmd Nop]
+             Simulants.Gameplay.SelectEvent => [cmd RunGameplay]
+             Simulants.HudSaveGame.ClickEvent =|> fun evt -> [cmd (SaveGame evt.Subscriber)]
+             Simulants.Title.SelectEvent => [cmd QuittingGameplay]
+             Simulants.Gameplay.DeselectEvent => [cmd QuitGameplay]]
 
         override this.Command (_, command, _, world) =
             let world =
