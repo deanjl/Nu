@@ -16,6 +16,12 @@ type [<NoEquality; NoComparison>] FieldMap =
       FieldTiles : Map<Vector2i, FieldTile>
       FieldTileSheet : Image AssetTag }
 
+type FieldUnit =
+    { OffsetCount : Vector2i
+      IsHorizontal : bool
+      PathStart : Vector2i
+      PathEnd : Vector2i }
+
 [<RequireQualifiedAccess>]
 module FieldMap =
 
@@ -29,10 +35,10 @@ module FieldMap =
                 for j in boundsM.CornerNegative.Y .. boundsM.CornerPositive.Y do
                     yield Vector2i (i, j) }
 
-    let generateEmptyMap (sizeM : Vector2i) =
+    let generateEmptyMap (offsetM : Vector2i) (sizeM : Vector2i) =
         Map.ofList
-            [for i in 0 .. sizeM.X - 1 do
-                for j in 0 .. sizeM.Y - 1 do
+            [for i in offsetM.X .. offsetM.X + sizeM.X - 1 do
+                for j in offsetM.Y .. offsetM.Y + sizeM.Y - 1 do
                     let tileCoordsM = Vector2i (i, j)
                     yield (tileCoordsM, GrassTile)]
 
@@ -95,9 +101,9 @@ module FieldMap =
             (generatedMap, rand)
             grid
 
-    let make tileSheet sizeM pathEdgesM rand =
-        let buildBoundsM = { CornerNegative = Vector2i.One; CornerPositive = sizeM - Vector2i.One * 2 }
-        let generatedMap = generateEmptyMap sizeM
+    let make tileSheet (offsetM : Vector2i) sizeM pathEdgesM rand =
+        let buildBoundsM = { CornerNegative = offsetM + Vector2i.One; CornerPositive = offsetM + sizeM - Vector2i.One * 2 }
+        let generatedMap = generateEmptyMap offsetM sizeM
         let (generatedMap, rand) = addPaths buildBoundsM pathEdgesM generatedMap rand
         let (generatedMap, rand) = addTrees buildBoundsM generatedMap rand
         let (generatedMap, rand) = spreadTrees buildBoundsM generatedMap rand

@@ -12,6 +12,7 @@ module Constants =
         let TileSheetSizeM = Vector2i 4
         let TileSheetSizeI = Vector2i.Multiply (TileSheetSizeM, TileSizeI)
         let TileSheetSize = let t = TileSheetSizeI in t.Vector2
+        let FieldUnitSizeM = Vector2i 22
         let CharacterDepth = 1.0f
         let CharacterWalkSpeed = 4.0f
 

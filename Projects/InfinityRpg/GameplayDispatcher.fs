@@ -62,9 +62,52 @@ module GameplayDispatcherModule =
                   ActionTargetPositionMOpt = Some targetPositionM
                   ActionDataName = Constants.InfinityRpg.AttackName }
 
+        static let determinePathEnd rand =
+            let (randResult, rand) = Rand.nextIntUnder (Constants.Layout.FieldUnitSizeM.X - 4) rand // assumes X and Y are equal
+            let pathEnd = if randResult % 2 = 0 then Vector2i (randResult + 2, Constants.Layout.FieldUnitSizeM.Y - 2) else Vector2i (Constants.Layout.FieldUnitSizeM.X - 2, randResult + 2)
+            (pathEnd, rand)
+
+        static let makeFieldUnit (fieldUnitOpt, rand) =
+            let (pathEnd, rand) = determinePathEnd rand
+            let (offsetCount, pathStart) =
+                match fieldUnitOpt with
+                | Some fieldUnit ->
+                    match fieldUnit.IsHorizontal with
+                    | true -> (fieldUnit.OffsetCount + Vector2i.Right, Vector2i (1, fieldUnit.PathEnd.Y))
+                    | false -> (fieldUnit.OffsetCount + Vector2i.Up, Vector2i (fieldUnit.PathEnd.X, 1))
+                | None -> (Vector2i.Zero, Vector2i.One)
+            let fieldUnit =
+                { OffsetCount = offsetCount
+                  IsHorizontal = pathEnd.X > pathEnd.Y
+                  PathStart = pathStart
+                  PathEnd = pathEnd }
+            (fieldUnit, rand)
+
+        static let fieldUnitToFieldTiles (fieldUnit, rand) =
+            let offsetM = Vector2i.Multiply (fieldUnit.OffsetCount, Constants.Layout.FieldUnitSizeM)
+            let pathEdgesM = [(offsetM + fieldUnit.PathStart, offsetM + fieldUnit.PathEnd)]
+            let (fieldMap, rand) = FieldMap.make Assets.FieldTileSheetImage offsetM Constants.Layout.FieldUnitSizeM pathEdgesM rand
+            (fieldMap.FieldTiles, rand)
+
         static let createField scene rand world =
-            let pathEdgesM = [(Vector2i (1, 10), Vector2i (20, 10))]
-            let (fieldMap, rand) = FieldMap.make Assets.FieldTileSheetImage (Vector2i 22) pathEdgesM rand
+            let extentions = 1
+            let fieldUnitTuples =
+                List.fold
+                    (fun (fieldUnitTuples : (FieldUnit * Rand) list) _ ->
+                        let lastFieldUnitTuple = fieldUnitTuples.Head
+                        let lastFieldUnitTupleWithOpt = (Some (fst lastFieldUnitTuple), snd lastFieldUnitTuple)
+                        let fieldUnitTuple = makeFieldUnit lastFieldUnitTupleWithOpt
+                        fieldUnitTuple :: fieldUnitTuples)
+                    [makeFieldUnit (None, rand)]
+                    [0 .. extentions - 1]
+            let offsetCount = (fst fieldUnitTuples.Head).OffsetCount
+            let fieldTilesTupleList = List.map (fun fieldUnitTuple -> fieldUnitToFieldTiles fieldUnitTuple) fieldUnitTuples
+            let rand = snd fieldTilesTupleList.Head
+            let fieldTiles = List.map (fun fieldTiles -> fst fieldTiles) fieldTilesTupleList |> List.reduce (fun concat fieldTiles -> concat @@ fieldTiles)
+            let fieldMap = 
+                { FieldSizeM = Constants.Layout.FieldUnitSizeM + Vector2i.Multiply (offsetCount, Constants.Layout.FieldUnitSizeM)
+                  FieldTiles = fieldTiles
+                  FieldTileSheet = Assets.FieldTileSheetImage }
             let (field, world) = World.createEntity<FieldDispatcher> (Some Simulants.Field.Name) DefaultOverlay scene world
             let world = field.SetFieldMapNp fieldMap world
             let world = field.SetSize (field.GetQuickSize world) world
