@@ -472,9 +472,6 @@ module RigidBodyFacetModule =
         member this.GetCollisionMask world : string = this.Get Property? CollisionMask world
         member this.SetCollisionMask (value : string) world = this.SetFast Property? CollisionMask false false value world
         member this.CollisionMask = lens Property? CollisionMask this.GetCollisionMask this.SetCollisionMask this
-        member this.GetCollisionBody world : BodyShape = this.Get Property? CollisionBody world
-        member this.SetCollisionBody (value : BodyShape) world = this.SetFast Property? CollisionBody false false value world
-        member this.CollisionBody = lens Property? CollisionBody this.GetCollisionBody this.SetCollisionBody this
         member this.GetIsBullet world : bool = this.Get Property? IsBullet world
         member this.SetIsBullet (value : bool) world = this.SetFast Property? IsBullet false false value world
         member this.IsBullet = lens Property? IsBullet this.GetIsBullet this.SetIsBullet this
@@ -630,15 +627,13 @@ module TileMapFacetModule =
             | None -> None
 
         let getTileLayerBodyPropertyList tileMap tileMapData tileLayerIndex (tileLayer : TmxLayer) world =
-            if tileLayer.Properties.ContainsKey Constants.Physics.CollisionProperty then
-                Seq.foldi
-                    (fun i bodyPropertyList _ ->
-                        match getTileBodyProperties tileMap tileMapData tileLayer tileLayerIndex i world with
-                        | Some bodyProperties -> bodyProperties :: bodyPropertyList
-                        | None -> bodyPropertyList)
-                    [] tileLayer.Tiles |>
-                Seq.toList
-            else []
+            Seq.foldi
+                (fun i bodyPropertyList _ ->
+                    match getTileBodyProperties tileMap tileMapData tileLayer tileLayerIndex i world with
+                    | Some bodyProperties -> bodyProperties :: bodyPropertyList
+                    | None -> bodyPropertyList)
+                [] tileLayer.Tiles |>
+            Seq.toList
 
         let registerTileLayerPhysics (tileMap : Entity) tileMapData tileLayerIndex world tileLayer =
             let bodyPropertyList = getTileLayerBodyPropertyList tileMap tileMapData tileLayerIndex tileLayer world
@@ -686,10 +681,8 @@ module TileMapFacetModule =
             | Some tileMapData ->
                 Seq.foldi
                     (fun tileLayerIndex world (tileLayer : TmxLayer) ->
-                        if tileLayer.Properties.ContainsKey Constants.Physics.CollisionProperty then
-                            let physicsIds = getTileLayerPhysicsIds tileMap tileMapData tileLayer tileLayerIndex world
-                            World.destroyBodies physicsIds world
-                        else world)
+                        let physicsIds = getTileLayerPhysicsIds tileMap tileMapData tileLayer tileLayerIndex world
+                        World.destroyBodies physicsIds world)
                     world
                     tileMapData.Map.Layers
             | None ->
