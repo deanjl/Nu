@@ -116,7 +116,7 @@ module FacetModule =
                 | PropertyDefinition def ->
                     let propertyName = def.PropertyName
                     let alwaysPublish = Reflection.isPropertyAlwaysPublishByName propertyName
-                    let nonPersistent = not (Reflection.isPropertyPersistentByName propertyName)
+                    let nonPersistent = Reflection.isPropertyNonPersistentByName propertyName
                     let property = { PropertyType = def.PropertyType; PropertyValue = PropertyExpr.eval def.PropertyExpr world }
                     World.setProperty def.PropertyName alwaysPublish nonPersistent property entity world
                 | EventHandlerDefinition (handler, partialAddress) ->
@@ -582,7 +582,10 @@ module TileMapFacetModule =
                 Vector2i
                     (int tileMapPosition.X + tmd.TileSize.X * i,
                      int tileMapPosition.Y - tmd.TileSize.Y * (j + 1)) // subtraction for right-handedness
-            let tileSetTileOpt = Seq.tryFind (fun (item : TmxTilesetTile) -> tile.Gid - 1 = item.Id) tmd.TileSet.Tiles
+            let tileSetTileOpt =
+                match tmd.TileSet.Tiles.TryGetValue (tile.Gid - 1) with
+                | (true, tile) -> Some tile
+                | (false, _) -> None
             { Tile = tile; I = i; J = j; Gid = gid; GidPosition = gidPosition; Gid2 = gid2; TilePosition = tilePosition; TileSetTileOpt = tileSetTileOpt }
 
         let getTileBodyProperties6 (tm : Entity) tmd tli td ti cexpr world =
@@ -700,37 +703,51 @@ module TileMapFacetModule =
                     let tileLayerClearance = tileMap.GetTileLayerClearance world
                     List.foldi
                         (fun i world (layer : TmxLayer) ->
-                            let depth = tileMap.GetDepth world + single i * tileLayerClearance
-                            let parallaxTranslation =
-                                match viewType with
-                                | Absolute -> Vector2.Zero
-                                | Relative -> tileMap.GetParallax world * depth * -World.getEyeCenter world
-                            let parallaxPosition = tileMap.GetPosition world + parallaxTranslation
-                            let size = Vector2 (tileSize.X * single map.Width, tileSize.Y * single map.Height)
-                            let image = List.head images // MAGIC_VALUE: I have no idea how to tell which tile set each tile is from...
-                            if World.isBoundsInView viewType (Math.makeBounds parallaxPosition size) world then
-                                World.enqueueRenderMessage
-                                    (RenderDescriptorsMessage
-                                        [|LayerableDescriptor 
-                                            { Depth = depth
-                                              AssetTag = image
-                                              PositionY = (tileMap.GetPosition world).Y
-                                              LayeredDescriptor =
-                                                TileLayerDescriptor
-                                                    { Position = parallaxPosition
-                                                      Size = size
-                                                      Rotation = tileMap.GetRotation world
-                                                      ViewType = viewType
-                                                      MapSize = Vector2i (map.Width, map.Height)
-                                                      Tiles = layer.Tiles
-                                                      TileSourceSize = tileSourceSize
-                                                      TileSize = tileSize
-                                                      TileSet = map.Tilesets.[0] // MAGIC_VALUE: I have no idea how to tell which tile set each tile is from...
-                                                      TileSetImage = image }}|])
-                                    world
-                            else world)
-                        world
-                        layers
+                            List.fold
+                                (fun world j ->
+                                    let yOffset = single (map.Height - j - 1) * tileSize.Y
+                                    let position = tileMap.GetPosition world + v2 0.0f yOffset
+                                    let depthOffset =
+                                        match layer.Properties.TryGetValue Constants.Physics.DepthProperty with
+                                        | (true, depth) -> scvalue depth
+                                        | (false, _) -> single i * tileLayerClearance
+                                    let depth = tileMap.GetDepth world + depthOffset
+                                    let parallaxTranslation =
+                                        match viewType with
+                                        | Absolute -> Vector2.Zero
+                                        | Relative -> tileMap.GetParallax world * depth * -World.getEyeCenter world
+                                    let parallaxPosition = position + parallaxTranslation
+                                    let size = Vector2 (tileSize.X * single map.Width, tileSize.Y)
+                                    let image = List.head images // MAGIC_VALUE: I have no idea how to tell which tile set each tile is from...
+                                    let tiles =
+                                        layer.Tiles |>
+                                        enumerable<_> |>
+                                        Seq.skip (j * map.Width) |>
+                                        Seq.take map.Width |>
+                                        Seq.toArray
+                                    if World.isBoundsInView viewType (Math.makeBounds parallaxPosition size) world then
+                                        World.enqueueRenderMessage
+                                            (RenderDescriptorsMessage
+                                                [|LayerableDescriptor 
+                                                    { Depth = depth
+                                                      AssetTag = image
+                                                      PositionY = parallaxPosition.Y
+                                                      LayeredDescriptor =
+                                                        TileLayerDescriptor
+                                                            { Position = parallaxPosition
+                                                              Size = size
+                                                              Rotation = tileMap.GetRotation world
+                                                              ViewType = viewType
+                                                              MapSize = Vector2i (map.Width, map.Height)
+                                                              Tiles = tiles
+                                                              TileSourceSize = tileSourceSize
+                                                              TileSize = tileSize
+                                                              TileSet = map.Tilesets.[0] // MAGIC_VALUE: I have no idea how to tell which tile set each tile is from...
+                                                              TileSetImage = image }}|])
+                                            world
+                                    else world)
+                                world [0 .. dec map.Height])
+                        world layers
                 | None -> world
             else world
 
@@ -1117,7 +1134,7 @@ module EntityDispatcherModule =
                 | PropertyDefinition def ->
                     let propertyName = def.PropertyName
                     let alwaysPublish = Reflection.isPropertyAlwaysPublishByName propertyName
-                    let nonPersistent = not (Reflection.isPropertyPersistentByName propertyName)
+                    let nonPersistent = Reflection.isPropertyNonPersistentByName propertyName
                     let property = { PropertyType = def.PropertyType; PropertyValue = PropertyExpr.eval def.PropertyExpr world }
                     World.setProperty def.PropertyName alwaysPublish nonPersistent property entity world
                 | EventHandlerDefinition (handler, partialAddress) ->
@@ -1968,7 +1985,7 @@ module LayerDispatcherModule =
                 | PropertyDefinition def ->
                     let propertyName = def.PropertyName
                     let alwaysPublish = Reflection.isPropertyAlwaysPublishByName propertyName
-                    let nonPersistent = not (Reflection.isPropertyPersistentByName propertyName)
+                    let nonPersistent = Reflection.isPropertyNonPersistentByName propertyName
                     let property = { PropertyType = def.PropertyType; PropertyValue = PropertyExpr.eval def.PropertyExpr world }
                     World.setProperty def.PropertyName alwaysPublish nonPersistent property layer world
                 | EventHandlerDefinition (handler, partialAddress) ->
@@ -2067,7 +2084,7 @@ module ScreenDispatcherModule =
                 | PropertyDefinition def ->
                     let propertyName = def.PropertyName
                     let alwaysPublish = Reflection.isPropertyAlwaysPublishByName propertyName
-                    let nonPersistent = not (Reflection.isPropertyPersistentByName propertyName)
+                    let nonPersistent = Reflection.isPropertyNonPersistentByName propertyName
                     let property = { PropertyType = def.PropertyType; PropertyValue = PropertyExpr.eval def.PropertyExpr world }
                     World.setProperty def.PropertyName alwaysPublish nonPersistent property screen world
                 | EventHandlerDefinition (handler, partialAddress) ->

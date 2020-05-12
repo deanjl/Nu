@@ -17,13 +17,13 @@ module OmniCharacter =
 
     type CharacterDispatcher () =
         inherit EntityDispatcher<CharacterModel, unit, unit>
-            (CharacterModel.make (AllyIndex 0) (Ally Finn) 0 None None [] Assets.FinnAnimationSheet Rightward (Math.makeBounds  v2Zero v2One))
+            (CharacterModel.make (AllyIndex 0) (Ally Finn) 0 None None [] Assets.FinnAnimationSheet Rightward (v4Bounds v2Zero v2One))
 
         static let getSpriteInset (character : Entity) world =
             let model = character.GetCharacterModel world
             let index = CharacterModel.getAnimationIndex (World.getTickTime world) model
             let offset = v2 (single index.X) (single index.Y) * Constants.Gameplay.CharacterSize
-            let inset = Math.makeBounds offset Constants.Gameplay.CharacterSize
+            let inset = v4Bounds offset Constants.Gameplay.CharacterSize
             inset
 
         static let getSpriteColor (character : Entity) world =
@@ -54,26 +54,23 @@ module OmniCharacter =
         override this.Initializers (model, _, _) =
             [Entity.Bounds <== model --> fun (model : CharacterModel) -> model.Bounds]
 
-        override this.Actualize (character, world) =
+        override this.View (model, character, world) =
             if character.GetVisibleLayered world && character.GetInView world then
-                let model = character.GetCharacterModel world
-                World.enqueueRenderMessage
-                    (RenderDescriptorMessage
-                        (LayerableDescriptor
-                            { Depth = character.GetDepth world
-                              PositionY = (character.GetPosition world).Y
-                              AssetTag = model.AnimationSheet
-                              LayeredDescriptor =
-                              SpriteDescriptor
-                                { Position = character.GetPosition world
-                                  Size = character.GetSize world
-                                  Rotation = character.GetRotation world
-                                  Offset = Vector2.Zero
-                                  ViewType = character.GetViewType world
-                                  InsetOpt = Some (getSpriteInset character world)
-                                  Image = model.AnimationSheet
-                                  Color = getSpriteColor character world
-                                  Glow = getSpriteGlow character world
-                                  Flip = FlipNone }}))
-                    world
-            else world
+                [Render
+                    (LayerableDescriptor
+                        { Depth = character.GetDepth world
+                          PositionY = (character.GetPosition world).Y
+                          AssetTag = model.AnimationSheet
+                          LayeredDescriptor =
+                          SpriteDescriptor
+                            { Position = character.GetPosition world
+                              Size = character.GetSize world
+                              Rotation = character.GetRotation world
+                              Offset = Vector2.Zero
+                              ViewType = character.GetViewType world
+                              InsetOpt = Some (getSpriteInset character world)
+                              Image = model.AnimationSheet
+                              Color = getSpriteColor character world
+                              Glow = getSpriteGlow character world
+                              Flip = FlipNone }})]
+            else []

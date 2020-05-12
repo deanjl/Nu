@@ -19,13 +19,13 @@ module AvatarDispatcherModule =
 
     type AvatarDispatcher () =
         inherit EntityDispatcher<AvatarModel, AvatarMessage, unit>
-            (AvatarModel.make Assets.FinnAnimationSheet Downward (Math.makeBounds (v2 -200.0f -200.0f) Constants.Gameplay.CharacterSize))
+            (AvatarModel.make Assets.FinnAnimationSheet Downward (v4Bounds (v2 128.0f 128.0f) Constants.Gameplay.CharacterSize))
 
         static let getSpriteInset (avatar : Entity) world =
             let model = avatar.GetAvatarModel world
             let index = AvatarModel.getAnimationIndex (World.getTickTime world) model
             let offset = v2 (single index.X) (single index.Y) * Constants.Gameplay.CharacterSize
-            let inset = Math.makeBounds offset Constants.Gameplay.CharacterSize
+            let inset = v4Bounds offset Constants.Gameplay.CharacterSize
             inset
 
         static member Facets =
@@ -36,14 +36,14 @@ module AvatarDispatcherModule =
              define Entity.CelSize Constants.Gameplay.CharacterSize
              define Entity.CelRun 8
              define Entity.FixedRotation true
-             define Entity.GravityScale 3.0f
-             define Entity.CollisionBody (BodyCircle { Radius = 0.25f; Center = v2 0.0f -0.25f })]
+             define Entity.GravityScale 0.0f
+             define Entity.CollisionBody (BodyCircle { Radius = 0.22f; Center = v2 0.0f -0.3f })]
 
         override this.Channel (_, entity, _) =
             [entity.UpdateEvent => [msg Update]]
 
-        override this.Initializers (model, entity, world) =
-            [entity.Bounds == (model.Get world).BoundsOriginal
+        override this.Initializers (model, entity, _) =
+            [entity.Bounds <== model.Map (fun model -> model.Bounds)
              entity.LinearDamping == 8.0f
              entity.GravityScale == 0.0f]
 
@@ -68,26 +68,23 @@ module AvatarDispatcherModule =
                 let model = AvatarModel.updateBounds (constant (entity.GetBounds world)) model
                 just model
 
-        override this.Actualize (entity, world) =
-            let model = entity.GetAvatarModel world
+        override this.View (model, entity, world) =
             if entity.GetVisibleLayered world && entity.GetInView world then
-                World.enqueueRenderMessage
-                    (RenderDescriptorMessage
-                        (LayerableDescriptor
-                            { Depth = entity.GetDepth world
-                              PositionY = (entity.GetPosition world).Y
-                              AssetTag = model.AnimationSheet
-                              LayeredDescriptor =
-                              SpriteDescriptor
-                                { Position = entity.GetPosition world
-                                  Size = entity.GetSize world
-                                  Rotation = entity.GetRotation world
-                                  Offset = Vector2.Zero
-                                  ViewType = entity.GetViewType world
-                                  InsetOpt = Some (getSpriteInset entity world)
-                                  Image = model.AnimationSheet
-                                  Color = v4One
-                                  Glow = v4Zero
-                                  Flip = FlipNone }}))
-                    world
-            else world
+                [Render
+                    (LayerableDescriptor
+                        { Depth = entity.GetDepth world
+                          PositionY = (entity.GetPosition world).Y
+                          AssetTag = model.AnimationSheet
+                          LayeredDescriptor =
+                          SpriteDescriptor
+                            { Position = entity.GetPosition world
+                              Size = entity.GetSize world
+                              Rotation = entity.GetRotation world
+                              Offset = Vector2.Zero
+                              ViewType = entity.GetViewType world
+                              InsetOpt = Some (getSpriteInset entity world)
+                              Image = model.AnimationSheet
+                              Color = v4One
+                              Glow = v4Zero
+                              Flip = FlipNone }})]
+            else []

@@ -35,7 +35,7 @@ module Nu =
 
     /// Propagate lensed property by property name.
     let private tryPropagateByName simulant leftName (right : World Lens) (_ : Event) world =
-        let nonPersistent = not (Reflection.isPropertyPersistentByName leftName)
+        let nonPersistent = Reflection.isPropertyNonPersistentByName leftName
         let alwaysPublish = Reflection.isPropertyAlwaysPublishByName leftName
         if right.Validate world then
             let value =
@@ -159,7 +159,7 @@ module Nu =
                             let world = if not (World.getLayerExists layer world) then World.createLayer None screen world |> snd else world
                             let world = if not (World.getEntityExists entity world) then World.createEntity None DefaultOverlay layer world |> snd else world
                             let alwaysPublish = Reflection.isPropertyAlwaysPublishByName propertyName
-                            let nonPersistent = not (Reflection.isPropertyPersistentByName propertyName)
+                            let nonPersistent = Reflection.isPropertyNonPersistentByName propertyName
                             let property = { PropertyValue = value; PropertyType = ty }
                             World.attachEntityProperty propertyName alwaysPublish nonPersistent property entity world |> box
                         | (None, (true, _)) ->
@@ -499,7 +499,7 @@ module WorldModule3 =
                       RebuildEntityTree = World.rebuildEntityTree }
 
                 // look up the active game dispather
-                let activeGameDispatcherType = if config.StandAlone then plugin.GetStandAloneGameDispatcher () else plugin.GetEditorGameDispatcher ()
+                let activeGameDispatcherType = if config.StandAlone then plugin.GetGameDispatcher () else typeof<GameDispatcher>
                 let activeGameDispatcher = Map.find activeGameDispatcherType.Name dispatchers.GameDispatchers
 
                 // make the world's subsystems
