@@ -7,7 +7,7 @@ type InfinityPlugin () =
     inherit NuPlugin ()
 
     // specify the game dispatcher to use at run-time
-    override this.GetStandAloneGameDispatcher () =
+    override this.GetGameDispatcher () =
         typeof<InfinityDispatcher>
 
     // route overlays to specific dispatchers
