@@ -31,11 +31,18 @@ type [<StructuralEquality; NoComparison>] GamepadButtonData =
     { GamepadButton : GamepadButton
       Down : bool }
 
+/// The data of a body transform event.
+type [<StructuralEquality; NoComparison>] TransformData =
+    { BodySource : BodySource
+      Position : Vector2
+      Rotation : single }
+
 /// The data for a collision event.
 type [<StructuralEquality; NoComparison>] CollisionData =
-    { Normal : Vector2
-      Speed : single
-      Collidee : Entity }
+    { Collider : BodySource
+      Collidee : BodySource
+      Normal : Vector2
+      Speed : single }
 
 module Events =
 
@@ -46,6 +53,7 @@ module Events =
     let PostUpdate = stoa<unit> "PostUpdate/Event"
     let Select = stoa<unit> "Select/Event"
     let Deselect = stoa<unit> "Deselect/Event"
+    let Transform = stoa<TransformData> "Transform/Event"
     let Collision = stoa<CollisionData> "Collision/Event"
     let Click = stoa<unit> "Click/Event"
     let Down = stoa<unit> "Down/Event"

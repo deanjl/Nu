@@ -432,7 +432,7 @@ module TextFacetModule =
 module RigidBodyFacetModule =
 
     type Entity with
-    
+
         member this.GetBodyType world : BodyType = this.Get Property? BodyType world
         member this.SetBodyType (value : BodyType) world = this.SetFast Property? BodyType false false value world
         member this.BodyType = lens Property? BodyType this.GetBodyType this.SetBodyType this
@@ -486,7 +486,7 @@ module RigidBodyFacetModule =
         inherit Facet ()
 
         static let getBodyShape (entity : Entity) world =
-            PhysicsEngine.localizeCollisionBody (entity.GetSize world) (entity.GetCollisionBody world)
+            World.localizeBodyShape (entity.GetSize world) (entity.GetBodyShape world)
 
         static member Properties =
             [define Entity.BodyType Dynamic
@@ -502,7 +502,7 @@ module RigidBodyFacetModule =
              define Entity.GravityScale 1.0f
              define Entity.CollisionCategories "1"
              define Entity.CollisionMask "@"
-             define Entity.CollisionBody (BodyBox { Extent = Vector2 0.5f; Center = Vector2.Zero })
+             define Entity.BodyShape (BodyBox { Extent = Vector2 0.5f; Center = Vector2.Zero })
              define Entity.IsBullet false
              define Entity.IsSensor false
              computed Entity.PhysicsId (fun (entity : Entity) world -> { SourceId = entity.GetId world; BodyId = Guid.Empty }) None]
@@ -533,6 +533,41 @@ module RigidBodyFacetModule =
 
         override this.UnregisterPhysics (entity, world) =
             World.destroyBody (entity.GetPhysicsId world) world
+
+[<AutoOpen>]
+module RigidBodiesFacetModule =
+
+    type Entity with
+
+        member this.GetBodies world : Map<Guid, BodyProperties> = this.Get Property? Bodies world
+        member this.SetBodies (value : Map<Guid, BodyProperties>) world = this.SetFast Property? Bodies false false value world
+        member this.Bodies = lens Property? Bodies this.GetBodies this.SetBodies this
+
+    type RigidBodiesFacet () =
+        inherit Facet ()
+
+        static member Properties =
+            [define Entity.Bodies (Map.singleton Guid.Empty BodyProperties.empty)
+             computed Entity.PhysicsId (fun (entity : Entity) world -> { SourceId = entity.GetId world; BodyId = Guid.Empty }) None]
+
+        override this.RegisterPhysics (entity, world) =
+            let position = entity.GetPosition world
+            let size = entity.GetSize world
+            let rotation = entity.GetRotation world
+            let bodiesProperties = entity.GetBodies world |> Map.toValueList
+            let bodiesProperties =
+                List.map (fun (properties : BodyProperties) ->
+                    { properties with
+                        Position = properties.Position + position
+                        Rotation = properties.Rotation + rotation
+                        Shape = World.localizeBodyShape size properties.Shape })
+                    bodiesProperties
+            World.createBodies entity (entity.GetId world) bodiesProperties world
+
+        override this.UnregisterPhysics (entity, world) =
+            let bodiesProperties = entity.GetBodies world |> Map.toValueList
+            let physicsIds = List.map (fun (properties : BodyProperties) -> { SourceId = entity.GetId world; BodyId = properties.BodyId }) bodiesProperties
+            World.destroyBodies physicsIds world
 
 [<AutoOpen>]
 module TileMapFacetModule =
@@ -589,7 +624,7 @@ module TileMapFacetModule =
             { Tile = tile; I = i; J = j; Gid = gid; GidPosition = gidPosition; Gid2 = gid2; TilePosition = tilePosition; TileSetTileOpt = tileSetTileOpt }
 
         let getTileBodyProperties6 (tm : Entity) tmd tli td ti cexpr world =
-            let tileShape = PhysicsEngine.localizeCollisionBody (Vector2 (single tmd.TileSize.X, single tmd.TileSize.Y)) cexpr
+            let tileShape = World.localizeBodyShape (Vector2 (single tmd.TileSize.X, single tmd.TileSize.Y)) cexpr
             { BodyId = Gen.idFromInts tli ti
               Position =
                 Vector2
@@ -703,7 +738,7 @@ module TileMapFacetModule =
                     let tileLayerClearance = tileMap.GetTileLayerClearance world
                     List.foldi
                         (fun i world (layer : TmxLayer) ->
-                            List.fold
+                            Array.fold
                                 (fun world j ->
                                     let yOffset = single (map.Height - j - 1) * tileSize.Y
                                     let position = tileMap.GetPosition world + v2 0.0f yOffset
@@ -746,7 +781,7 @@ module TileMapFacetModule =
                                                               TileSetImage = image }}|])
                                             world
                                     else world)
-                                world [0 .. dec map.Height])
+                                world [|0 .. dec map.Height|])
                         world layers
                 | None -> world
             else world
@@ -1853,7 +1888,7 @@ module CharacterDispatcherModule =
              define Entity.CelRun 8
              define Entity.FixedRotation true
              define Entity.GravityScale 3.0f
-             define Entity.CollisionBody (BodyCapsule { Height = 0.5f; Radius = 0.25f; Center = v2Zero })
+             define Entity.BodyShape (BodyCapsule { Height = 0.5f; Radius = 0.25f; Center = v2Zero })
              define Entity.CharacterIdleImage (AssetTag.make Assets.DefaultPackageName "CharacterIdle")
              define Entity.CharacterJumpImage (AssetTag.make Assets.DefaultPackageName "CharacterJump")
              define Entity.CharacterWalkSheet (AssetTag.make Assets.DefaultPackageName "CharacterWalk")

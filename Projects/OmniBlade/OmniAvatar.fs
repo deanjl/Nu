@@ -37,14 +37,14 @@ module AvatarDispatcherModule =
              define Entity.CelRun 8
              define Entity.FixedRotation true
              define Entity.GravityScale 0.0f
-             define Entity.CollisionBody (BodyCircle { Radius = 0.22f; Center = v2 0.0f -0.3f })]
+             define Entity.BodyShape (BodyCircle { Radius = 0.22f; Center = v2 0.0f -0.3f })]
 
         override this.Channel (_, entity, _) =
             [entity.UpdateEvent => [msg Update]]
 
         override this.Initializers (model, entity, _) =
             [entity.Bounds <== model.Map (fun model -> model.Bounds)
-             entity.LinearDamping == 8.0f
+             entity.LinearDamping == 12.0f
              entity.GravityScale == 0.0f]
 
         override this.Message (model, message, entity, world) =
