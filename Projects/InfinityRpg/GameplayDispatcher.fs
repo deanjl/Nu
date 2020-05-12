@@ -63,7 +63,7 @@ module GameplayDispatcherModule =
                   ActionDataName = Constants.InfinityRpg.AttackName }
 
         static let determinePathEnd rand =
-            let (randResult, rand) = Rand.nextIntUnder (Constants.Layout.FieldUnitSizeM.X - 4) rand // assumes X and Y are equal
+            let randResult = Gen.random1 (Constants.Layout.FieldUnitSizeM.X - 4) // assumes X and Y are equal
             let pathEnd = if randResult % 2 = 0 then Vector2i (randResult + 2, Constants.Layout.FieldUnitSizeM.Y - 2) else Vector2i (Constants.Layout.FieldUnitSizeM.X - 2, randResult + 2)
             (pathEnd, rand)
 
@@ -115,7 +115,7 @@ module GameplayDispatcherModule =
             (field, rand, world)
 
         static let createEnemies scene rand world =
-            let (randResult, rand) = Rand.nextIntUnder 5 rand
+            let randResult = Gen.random1 5
             let enemyCount = randResult + 1
             List.fold
                 (fun (enemies, rand, world) _ ->
@@ -123,7 +123,7 @@ module GameplayDispatcherModule =
                     let characters = getCharacters world
                     let characterPositions = Seq.map (fun (character : Entity) -> character.GetPosition world) characters
                     let availableCoordinates = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles characterPositions |> Map.filter (fun _ occupied -> occupied = false) |> Map.toKeyList |> List.toArray
-                    let (randResult, rand) = Rand.nextIntUnder availableCoordinates.Length rand
+                    let randResult = Gen.random1 availableCoordinates.Length
                     let enemyCoordinates = availableCoordinates.[randResult]
                     let (enemy, world) = World.createEntity<EnemyDispatcher> None DefaultOverlay scene world
                     let world = enemy.SetPosition (vmtovf enemyCoordinates) world
@@ -285,7 +285,7 @@ module GameplayDispatcherModule =
                     let enemyTurn = makeAttackTurn (vftovm nextPlayerPosition)
                     (enemyTurn, rand)
                 else
-                    let (randResult, rand) = Rand.nextIntUnder 4 rand
+                    let randResult = Gen.random1 4
                     let direction = Direction.fromInt randResult
                     let enemyTurn = determineCharacterTurnFromDirection direction occupationMap enemy [player] world
                     (enemyTurn, rand)

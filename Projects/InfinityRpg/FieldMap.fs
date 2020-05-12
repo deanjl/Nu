@@ -70,7 +70,7 @@ module FieldMap =
         let grid = makeGrid buildBoundsM
         Seq.fold
             (fun (generatedMap, rand) positionM ->
-                let (n, rand) = Rand.nextIntUnder 16 rand
+                let n = Gen.random1 16
                 if n = 0 && Map.find positionM generatedMap <> PathTile
                 then (Map.add positionM TreeTile generatedMap, rand)
                 else (generatedMap, Rand.advance rand))
@@ -93,7 +93,7 @@ module FieldMap =
                         MapBounds.isPointInBounds rightPositionM buildBoundsM && Map.find rightPositionM originalMap = TreeTile ||
                         MapBounds.isPointInBounds downPositionM buildBoundsM && Map.find downPositionM originalMap = TreeTile ||
                         MapBounds.isPointInBounds leftPositionM buildBoundsM && Map.find leftPositionM originalMap = TreeTile then
-                        let (n, rand) = Rand.nextIntUnder 3 rand
+                        let n = Gen.random1 3
                         if n = 0 then (Map.add positionM TreeTile generatedMap, rand)
                         else (generatedMap, Rand.advance rand)
                     else (generatedMap, Rand.advance rand)
