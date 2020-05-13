@@ -90,7 +90,7 @@ module GameplayDispatcherModule =
             (fieldMap.FieldTiles, rand)
 
         static let createField scene rand world =
-            let extentions = 1
+            let extentions = 0
             let fieldUnitTuples =
                 List.fold
                     (fun (fieldUnitTuples : (FieldUnit * Rand) list) _ ->
@@ -396,23 +396,12 @@ module GameplayDispatcherModule =
                 []
 
         static let runCharacterDeath (character : Entity) world =
-            let chain = chain {
-                do! Chain.update $ character.SetCharacterState {character.GetCharacterState world with ControlType = Uncontrolled}
-                do! Chain.update $ character.SetCharacterActivityState NoActivity
-                do! Chain.update $ character.SetCharacterAnimationState {character.GetCharacterAnimationState world with AnimationType = CharacterAnimationSlain}
-                // insert appropriate loop here for delay
-                do! Chain.update $ 
-                    if character.Name = Simulants.Player.Name
-                    then World.transitionScreen Simulants.Title
-                    else World.destroyEntity character}
-            let stream =
-                Stream.until
-                    (Stream.make Simulants.Gameplay.DeselectEvent)
-                    (Stream.sum
-                        (Stream.make Simulants.HudHalt.ClickEvent)
-                        (Stream.make Simulants.Player.UpdateEvent))
-            Chain.runAssumingCascade chain stream world |> snd
-
+            let world = character.SetCharacterState {character.GetCharacterState world with ControlType = Uncontrolled} world
+            let world = character.SetCharacterActivityState NoActivity world
+            let world = character.SetCharacterAnimationState {character.GetCharacterAnimationState world with AnimationType = CharacterAnimationSlain} world
+            let world = if character.Name = Simulants.Player.Name then World.transitionScreen Simulants.Title world else World.destroyEntity character world
+            world
+            
         static let runCharacterReaction actionDescriptor (initiator : Entity) world =
             // TODO: implement animations
             if actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
