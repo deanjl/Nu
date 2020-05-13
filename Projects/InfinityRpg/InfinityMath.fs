@@ -46,7 +46,7 @@ module Direction =
 
     let next rand =
         let randMax = 4
-        let (randValue, rand) = Rand.nextIntUnder randMax rand
+        let randValue = Gen.random1 randMax
         let direction = fromInt randValue
         (direction, rand)
 
