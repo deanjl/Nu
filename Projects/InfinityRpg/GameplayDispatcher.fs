@@ -21,6 +21,7 @@ module GameplayDispatcherModule =
         | QuittingGameplay
         | QuitGameplay
         | RunGameplay
+        | Tick
         | Nop
 
     type Screen with
@@ -435,7 +436,7 @@ module GameplayDispatcherModule =
             let stream =
                 Stream.until
                     (Stream.make Simulants.Gameplay.DeselectEvent)
-                    (Stream.make character.UpdateEvent)
+                    (Stream.make Simulants.Gameplay.UpdateEvent)
             Chain.runAssumingCascade chain stream world |> snd
 
         static let runCharacterAction newActionDescriptor (character : Entity) world =
@@ -454,7 +455,7 @@ module GameplayDispatcherModule =
             let stream =
                 Stream.until
                     (Stream.make Simulants.Gameplay.DeselectEvent)
-                    (Stream.make character.UpdateEvent)
+                    (Stream.make Simulants.Gameplay.UpdateEvent)
             Chain.runAssumingCascade chain stream world |> snd
 
         static let runCharacterNoActivity (character : Entity) world =
@@ -536,29 +537,26 @@ module GameplayDispatcherModule =
             world
 
         static let tryRunPlayerTurn playerInput world =
-            if not (anyTurnsInProgress world) then
-                let chain = chain {
-                    do! Chain.update $ Simulants.HudSaveGame.SetEnabled false
-                    do! Chain.loop 0 inc (fun i world -> i = 0 || anyTurnsInProgress world) $ fun i -> chain {
-                        let! evt = Chain.next
-                        do! match evt.Data with
-                            | Right _ -> chain {
-                                let! playerTurn =
-                                    if i = 0
-                                    then Chain.getBy (determinePlayerTurnFromInput playerInput)
-                                    else Chain.getBy determinePlayerTurn
-                                do! Chain.update (runPlayerTurn playerTurn) }
-                            | Left _ -> chain {
-                                do! Chain.update (cancelNavigation Simulants.Player) }}
-                    do! Chain.update (Simulants.HudSaveGame.SetEnabled true) }
-                let stream =
-                    Stream.until
-                        (Stream.make Simulants.Gameplay.DeselectEvent)
-                        (Stream.sum
-                            (Stream.make Simulants.HudHalt.ClickEvent)
-                            (Stream.make Simulants.Player.UpdateEvent))
-                Chain.runAssumingCascade chain stream world |> snd
-            else world
+            let chain = chain {
+                do! Chain.update $ Simulants.HudSaveGame.SetEnabled false
+                do! Chain.loop 0 inc (fun i world -> i = 0 || anyTurnsInProgress world) $ fun i -> chain {
+                    let! evt = Chain.next
+                    do! chain {
+                        let! playerTurn =
+                            if i = 0
+                            then Chain.getBy (determinePlayerTurnFromInput playerInput)
+                            else Chain.getBy determinePlayerTurn
+                        do! Chain.update (runPlayerTurn playerTurn) }
+                        }
+                do! Chain.update (Simulants.HudSaveGame.SetEnabled true) }
+            let stream =
+                Stream.until
+                    (Stream.make Simulants.Gameplay.DeselectEvent)
+                    (Stream.make Simulants.Gameplay.UpdateEvent)
+            Chain.runAssumingCascade chain stream world |> snd
+
+        static let handlePlayerInput playerInput world =
+            if not (anyTurnsInProgress world) then tryRunPlayerTurn playerInput world else world
 
         static let runNewGameplay world =
 
@@ -599,6 +597,15 @@ module GameplayDispatcherModule =
             // make field from rand (field is not serialized, but generated deterministically with ContentRandState)
             __c (createField Simulants.Scene rand world)
 
+        static let tick world =
+            let world =
+               if KeyboardState.isKeyDown KeyboardKey.Up then handlePlayerInput (DetailInput Upward) world
+               elif KeyboardState.isKeyDown KeyboardKey.Right then handlePlayerInput (DetailInput Rightward) world
+               elif KeyboardState.isKeyDown KeyboardKey.Down then handlePlayerInput (DetailInput Downward) world
+               elif KeyboardState.isKeyDown KeyboardKey.Left then handlePlayerInput (DetailInput Leftward) world
+               else world
+            world
+
         static member Properties =
             [define Screen.ContentRandState Rand.DefaultSeedState
              define Screen.OngoingRandState Rand.DefaultSeedState
@@ -611,12 +618,7 @@ module GameplayDispatcherModule =
              Stream.make Simulants.HudDetailRight.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailRight => [cmd (HandlePlayerInput (DetailInput Rightward))]
              Stream.make Simulants.HudDetailDown.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailDown => [cmd (HandlePlayerInput (DetailInput Downward))]
              Stream.make Simulants.HudDetailLeft.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailLeft => [cmd (HandlePlayerInput (DetailInput Leftward))]
-             Simulants.Gameplay.UpdateEvent =|> fun _ ->
-                if KeyboardState.isKeyDown KeyboardKey.Up then [cmd (HandlePlayerInput (DetailInput Upward))]
-                elif KeyboardState.isKeyDown KeyboardKey.Right then [cmd (HandlePlayerInput (DetailInput Rightward))]
-                elif KeyboardState.isKeyDown KeyboardKey.Down then [cmd (HandlePlayerInput (DetailInput Downward))]
-                elif KeyboardState.isKeyDown KeyboardKey.Left then [cmd (HandlePlayerInput (DetailInput Leftward))]
-                else [cmd Nop]
+             Simulants.Gameplay.UpdateEvent => [cmd Tick]
              Simulants.Gameplay.SelectEvent => [cmd RunGameplay]
              Simulants.HudSaveGame.ClickEvent =|> fun evt -> [cmd (SaveGame evt.Subscriber)]
              Simulants.Title.SelectEvent => [cmd QuittingGameplay]
@@ -626,7 +628,7 @@ module GameplayDispatcherModule =
             let world =
                 match command with
                 | ToggleHaltButton -> Simulants.HudHalt.SetEnabled (isPlayerNavigatingPath world) world
-                | HandlePlayerInput input -> tryRunPlayerTurn input world
+                | HandlePlayerInput input -> handlePlayerInput input world
                 | SaveGame gameplay -> World.writeScreenToFile Assets.SaveFilePath gameplay world; world
                 | QuittingGameplay -> World.playSong Constants.Audio.DefaultTimeToFadeOutSongMs 1.0f Assets.ButterflyGirlSong world
                 | QuitGameplay -> World.destroyLayer Simulants.Scene world
@@ -636,5 +638,6 @@ module GameplayDispatcherModule =
                         then runLoadGameplay world
                         else runNewGameplay world
                     World.playSong Constants.Audio.DefaultTimeToFadeOutSongMs 1.0f Assets.HerosVengeanceSong world
+                | Tick -> tick world
                 | Nop -> world
             just world
