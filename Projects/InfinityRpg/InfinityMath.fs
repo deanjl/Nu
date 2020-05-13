@@ -44,9 +44,9 @@ module Direction =
         | 3 -> Leftward
         | _ -> failwith ("Invalid conversion to Direction from int '" + scstring n + "'.")
 
-    let next rand =
+    let next rand = // TODO find out why the hell Gen.random1 doens't work in this file
         let randMax = 4
-        let randValue = Gen.random1 randMax
+        let (randValue, rand) = Rand.nextIntUnder randMax rand
         let direction = fromInt randValue
         (direction, rand)
 
