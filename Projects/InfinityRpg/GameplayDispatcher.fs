@@ -57,6 +57,15 @@ module GameplayDispatcherModule =
             let entities = World.getEntities Simulants.Scene world
             Seq.filter (fun (entity : Entity) -> entity.DispatchesAs<EnemyDispatcher> world) entities
 
+        static let updateEnemiesBy by world =
+            let enemies = getEnemies world |> Seq.toList
+            let rec recursion (enemies : Entity list) world =
+                if enemies.Length = 0 then world
+                else
+                    let world = by enemies.Head world
+                    recursion enemies.Tail world
+            recursion enemies world
+
         static let makeAttackTurn targetPositionM =
             ActionTurn
                 { ActionTicks = 0L
@@ -439,31 +448,26 @@ module GameplayDispatcherModule =
                     (Stream.make Simulants.Gameplay.UpdateEvent)
             Chain.runAssumingCascade chain stream world |> snd
 
-        static let runCharacterAction newActionDescriptor (character : Entity) world =
+        static let startCharacterAction newActionDescriptor (character : Entity) world =
             // NOTE: currently just implements attack
-            let chain = chain {
-                do! Chain.update (character.SetCharacterActivityState (Action newActionDescriptor))
-                do! Chain.during (character.CharacterActivityState.GetBy (fun state -> state.IsActing)) $ chain {
-                    do! Chain.update $ fun world ->
-                        let actionDescriptor =
-                            match character.GetCharacterActivityState world with
-                            | Action actionDescriptor -> actionDescriptor
-                            | _ -> failwithumf ()
-                        let world = updateCharacterByAction actionDescriptor character world
-                        runCharacterReaction actionDescriptor character world
-                    do! Chain.pass }}
-            let stream =
-                Stream.until
-                    (Stream.make Simulants.Gameplay.DeselectEvent)
-                    (Stream.make Simulants.Gameplay.UpdateEvent)
-            Chain.runAssumingCascade chain stream world |> snd
+            character.SetCharacterActivityState (Action newActionDescriptor) world
+
+        static let continueCharacterAction (character : Entity) world =
+            if not (character.CharacterActivityState.GetBy (fun state -> state.IsActing) world) then world
+            else
+                let actionDescriptor =
+                    match character.GetCharacterActivityState world with
+                    | Action actionDescriptor -> actionDescriptor
+                    | _ -> failwithumf ()
+                let world = updateCharacterByAction actionDescriptor character world
+                runCharacterReaction actionDescriptor character world
 
         static let runCharacterNoActivity (character : Entity) world =
             character.SetCharacterActivityState NoActivity world
 
         static let runCharacterActivity newActivity character world =
             match newActivity with
-            | Action newActionDescriptor -> runCharacterAction newActionDescriptor character world
+            | Action newActionDescriptor -> startCharacterAction newActionDescriptor character world
             | Navigation newNavigationDescriptor -> runCharacterNavigation newNavigationDescriptor character world
             | NoActivity -> runCharacterNoActivity character world
 
@@ -589,13 +593,15 @@ module GameplayDispatcherModule =
 
         static let tick world =
             let world =
-               if not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Up then handlePlayerInput (DetailInput Upward) world
-               elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Right then handlePlayerInput (DetailInput Rightward) world
-               elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Down then handlePlayerInput (DetailInput Downward) world
-               elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Left then handlePlayerInput (DetailInput Leftward) world
-               elif (anyTurnsInProgress world) then continuePlayerTurn world
-               elif not (Simulants.HudSaveGame.GetEnabled world) then Simulants.HudSaveGame.SetEnabled true world
-               else world
+                if not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Up then handlePlayerInput (DetailInput Upward) world
+                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Right then handlePlayerInput (DetailInput Rightward) world
+                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Down then handlePlayerInput (DetailInput Downward) world
+                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Left then handlePlayerInput (DetailInput Leftward) world
+                elif (anyTurnsInProgress world) then continuePlayerTurn world
+                elif not (Simulants.HudSaveGame.GetEnabled world) then Simulants.HudSaveGame.SetEnabled true world
+                else world
+            let world = continueCharacterAction Simulants.Player world
+            let world = updateEnemiesBy continueCharacterAction world
             world
 
         static member Properties =
