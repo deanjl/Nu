@@ -536,27 +536,17 @@ module GameplayDispatcherModule =
             // fin
             world
 
-        static let tryRunPlayerTurn playerInput world =
-            let chain = chain {
-                do! Chain.update $ Simulants.HudSaveGame.SetEnabled false
-                do! Chain.loop 0 inc (fun i world -> i = 0 || anyTurnsInProgress world) $ fun i -> chain {
-                    let! evt = Chain.next
-                    do! chain {
-                        let! playerTurn =
-                            if i = 0
-                            then Chain.getBy (determinePlayerTurnFromInput playerInput)
-                            else Chain.getBy determinePlayerTurn
-                        do! Chain.update (runPlayerTurn playerTurn) }
-                        }
-                do! Chain.update (Simulants.HudSaveGame.SetEnabled true) }
-            let stream =
-                Stream.until
-                    (Stream.make Simulants.Gameplay.DeselectEvent)
-                    (Stream.make Simulants.Gameplay.UpdateEvent)
-            Chain.runAssumingCascade chain stream world |> snd
+        static let startPlayerTurn playerInput world =
+            let world = Simulants.HudSaveGame.SetEnabled false world
+            let playerTurn = determinePlayerTurnFromInput playerInput world
+            runPlayerTurn playerTurn world
+
+        static let continuePlayerTurn world =
+            let playerTurn = determinePlayerTurn world
+            runPlayerTurn playerTurn world
 
         static let handlePlayerInput playerInput world =
-            if not (anyTurnsInProgress world) then tryRunPlayerTurn playerInput world else world
+            if not (anyTurnsInProgress world) then startPlayerTurn playerInput world else world
 
         static let runNewGameplay world =
 
@@ -599,10 +589,12 @@ module GameplayDispatcherModule =
 
         static let tick world =
             let world =
-               if KeyboardState.isKeyDown KeyboardKey.Up then handlePlayerInput (DetailInput Upward) world
-               elif KeyboardState.isKeyDown KeyboardKey.Right then handlePlayerInput (DetailInput Rightward) world
-               elif KeyboardState.isKeyDown KeyboardKey.Down then handlePlayerInput (DetailInput Downward) world
-               elif KeyboardState.isKeyDown KeyboardKey.Left then handlePlayerInput (DetailInput Leftward) world
+               if not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Up then handlePlayerInput (DetailInput Upward) world
+               elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Right then handlePlayerInput (DetailInput Rightward) world
+               elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Down then handlePlayerInput (DetailInput Downward) world
+               elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Left then handlePlayerInput (DetailInput Leftward) world
+               elif (anyTurnsInProgress world) then continuePlayerTurn world
+               elif not (Simulants.HudSaveGame.GetEnabled world) then Simulants.HudSaveGame.SetEnabled true world
                else world
             world
 
