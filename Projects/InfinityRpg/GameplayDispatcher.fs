@@ -217,13 +217,14 @@ module GameplayDispatcherModule =
         static let updateCharacterByWalkState walkState navigationDescriptor (character : Entity) world =
             match walkState with
             | WalkFinished ->
+                let lastOrigin = navigationDescriptor.WalkDescriptor.WalkOriginM
                 match navigationDescriptor.NavigationPathOpt with
                 | Some [] -> failwith "NavigationPath should never be empty here."
                 | Some (_ :: []) -> character.SetCharacterActivityState NoActivity world
                 | Some (currentNode :: navigationPath) ->
                     let walkDirection = vmtod ((List.head navigationPath).PositionM - currentNode.PositionM)
                     let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = vftovm (character.GetPosition world) }
-                    let navigationDescriptor = { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath }
+                    let navigationDescriptor = { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath; LastWalkOriginM = lastOrigin }
                     character.SetCharacterActivityState (Navigation navigationDescriptor) world
                 | None -> character.SetCharacterActivityState NoActivity world
             | WalkContinuing -> world
@@ -252,8 +253,9 @@ module GameplayDispatcherModule =
             | NoActivity ->
                 let openDirections = OccupationMap.getOpenDirectionsAtPositionM (vftovm (character.GetPosition world)) occupationMap
                 if Set.contains direction openDirections then
-                    let walkDescriptor = { WalkDirection = direction; WalkOriginM = vftovm (character.GetPosition world) }
-                    NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = None }
+                    let characterPositionM = vftovm (character.GetPosition world)
+                    let walkDescriptor = { WalkDirection = direction; WalkOriginM = characterPositionM }
+                    NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = None; LastWalkOriginM = characterPositionM }
                 else
                     let targetPosition = character.GetPosition world + dtovf direction
                     if Seq.exists (fun (opponent : Entity) -> opponent.GetPosition world = targetPosition) opponents
@@ -270,7 +272,7 @@ module GameplayDispatcherModule =
                         let characterPositionM = vftovm (character.GetPosition world)
                         let walkDirection = vmtod ((List.head navigationPath).PositionM - characterPositionM)
                         let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = characterPositionM }
-                        NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath }
+                        NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath; LastWalkOriginM = characterPositionM }
                 | None ->
                     let targetPosition = touchPosition |> vftovm |> vmtovf
                     if Math.arePositionsAdjacent targetPosition (character.GetPosition world) then
@@ -427,26 +429,23 @@ module GameplayDispatcherModule =
                 else world
             else world
 
-        static let runCharacterNavigation newNavigationDescriptor (character : Entity) world =
-            let chain = chain {
-                do! Chain.update (character.SetCharacterActivityState (Navigation newNavigationDescriptor))
-                do! Chain.during (fun world ->
-                    match character.GetCharacterActivityState world with
-                    | Navigation navigationDescriptor -> newNavigationDescriptor.WalkDescriptor.WalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM
+        static let startCharacterNavigation newNavigationDescriptor (character : Entity) world =
+            let newNavigationDescriptor = {newNavigationDescriptor with LastWalkOriginM = newNavigationDescriptor.WalkDescriptor.WalkOriginM}
+            character.SetCharacterActivityState (Navigation newNavigationDescriptor) world                
+
+        static let continueCharacterNavigation (character : Entity) world =
+            let navigating =
+                match character.GetCharacterActivityState world with
+                    | Navigation navigationDescriptor -> navigationDescriptor.LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM
                     | Action _ -> false
-                    | NoActivity -> false) $ chain {
-                    do! Chain.update $ fun world ->
-                        let navigationDescriptor =
-                            match character.GetCharacterActivityState world with
-                            | Navigation navigationDescriptor -> navigationDescriptor
-                            | _ -> failwithumf ()
-                        updateCharacterByNavigation navigationDescriptor character world
-                    do! Chain.pass }}
-            let stream =
-                Stream.until
-                    (Stream.make Simulants.Gameplay.DeselectEvent)
-                    (Stream.make Simulants.Gameplay.UpdateEvent)
-            Chain.runAssumingCascade chain stream world |> snd
+                    | NoActivity -> false
+            if not navigating then world
+            else
+                let navigationDescriptor =
+                    match character.GetCharacterActivityState world with
+                    | Navigation navigationDescriptor -> navigationDescriptor
+                    | _ -> failwithumf ()
+                updateCharacterByNavigation navigationDescriptor character world
 
         static let startCharacterAction newActionDescriptor (character : Entity) world =
             // NOTE: currently just implements attack
@@ -468,7 +467,7 @@ module GameplayDispatcherModule =
         static let runCharacterActivity newActivity character world =
             match newActivity with
             | Action newActionDescriptor -> startCharacterAction newActionDescriptor character world
-            | Navigation newNavigationDescriptor -> runCharacterNavigation newNavigationDescriptor character world
+            | Navigation newNavigationDescriptor -> startCharacterNavigation newNavigationDescriptor character world
             | NoActivity -> runCharacterNoActivity character world
 
         static let tryRunEnemyActivity world newActivity (enemy : Entity) =
@@ -602,6 +601,8 @@ module GameplayDispatcherModule =
                 else world
             let world = continueCharacterAction Simulants.Player world
             let world = updateEnemiesBy continueCharacterAction world
+            let world = continueCharacterNavigation Simulants.Player world
+            let world = updateEnemiesBy continueCharacterNavigation world
             world
 
         static member Properties =
