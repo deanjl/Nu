@@ -20,6 +20,28 @@ open TiledSharp
 open Prime
 open Nu
 
+/// Describes a Tiled tile.
+type [<StructuralEquality; NoComparison>] TileDescriptor =
+    { Tile : TmxLayerTile
+      I : int
+      J : int
+      Gid : int
+      GidPosition : int
+      Gid2 : Vector2i
+      TileSetTileOpt : TmxTilesetTile option
+      TilePosition : Vector2i }
+
+/// Describes a Tiled tile map.
+type [<StructuralEquality; NoComparison>] TileMapDescriptor =
+    { TileMap : TmxMap
+      TileSizeI : Vector2i
+      TileSizeF : Vector2
+      TileMapSizeM : Vector2i
+      TileMapSizeI : Vector2i
+      TileMapSizeF : Vector2
+      TileSet : TmxTileset
+      TileSetSize : Vector2i }
+
 /// The type of a screen transition. Incoming means a new screen is being shown, and Outgoing
 /// means an existing screen being hidden.
 type TransitionType =
@@ -33,60 +55,40 @@ type TransitionState =
     | IdlingState
 
 /// Describes one of a screen's transition processes.
-type [<CLIMutable; StructuralEquality; NoComparison>] Transition =
+type [<StructuralEquality; NoComparison; CLIMutable>] Transition =
     { TransitionType : TransitionType
       TransitionLifetime : int64
-      DissolveImageOpt : Image AssetTag option }
+      DissolveImageOpt : Image AssetTag option
+      SongOpt : SongDescriptor option }
 
     /// Make a screen transition.
     static member make transitionType =
         { TransitionType = transitionType
           TransitionLifetime = 0L
-          DissolveImageOpt = None }
+          DissolveImageOpt = None
+          SongOpt = None }
 
 /// Describes the behavior of the screen dissolving algorithm.
-type [<StructuralEquality; NoComparison>] DissolveData =
+type [<StructuralEquality; NoComparison>] DissolveDescriptor =
     { IncomingTime : int64
       OutgoingTime : int64
       DissolveImage : Image AssetTag }
 
 /// Describes the behavior of the screen splash algorithm.
-type [<StructuralEquality; NoComparison>] SplashData =
-    { DissolveData : DissolveData
+type [<StructuralEquality; NoComparison>] SplashDescriptor =
+    { DissolveDescriptor : DissolveDescriptor
       IdlingTime : int64
       SplashImage : Image AssetTag }
 
-/// The data needed to describe a Tiled tile map.
-type [<StructuralEquality; NoComparison>] TileMapData =
-    { Map : TmxMap
-      MapSize : Vector2i
-      TileSize : Vector2i
-      TileSizeF : Vector2
-      TileMapSize : Vector2i
-      TileMapSizeF : Vector2
-      TileSet : TmxTileset
-      TileSetSize : Vector2i }
-
-/// The data needed to describe a Tiled tile.
-type [<StructuralEquality; NoComparison>] TileData =
-    { Tile : TmxLayerTile
-      I : int
-      J : int
-      Gid : int
-      GidPosition : int
-      Gid2 : Vector2i
-      TileSetTileOpt : TmxTilesetTile option
-      TilePosition : Vector2i }
-
 /// Describes the shape of a desired overlay.
-type OverlayNameDescriptor =
+type [<StructuralEquality; StructuralComparison>] OverlayNameDescriptor =
     | NoOverlay
     | RoutedOverlay
     | DefaultOverlay
     | ExplicitOverlay of string
 
 /// Describes the origin of a piece of simulnat content.
-type [<NoComparison>] ContentOrigin =
+type [<StructuralEquality; NoComparison>] ContentOrigin =
     | SimulantOrigin of Simulant
     | FacetOrigin of Simulant * string
 
@@ -107,7 +109,7 @@ type [<AttributeUsage (AttributeTargets.Method); AllowNullLiteral>]
     new () = FunctionBindingAttribute ""
 
 /// Configuration parameters for Nu.
-type NuConfig =
+type [<StructuralEquality; NoComparison>] NuConfig =
     { RunSynchronously : bool }
 
     /// The default configuration for Nu.
@@ -115,7 +117,7 @@ type NuConfig =
         { RunSynchronously = false }
 
 /// Configuration parameters for the world.
-type WorldConfig =
+type [<StructuralEquality; NoComparison>] WorldConfig =
     { NuConfig : NuConfig
       SdlConfig : SdlConfig
       TickRate : int64
@@ -154,6 +156,24 @@ module WorldTypes =
     /// The data for a change in the world's ambient state.
     and [<StructuralEquality; NoComparison>] AmbientChangeData = 
         { OldWorldWithOldState : World }
+
+    /// Store origination information about a simulant physics body.
+    and [<StructuralEquality; NoComparison>] BodySource =
+        { Entity : Entity
+          BodyId : Guid }
+        static member internal fromInternal (internal_ : BodySourceInternal) =
+            { Entity = internal_.Simulant :?> Entity
+              BodyId = internal_.BodyId }
+    
+    /// Store origination information about a simulant physics shape body.
+    and [<StructuralEquality; NoComparison>] BodyShapeSource =
+        { Entity : Entity
+          BodyId : Guid
+          BodyShapeId : Guid }
+        static member internal fromInternal (internal_ : BodyShapeSourceInternal) =
+            { Entity = internal_.Simulant :?> Entity
+              BodyId = internal_.BodyId
+              BodyShapeId = internal_.ShapeId }
 
     /// Describes the information needed to sort simulants.
     /// OPTIMIZATION: carries related simulant to avoid GC pressure.
@@ -385,7 +405,7 @@ module WorldTypes =
     /// type, and it's public _only_ to make [<CLIMutable>] work.
     /// NOTE: The properties here have duplicated representations in WorldModuleGame that exist
     /// for performance that must be kept in sync.
-    and [<CLIMutable; NoEquality; NoComparison>] GameState =
+    and [<NoEquality; NoComparison; CLIMutable>] GameState =
         { Xtension : Xtension
           Dispatcher : GameDispatcher
           OmniScreenOpt : Screen option
@@ -450,7 +470,7 @@ module WorldTypes =
     /// type, and it's public _only_ to make [<CLIMutable>] work.
     /// NOTE: The properties here have duplicated representations in WorldModuleScreen that exist
     /// for performance that must be kept in sync.
-    and [<CLIMutable; NoEquality; NoComparison>] ScreenState =
+    and [<NoEquality; NoComparison; CLIMutable>] ScreenState =
         { Dispatcher : ScreenDispatcher
           Xtension : Xtension
           TransitionState : TransitionState
@@ -516,7 +536,7 @@ module WorldTypes =
     /// type, and it's public _only_ to make [<CLIMutable>] work.
     /// NOTE: The properties here have duplicated representations in WorldModuleLayer that exist
     /// for performance that must be kept in sync.
-    and [<CLIMutable; NoEquality; NoComparison>] LayerState =
+    and [<NoEquality; NoComparison; CLIMutable>] LayerState =
         { Dispatcher : LayerDispatcher
           Xtension : Xtension
           Depth : single
@@ -576,7 +596,7 @@ module WorldTypes =
 
     /// A prototype component for an entity-component-system implementation of Nu's backend.
     /// See here for the related C++ prototype - https://github.com/bryanedds/ax/blob/5bb53b6985ee1cd07f869cb88ed4e333749fd118/src/hpp/ax/impl/system.hpp#L55-L64
-    and [<Struct; CLIMutable; NoEquality; NoComparison>] EntityCore =
+    and [<NoEquality; NoComparison; CLIMutable; Struct>] EntityCore =
         { mutable Transform : Transform
           mutable StaticData : DesignerProperty
           mutable Overflow : Vector2
@@ -585,7 +605,7 @@ module WorldTypes =
     /// Hosts the ongoing state of an entity. The end-user of this engine should never touch this
     /// type, and it's public _only_ to make [<CLIMutable>] work.
     /// OPTIMIZATION: Booleans are packed into the Flags field.
-    and [<CLIMutable; NoEquality; NoComparison>] EntityState =
+    and [<NoEquality; NoComparison; CLIMutable>] EntityState =
         { // cache line begin
           Dispatcher : EntityDispatcher
           mutable Facets : Facet array
@@ -966,7 +986,7 @@ module WorldTypes =
     /// 
     /// I would prefer this type to be inlined in World, but it has been extracted to its own white-box
     /// type for efficiency reasons.
-    and [<ReferenceEquality>] internal Dispatchers =
+    and [<ReferenceEquality; NoComparison>] internal Dispatchers =
         { GameDispatchers : Map<string, GameDispatcher>
           ScreenDispatchers : Map<string, ScreenDispatcher>
           LayerDispatchers : Map<string, LayerDispatcher>
@@ -987,7 +1007,7 @@ module WorldTypes =
     ///
     /// NOTE: this would be better as private, but there is just too much code to fit in this file
     /// for that.
-    and [<ReferenceEquality>] World =
+    and [<ReferenceEquality; NoComparison>] World =
         internal
             { // cache line begin
               EventSystemDelegate : World EventSystemDelegate

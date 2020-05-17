@@ -14,24 +14,24 @@ open Nu
 /// Identifies a target whose body can be found in the physics engine.
 type [<CustomEquality; NoComparison>] PhysicsId =
     { SourceId : Guid
-      BodyId : Guid }
+      CorrelationId : Guid }
 
     /// The invalid physics id.
     static member InvalidId =
-        { SourceId = Constants.Engine.InvalidId; BodyId = Constants.Engine.InvalidId }
+        { SourceId = Constants.Engine.InvalidId; CorrelationId = Constants.Engine.InvalidId }
 
     /// Hash a PhysicsId.
     static member hash pid =
-        pid.SourceId.GetHashCode () ^^^ pid.BodyId.GetHashCode ()
+        pid.SourceId.GetHashCode () ^^^ pid.CorrelationId.GetHashCode ()
 
     /// Equate PhysicsIds.
     static member equals pid pid2 =
         pid.SourceId.Equals pid2.SourceId &&
-        pid.BodyId.Equals pid2.BodyId
+        pid.CorrelationId.Equals pid2.CorrelationId
 
     /// Make a PhysicsId for an external source.
     static member make (sourceId : Guid) =
-        { SourceId = sourceId; BodyId = Gen.id }
+        { SourceId = sourceId; CorrelationId = Gen.id }
 
     interface PhysicsId IEquatable with
         member this.Equals that =
@@ -46,54 +46,80 @@ type [<CustomEquality; NoComparison>] PhysicsId =
         PhysicsId.hash this
 
 /// Store origination information about a simulant physics body.
-type [<NoComparison>] BodySource =
-    { SourceSimulant : Simulant
-      SourceBodyId : Guid }
+type [<StructuralEquality; NoComparison>] BodySourceInternal =
+    { Simulant : Simulant
+      BodyId : Guid }
+
+/// Store origination information about a simulant physics shape body.
+type [<StructuralEquality; NoComparison>] BodyShapeSourceInternal =
+    { Simulant : Simulant
+      BodyId : Guid
+      ShapeId : Guid }
+
+/// Describes body shape-specific properties.
+type [<StructuralEquality; NoComparison>] BodyShapeProperties =
+    { BodyShapeId : Guid
+      FrictionOpt : single option
+      RestitutionOpt : single option
+      CollisionCategoriesOpt : int option
+      CollisionMaskOpt : int option
+      IsSensorOpt : bool option }
+
+[<RequireQualifiedAccess>]
+module BodyShapeProperties =
+
+    let empty =
+        { BodyShapeId = Gen.idEmpty
+          FrictionOpt = None
+          RestitutionOpt = None
+          CollisionCategoriesOpt = None
+          CollisionMaskOpt = None
+          IsSensorOpt = None }
 
 /// The shape of a physics body box.
 type [<StructuralEquality; NoComparison>] BodyBox =
     { Extent : Vector2 // TODO: P1: consider if this should instead be size?
-      Center : Vector2 } // TODO: P1: consider if these should be called Offset instead?
+      Center : Vector2 // TODO: P1: consider if these should be called Offset instead?
+      PropertiesOpt : BodyShapeProperties option }
 
 /// The shape of a physics body circle.
 type [<StructuralEquality; NoComparison>] BodyCircle =
     { Radius : single
-      Center : Vector2 }
+      Center : Vector2
+      PropertiesOpt : BodyShapeProperties option }
 
 /// The shape of a physics body capsule.
 type [<StructuralEquality; NoComparison>] BodyCapsule =
     { Height : single
       Radius : single
-      Center : Vector2 }
+      Center : Vector2
+      PropertiesOpt : BodyShapeProperties option }
 
 /// The shape of a physics body polygon.
 type [<StructuralEquality; NoComparison>] BodyPolygon =
     { Vertices : Vector2 array
-      Center : Vector2 }
+      Center : Vector2
+      PropertiesOpt : BodyShapeProperties option }
 
 /// The shape of a physics body.
 [<Syntax
-    ("BodyBox BodyCircle BodyCapsule BodyPolygon", "", "", "", "",
+    ("BodyEmpty BodyBox BodyCircle BodyCapsule BodyPolygon BodyShapes", "", "", "", "",
      Constants.PrettyPrinter.DefaultThresholdMin,
      Constants.PrettyPrinter.DetailedThresholdMax)>]
 type [<StructuralEquality; NoComparison>] BodyShape =
+    | BodyEmpty
     | BodyBox of BodyBox
     | BodyCircle of BodyCircle
     | BodyCapsule of BodyCapsule
     | BodyPolygon of BodyPolygon
-
-    static member getCenter body =
-        match body with
-        | BodyBox box -> box.Center
-        | BodyCircle circle -> circle.Center
-        | BodyCapsule capsule -> capsule.Center
-        | BodyPolygon polygon -> polygon.Center
+    | BodyShapes of BodyShape list
 
 /// The type of a physics body; Static, Kinematic, or Dynamic.
 [<Syntax
     ("Static Kinematic Dynamic", "", "", "", "",
      Constants.PrettyPrinter.DefaultThresholdMin,
-     Constants.PrettyPrinter.SimpleThresholdMax)>]
+     Constants.PrettyPrinter.SimpleThresholdMax);
+     StructuralEquality; StructuralComparison>]
 type BodyType =
     | Static
     | Kinematic
@@ -104,7 +130,7 @@ type [<StructuralEquality; NoComparison>] BodyProperties =
     { BodyId : Guid
       Position : Vector2
       Rotation : single
-      Shape : BodyShape
+      BodyShape : BodyShape
       BodyType : BodyType
       Awake : bool
       Enabled : bool
@@ -122,11 +148,14 @@ type [<StructuralEquality; NoComparison>] BodyProperties =
       IsBullet : bool
       IsSensor : bool }
 
-    static member empty =
-        { BodyId = Guid.Empty
+[<RequireQualifiedAccess>]
+module BodyProperties =
+
+    let empty =
+        { BodyId = Gen.idEmpty
           Position = Vector2.Zero
           Rotation = 0.0f
-          Shape = BodyBox { Extent = Vector2 (0.5f, 0.5f); Center = Vector2.Zero }
+          BodyShape = BodyEmpty
           BodyType = Dynamic
           Awake = true
           Enabled = true
@@ -143,6 +172,101 @@ type [<StructuralEquality; NoComparison>] BodyProperties =
           CollisionMask = -1
           IsBullet = false
           IsSensor = false }
+
+type [<StructuralEquality; NoComparison>] JointAngle =
+    { TargetId : PhysicsId
+      TargetId2 : PhysicsId
+      Anchor : Vector2
+      Anchor2 : Vector2
+      TargetAngle : single
+      Softness : single }
+
+type [<StructuralEquality; NoComparison>] JointDistance =
+    { TargetId : PhysicsId
+      TargetId2 : PhysicsId
+      Anchor : Vector2
+      Anchor2 : Vector2
+      Length : single
+      Frequency : single }
+
+type [<StructuralEquality; NoComparison>] JointFriction =
+    { TargetId : PhysicsId
+      TargetId2 : PhysicsId
+      Anchor : Vector2
+      Anchor2 : Vector2 }
+
+type [<StructuralEquality; NoComparison>] JointGear =
+    { TargetId : PhysicsId
+      TargetId2 : PhysicsId
+      Anchor : Vector2
+      Anchor2 : Vector2 }
+
+type [<StructuralEquality; NoComparison>] JointMotor =
+    { TargetId : PhysicsId
+      TargetId2 : PhysicsId
+      Anchor : Vector2
+      Anchor2 : Vector2 }
+
+type [<StructuralEquality; NoComparison>] JointPrismatic =
+    { TargetId : PhysicsId
+      TargetId2 : PhysicsId
+      Anchor : Vector2
+      Anchor2 : Vector2 }
+
+type [<StructuralEquality; NoComparison>] JointPulley =
+    { TargetId : PhysicsId
+      TargetId2 : PhysicsId
+      Anchor : Vector2
+      Anchor2 : Vector2 }
+
+type [<StructuralEquality; NoComparison>] JointRevolute =
+    { TargetId : PhysicsId
+      TargetId2 : PhysicsId
+      Anchor : Vector2
+      Anchor2 : Vector2 }
+
+type [<StructuralEquality; NoComparison>] JointRope =
+    { TargetId : PhysicsId
+      TargetId2 : PhysicsId
+      Anchor : Vector2
+      Anchor2 : Vector2 }
+
+type [<StructuralEquality; NoComparison>] JointWheel =
+    { TargetId : PhysicsId
+      TargetId2 : PhysicsId
+      Anchor : Vector2
+      Anchor2 : Vector2 }
+
+/// A joint on physics bodies.
+[<Syntax
+    ("JointAngle JointDistance JointFriction JointGear JointMotor JointPrismatic JointPulley JointRevolute JointRope JointWheel",
+     "", "", "", "",
+     Constants.PrettyPrinter.DefaultThresholdMin,
+     Constants.PrettyPrinter.DetailedThresholdMax);
+     StructuralEquality; NoComparison>]
+type JointDevice =
+    | JointEmpty
+    | JointAngle of JointAngle
+    | JointDistance of JointDistance
+    | JointFriction of JointFriction
+    | JointGear of JointGear
+    | JointMotor of JointMotor
+    | JointPrismatic of JointPrismatic
+    | JointPulley of JointPulley
+    | JointRevolute of JointRevolute
+    | JointRope of JointRope
+    | JointWheel of JointWheel
+
+type [<StructuralEquality; NoComparison>] JointProperties =
+    { JointId : Guid
+      JointDevice : JointDevice }
+
+[<RequireQualifiedAccess>]
+module JointProperties =
+
+    let empty =
+        { JointId = Gen.idEmpty
+          JointDevice = JointEmpty }
 
 /// A message to the physics system to create a body.
 type [<StructuralEquality; NoComparison>] CreateBodyMessage =
@@ -162,6 +286,26 @@ type [<StructuralEquality; NoComparison>] DestroyBodyMessage =
 
 /// A message to the physics system to destroy multiple bodies.
 type [<StructuralEquality; NoComparison>] DestroyBodiesMessage =
+    { PhysicsIds : PhysicsId list }
+
+/// A message to the physics system to create a joint.
+type [<StructuralEquality; NoComparison>] CreateJointMessage =
+    { SourceSimulant : Simulant
+      SourceId : Guid
+      JointProperties : JointProperties }
+
+/// A message to the physics system to create multiple joints.
+type [<StructuralEquality; NoComparison>] CreateJointsMessage =
+    { SourceSimulant : Simulant
+      SourceId : Guid
+      JointsProperties : JointProperties list }
+
+/// A message to the physics system to destroy a joint.
+type [<StructuralEquality; NoComparison>] DestroyJointMessage =
+    { PhysicsId : PhysicsId }
+
+/// A message to the physics system to destroy multiple joints.
+type [<StructuralEquality; NoComparison>] DestroyJointsMessage =
     { PhysicsIds : PhysicsId list }
 
 /// A message to the physics system to destroy a body.
@@ -201,19 +345,27 @@ type [<StructuralEquality; NoComparison>] ApplyBodyForceMessage =
 
 /// A message from the physics system describing a body collision that took place.
 type [<StructuralEquality; NoComparison>] BodyCollisionMessage =
-    { BodySource : BodySource
-      BodySource2 : BodySource
+    { BodyShapeSource : BodyShapeSourceInternal
+      BodyShapeSource2 : BodyShapeSourceInternal
       Normal : Vector2
       Speed : single }
 
+/// A message from the physics system describing a body separation that took place.
+type [<StructuralEquality; NoComparison>] BodySeparationMessage =
+    { BodyShapeSource : BodyShapeSourceInternal
+      BodyShapeSource2 : BodyShapeSourceInternal }
+
 /// A message from the physics system describing the updated transform of a body.
 type [<StructuralEquality; NoComparison>] BodyTransformMessage =
-    { BodySource : BodySource
+    { BodySource : BodySourceInternal
       Position : Vector2
       Rotation : single }
 
 /// Tracks physics bodies by their PhysicsIds.
 type BodyDictionary = Dictionary<PhysicsId, Dynamics.Body>
+
+/// Tracks physics joints by their PhysicsIds.
+type JointDictionary = Dictionary<PhysicsId, Dynamics.Joints.Joint>
 
 /// A message to the physics system.
 type [<StructuralEquality; NoComparison>] PhysicsMessage =
@@ -221,6 +373,10 @@ type [<StructuralEquality; NoComparison>] PhysicsMessage =
     | CreateBodiesMessage of CreateBodiesMessage
     | DestroyBodyMessage of DestroyBodyMessage
     | DestroyBodiesMessage of DestroyBodiesMessage
+    | CreateJointMessage of CreateJointMessage
+    | CreateJointsMessage of CreateJointsMessage
+    | DestroyJointMessage of DestroyJointMessage
+    | DestroyJointsMessage of DestroyJointsMessage
     | SetBodyPositionMessage of SetBodyPositionMessage
     | SetBodyRotationMessage of SetBodyRotationMessage
     | SetBodyAngularVelocityMessage of SetBodyAngularVelocityMessage
@@ -234,6 +390,7 @@ type [<StructuralEquality; NoComparison>] PhysicsMessage =
 /// A message from the physics system.
 type [<StructuralEquality; NoComparison>] IntegrationMessage =
     | BodyCollisionMessage of BodyCollisionMessage
+    | BodySeparationMessage of BodySeparationMessage
     | BodyTransformMessage of BodyTransformMessage
 
 /// Represents a physics engine in Nu.
@@ -262,7 +419,7 @@ type PhysicsEngine =
     abstract Integrate : int64 -> PhysicsMessage UList -> IntegrationMessage List
 
 /// The mock implementation of PhysicsEngine.
-type MockPhysicsEngine =
+type [<ReferenceEquality; NoComparison>] MockPhysicsEngine =
     private { MockPhysicsEngine : unit }
     static member make () = { MockPhysicsEngine = () }
     interface PhysicsEngine with
@@ -279,10 +436,11 @@ type MockPhysicsEngine =
         member physicsEngine.Integrate _ _ = List<IntegrationMessage> ()
 
 /// The Farseer implementation of PhysicsEngine.
-type [<ReferenceEquality>] FarseerPhysicsEngine =
+type [<ReferenceEquality; NoComparison>] FarseerPhysicsEngine =
     private
         { PhysicsContext : Dynamics.World
           Bodies : BodyDictionary
+          Joints : JointDictionary
           PhysicsMessages : PhysicsMessage UList
           IntegrationMessages : IntegrationMessage List
           mutable RebuildingHack : bool }
@@ -314,18 +472,24 @@ type [<ReferenceEquality>] FarseerPhysicsEngine =
         | Dynamic -> Dynamics.BodyType.Dynamic
 
     static member private handleCollision
-        physicsEngine (fixture : Dynamics.Fixture) (fixture2 : Dynamics.Fixture) (contact : Dynamics.Contacts.Contact) =
-        let sourceBody = fixture.Body.UserData :?> BodySource
-        let sourceBody2 = fixture2.Body.UserData :?> BodySource
+        physicsEngine (bodyShape : Dynamics.Fixture) (bodyShape2 : Dynamics.Fixture) (contact : Dynamics.Contacts.Contact) =
         let normal = fst (contact.GetWorldManifold ())
         let bodyCollisionMessage =
-            { BodySource = sourceBody
-              BodySource2 = sourceBody2
+            { BodyShapeSource = bodyShape.UserData :?> BodyShapeSourceInternal
+              BodyShapeSource2 = bodyShape2.UserData :?> BodyShapeSourceInternal
               Normal = Vector2 (normal.X, normal.Y)
               Speed = contact.TangentSpeed * Constants.Physics.PhysicsToPixelRatio }
         let integrationMessage = BodyCollisionMessage bodyCollisionMessage
         physicsEngine.IntegrationMessages.Add integrationMessage
         true
+
+    static member private handleSeparation
+        physicsEngine (bodyShape : Dynamics.Fixture) (bodyShape2 : Dynamics.Fixture) =
+        let bodySeparationMessage =
+            { BodyShapeSource = bodyShape.UserData :?> BodyShapeSourceInternal
+              BodyShapeSource2 = bodyShape2.UserData :?> BodyShapeSourceInternal }
+        let integrationMessage = BodySeparationMessage bodySeparationMessage
+        physicsEngine.IntegrationMessages.Add integrationMessage
 
     static member private getBodyContacts physicsId physicsEngine =
         let body = physicsEngine.Bodies.[physicsId]
@@ -335,6 +499,14 @@ type [<ReferenceEquality>] FarseerPhysicsEngine =
             contacts.Add current.Contact
             current <- current.Next
         Array.ofSeq contacts
+
+    static member private configureBodyShapeProperties (bodyShapeProperties : BodyShapeProperties) (bodyShape : Fixture) =
+        match bodyShapeProperties.FrictionOpt with Some f -> bodyShape.Friction <- f | None -> ()
+        match bodyShapeProperties.RestitutionOpt with Some r -> bodyShape.Restitution <- r | None -> ()
+        match bodyShapeProperties.CollisionCategoriesOpt with Some cc -> bodyShape.CollisionCategories <- enum<Category> cc | None -> ()
+        match bodyShapeProperties.CollisionMaskOpt with Some cm -> bodyShape.CollidesWith <- enum<Category> cm | None -> ()
+        match bodyShapeProperties.IsSensorOpt with Some isSensor -> bodyShape.IsSensor <- isSensor | None -> ()
+        bodyShape
 
     static member private configureBodyProperties (bodyProperties : BodyProperties) (body : Body) =
         body.Awake <- bodyProperties.Awake
@@ -354,92 +526,142 @@ type [<ReferenceEquality>] FarseerPhysicsEngine =
         body.IsSensor <- bodyProperties.IsSensor
         body.SleepingAllowed <- true
 
-    static member private createBoxBody (bodySource : BodySource) bodyProperties bodyBox physicsEngine =
-        let body =
-            Factories.BodyFactory.CreateRectangle
-                (physicsEngine.PhysicsContext,
-                 FarseerPhysicsEngine.toPhysicsPolygonDiameter (bodyBox.Extent.X * 2.0f),
+    static member private attachBoxBody sourceSimulant bodyDensity (bodyBox : BodyBox) bodyId body =
+        let bodyShapeSource =
+            { Simulant = sourceSimulant
+              BodyId = bodyId
+              ShapeId = match bodyBox.PropertiesOpt with Some p -> p.BodyShapeId | None -> Gen.idEmpty }
+        let bodyShape =
+            Factories.FixtureFactory.AttachRectangle
+                (FarseerPhysicsEngine.toPhysicsPolygonDiameter (bodyBox.Extent.X * 2.0f),
                  FarseerPhysicsEngine.toPhysicsPolygonDiameter (bodyBox.Extent.Y * 2.0f),
-                 bodyProperties.Density,
-                 FarseerPhysicsEngine.toPhysicsV2 (bodyProperties.Position + bodyBox.Center),
-                 0.0f,
-                 FarseerPhysicsEngine.toPhysicsBodyType bodyProperties.BodyType,
-                 bodySource) // BUG: Farseer doesn't seem to set the UserData with the parameter I give it here...
-        body.UserData <- bodySource // BUG: ...so I set it again here :/
-        body
+                 bodyDensity,
+                 FarseerPhysicsEngine.toPhysicsV2 bodyBox.Center,
+                 body,
+                 bodyShapeSource)
+        match bodyBox.PropertiesOpt with
+        | Some bodyShapeProperties -> FarseerPhysicsEngine.configureBodyShapeProperties bodyShapeProperties bodyShape
+        | None -> bodyShape
 
-    static member private createCircleBody (bodySource : BodySource) bodyProperties (bodyCircle : BodyCircle) physicsEngine =
+    static member private attachBodyCircle sourceSimulant bodyDensity (bodyCircle : BodyCircle) bodyId body =
+        let bodyShapeSource =
+            { Simulant = sourceSimulant
+              BodyId = bodyId
+              ShapeId = match bodyCircle.PropertiesOpt with Some p -> p.BodyShapeId | None -> Gen.idEmpty }
+        let bodyShape =
+            Factories.FixtureFactory.AttachCircle
+                (FarseerPhysicsEngine.toPhysicsPolygonRadius bodyCircle.Radius,
+                 bodyDensity,
+                 body,
+                 FarseerPhysicsEngine.toPhysicsV2 bodyCircle.Center,
+                 bodyShapeSource)
+        match bodyCircle.PropertiesOpt with
+        | Some bodyShapeProperties -> FarseerPhysicsEngine.configureBodyShapeProperties bodyShapeProperties bodyShape
+        | None -> bodyShape
+
+    static member private attachBodyCapsule sourceSimulant bodyDensity (bodyCapsule : BodyCapsule) bodyId body =
+        let bodyShapeSource =
+            { Simulant = sourceSimulant
+              BodyId = bodyId
+              ShapeId = match bodyCapsule.PropertiesOpt with Some p -> p.BodyShapeId | None -> Gen.idEmpty }
+        let height = FarseerPhysicsEngine.toPhysicsPolygonDiameter bodyCapsule.Height
+        let endRadius = FarseerPhysicsEngine.toPhysicsPolygonRadius bodyCapsule.Radius
+        let density = bodyDensity
+        let center = FarseerPhysicsEngine.toPhysicsV2 bodyCapsule.Center
+        let rectangle = Common.PolygonTools.CreateRectangle (endRadius * 0.75f, height * 0.5f, center, 0.0f) // scaled in the capsule's box by 0.75f to stop corner sticking
+        let list = List<Common.Vertices> ()
+        list.Add rectangle
+        let bodyShapes = Factories.FixtureFactory.AttachCompoundPolygon (list, density, body, bodyShapeSource)
+        let bodyShapeTop = Factories.FixtureFactory.AttachCircle (endRadius, density, body, Framework.Vector2 (0.0f, height * 0.5f), bodyShapeSource)
+        let bodyShapeBottom = Factories.FixtureFactory.AttachCircle (endRadius, density, body, Framework.Vector2 (0.0f, 0.0f - height * 0.5f), bodyShapeSource)
+        bodyShapes.Add bodyShapeTop
+        bodyShapes.Add bodyShapeBottom
+        match bodyCapsule.PropertiesOpt with
+        | Some bodyShapeProperties ->
+            for bodyShape in bodyShapes do
+                FarseerPhysicsEngine.configureBodyShapeProperties bodyShapeProperties bodyShape |> ignore
+        | None -> ()
+        Array.ofSeq bodyShapes
+
+    static member private attachBodyPolygon sourceSimulant bodyDensity bodyPolygon bodyId body =
+        let bodyShapeSource =
+            { Simulant = sourceSimulant
+              BodyId = bodyId
+              ShapeId = match bodyPolygon.PropertiesOpt with Some p -> p.BodyShapeId | None -> Gen.idEmpty }
+        let vertices =
+            bodyPolygon.Vertices |>
+            Array.map (fun vertex -> vertex + bodyPolygon.Center) |>
+            Array.map FarseerPhysicsEngine.toPhysicsV2
+        let bodyShape =
+            Factories.FixtureFactory.AttachPolygon
+                (FarseerPhysics.Common.Vertices vertices,
+                 bodyDensity,
+                 body,
+                 bodyShapeSource)
+        match bodyPolygon.PropertiesOpt with
+        | Some bodyShapeProperties -> FarseerPhysicsEngine.configureBodyShapeProperties bodyShapeProperties bodyShape
+        | None -> bodyShape
+
+    static member private attachBodyShapes sourceSimulant bodyDensity bodyShapes bodyId body =
+        let list = List () // NOTE: was too lazy to write a fold, so used mutation and left this comment...
+        for bodyShape in bodyShapes do
+            let bodyShapes = FarseerPhysicsEngine.attachBodyShape sourceSimulant bodyDensity bodyShape bodyId body
+            list.AddRange bodyShapes
+        Array.ofSeq list
+
+    static member private attachBodyShape sourceSimulant bodyDensity bodyShape bodyId body =
+        match bodyShape with
+        | BodyEmpty -> [||]
+        | BodyBox bodyBox -> FarseerPhysicsEngine.attachBoxBody sourceSimulant bodyDensity bodyBox bodyId body |> Array.singleton
+        | BodyCircle bodyCircle -> FarseerPhysicsEngine.attachBodyCircle sourceSimulant bodyDensity bodyCircle bodyId body |> Array.singleton
+        | BodyCapsule bodyCapsule -> FarseerPhysicsEngine.attachBodyCapsule sourceSimulant bodyDensity bodyCapsule bodyId body |> Array.ofSeq
+        | BodyPolygon bodyPolygon -> FarseerPhysicsEngine.attachBodyPolygon sourceSimulant bodyDensity bodyPolygon bodyId body |> Array.singleton
+        | BodyShapes bodyShapes -> FarseerPhysicsEngine.attachBodyShapes sourceSimulant bodyDensity bodyShapes bodyId body
+        
+    static member private createBody (createBodyMessage : CreateBodyMessage) physicsEngine =
+
+        // get fields
+        let sourceSimulant = createBodyMessage.SourceSimulant
+        let bodyProperties = createBodyMessage.BodyProperties
+        let bodySource = { Simulant = sourceSimulant; BodyId = bodyProperties.BodyId }
+
+        // make the body
         let body =
-            Factories.BodyFactory.CreateCircle
+            Factories.BodyFactory.CreateBody
                 (physicsEngine.PhysicsContext,
-                 FarseerPhysicsEngine.toPhysicsPolygonRadius bodyCircle.Radius,
-                 bodyProperties.Density,
-                 FarseerPhysicsEngine.toPhysicsV2 (bodyProperties.Position + bodyCircle.Center),
+                 FarseerPhysicsEngine.toPhysicsV2 bodyProperties.Position,
+                 bodyProperties.Rotation,
                  FarseerPhysicsEngine.toPhysicsBodyType bodyProperties.BodyType,
-                 bodySource) // BUG: Farseer doesn't seem to set the UserData with the parameter I give it here...
-        body.UserData <- bodySource // BUG: ...so I set it again here :/
-        body
+                 bodySource)
 
-    static member private createCapsuleBody (bodySource : BodySource) bodyProperties bodyCapsule physicsEngine =
-        let body =
-            Factories.BodyFactory.CreateCapsule
-                (physicsEngine.PhysicsContext,
-                 FarseerPhysicsEngine.toPhysicsPolygonDiameter bodyCapsule.Height,
-                 FarseerPhysicsEngine.toPhysicsPolygonRadius bodyCapsule.Radius,
-                 bodyProperties.Density,
-                 FarseerPhysicsEngine.toPhysicsV2 (bodyProperties.Position + bodyCapsule.Center),
-                 0.0f,
-                 FarseerPhysicsEngine.toPhysicsBodyType bodyProperties.BodyType,
-                 bodySource) // BUG: Farseer doesn't seem to set the UserData with the parameter I give it here...
-        body.UserData <- bodySource // BUG: ...so I set it again here :/
-        // scale in the capsule's box to stop sticking
-        let capsuleBox = body.FixtureList.[0].Shape :?> FarseerPhysics.Collision.Shapes.PolygonShape
-        capsuleBox.Vertices.Scale (Framework.Vector2 (0.75f, 1.0f)) |> ignore
-        body
-
-    static member private createPolygonBody (bodySource : BodySource) bodyProperties bodyPolygon physicsEngine =
-        let body =
-            Factories.BodyFactory.CreatePolygon
-                (physicsEngine.PhysicsContext,
-                 FarseerPhysics.Common.Vertices (Array.map FarseerPhysicsEngine.toPhysicsV2 bodyPolygon.Vertices),
-                 bodyProperties.Density,
-                 FarseerPhysicsEngine.toPhysicsV2 (bodyProperties.Position + bodyPolygon.Center),
-                 0.0f,
-                 FarseerPhysicsEngine.toPhysicsBodyType bodyProperties.BodyType,
-                 bodySource) // BUG: Farseer doesn't seem to set the UserData with the parameter I give it here...
-        body.UserData <- bodySource // BUG: ...so I set it again here :/
-        body
-
-    static member private createBody4 sourceId (source : Simulant) bodyProperties physicsEngine =
-
-        // derive body source
-        let bodySource =
-            { SourceSimulant = source
-              SourceBodyId = bodyProperties.BodyId }
-    
-        // make and configure the body
-        let body =
-            match bodyProperties.Shape with
-            | BodyBox bodyBox -> FarseerPhysicsEngine.createBoxBody bodySource bodyProperties bodyBox physicsEngine
-            | BodyCircle bodyCircle -> FarseerPhysicsEngine.createCircleBody bodySource bodyProperties bodyCircle physicsEngine
-            | BodyCapsule bodyCapsule -> FarseerPhysicsEngine.createCapsuleBody bodySource bodyProperties bodyCapsule physicsEngine
-            | BodyPolygon bodyPolygon -> FarseerPhysicsEngine.createPolygonBody bodySource bodyProperties bodyPolygon physicsEngine
+        // configure body
         FarseerPhysicsEngine.configureBodyProperties bodyProperties body
-        body.add_OnCollision (fun fn fn2 collision -> FarseerPhysicsEngine.handleCollision physicsEngine fn fn2 collision) // NOTE: F# requires us to use an lambda inline here (not sure why)
+
+        // attach body shape
+        FarseerPhysicsEngine.attachBodyShape sourceSimulant bodyProperties.Density bodyProperties.BodyShape bodyProperties.BodyId body |> ignore
+
+        // listen for collisions
+        body.add_OnCollision (fun fn fn2 collision -> FarseerPhysicsEngine.handleCollision physicsEngine fn fn2 collision)
+
+        // listen for collisions
+        body.add_OnSeparation (fun fn fn2 -> FarseerPhysicsEngine.handleSeparation physicsEngine fn fn2)
 
         // attempt to add the body
-        if not (physicsEngine.Bodies.TryAdd ({ SourceId = sourceId; BodyId = bodyProperties.BodyId }, body)) then
+        if not (physicsEngine.Bodies.TryAdd ({ SourceId = createBodyMessage.SourceId; CorrelationId = bodyProperties.BodyId }, body)) then
             Log.debug ("Could not add body via '" + scstring bodyProperties + "'.")
 
     static member private createBodies (createBodiesMessage : CreateBodiesMessage) physicsEngine =
         List.iter
-            (fun bodyProperties -> FarseerPhysicsEngine.createBody4 createBodiesMessage.SourceId createBodiesMessage.SourceSimulant bodyProperties physicsEngine)
+            (fun bodyProperties ->
+                let createBodyMessage =
+                    { SourceSimulant = createBodiesMessage.SourceSimulant
+                      SourceId = createBodiesMessage.SourceId
+                      BodyProperties = bodyProperties }
+                FarseerPhysicsEngine.createBody createBodyMessage physicsEngine)
             createBodiesMessage.BodiesProperties
 
-    static member private createBody (createBodyMessage : CreateBodyMessage) physicsEngine =
-        FarseerPhysicsEngine.createBody4 createBodyMessage.SourceId createBodyMessage.SourceSimulant createBodyMessage.BodyProperties physicsEngine
-
-    static member private destroyBody2 physicsId physicsEngine =
+    static member private destroyBody (destroyBodyMessage : DestroyBodyMessage) physicsEngine =
+        let physicsId = destroyBodyMessage.PhysicsId
         match physicsEngine.Bodies.TryGetValue physicsId with
         | (true, body) ->
             physicsEngine.Bodies.Remove physicsId |> ignore
@@ -448,11 +670,58 @@ type [<ReferenceEquality>] FarseerPhysicsEngine =
             if not physicsEngine.RebuildingHack then
                 Log.debug ("Could not destroy non-existent body with PhysicsId = " + scstring physicsId + "'.")
 
-    static member private destroyBody (destroyBodyMessage : DestroyBodyMessage) physicsEngine =
-        FarseerPhysicsEngine.destroyBody2 destroyBodyMessage.PhysicsId physicsEngine
-
     static member private destroyBodies (destroyBodiesMessage : DestroyBodiesMessage) physicsEngine =
-        List.iter (fun physicsId -> FarseerPhysicsEngine.destroyBody2 physicsId physicsEngine) destroyBodiesMessage.PhysicsIds
+        List.iter
+            (fun physicsId -> FarseerPhysicsEngine.destroyBody { PhysicsId = physicsId } physicsEngine)
+            destroyBodiesMessage.PhysicsIds
+
+    static member private createJoint (createJointMessage : CreateJointMessage) physicsEngine =
+        match createJointMessage.JointProperties.JointDevice with
+        | JointEmpty ->
+            ()
+        | JointAngle jointAngle ->
+            match (physicsEngine.Bodies.TryGetValue jointAngle.TargetId, physicsEngine.Bodies.TryGetValue jointAngle.TargetId2) with
+            | ((true, body), (true, body2)) ->
+                let joint = Factories.JointFactory.CreateAngleJoint (physicsEngine.PhysicsContext, body, body2)
+                joint.TargetAngle <- jointAngle.TargetAngle
+                joint.Softness <- jointAngle.Softness
+            | (_, _) -> Log.debug "Could not set create a joint for one or more non-existent bodies."
+        | JointDistance jointDistance ->
+            match (physicsEngine.Bodies.TryGetValue jointDistance.TargetId, physicsEngine.Bodies.TryGetValue jointDistance.TargetId2) with
+            | ((true, body), (true, body2)) ->
+                let joint = Factories.JointFactory.CreateDistanceJoint (physicsEngine.PhysicsContext, body, body2)
+                joint.LocalAnchorA <- FarseerPhysicsEngine.toPhysicsV2 jointDistance.Anchor
+                joint.LocalAnchorB <- FarseerPhysicsEngine.toPhysicsV2 jointDistance.Anchor2
+                joint.Length <- FarseerPhysicsEngine.toPhysics jointDistance.Length
+                joint.Frequency <- jointDistance.Frequency
+            | (_, _) -> Log.debug "Could not set create a joint for one or more non-existent bodies."
+        | _ -> failwithnie ()
+
+    static member private createJoints (createJointsMessage : CreateJointsMessage) physicsEngine =
+        List.iter
+            (fun jointProperties ->
+                let createJointMessage =
+                    { SourceSimulant = createJointsMessage.SourceSimulant
+                      SourceId = createJointsMessage.SourceId
+                      JointProperties = jointProperties }
+                FarseerPhysicsEngine.createJoint createJointMessage physicsEngine)
+            createJointsMessage.JointsProperties
+
+    static member private destroyJoint (destroyJointMessage : DestroyJointMessage) physicsEngine =
+        match physicsEngine.Joints.TryGetValue destroyJointMessage.PhysicsId with
+        | (true, joint) ->
+            physicsEngine.Joints.Remove destroyJointMessage.PhysicsId |> ignore
+            physicsEngine.PhysicsContext.RemoveJoint joint
+        | (false, _) ->
+            if not physicsEngine.RebuildingHack then
+                Log.debug ("Could not destroy non-existent joint with PhysicsId = " + scstring destroyJointMessage.PhysicsId + "'.")
+
+    static member private destroyJoints (destroyJointsMessage : DestroyJointsMessage) physicsEngine =
+        List.iter
+            (fun physicsId ->
+                let destroyJointMessage = { PhysicsId = physicsId }
+                FarseerPhysicsEngine.destroyJoint destroyJointMessage physicsEngine)
+            destroyJointsMessage.PhysicsIds
 
     static member private setBodyPosition (setBodyPositionMessage : SetBodyPositionMessage) physicsEngine =
         match physicsEngine.Bodies.TryGetValue setBodyPositionMessage.PhysicsId with
@@ -495,6 +764,10 @@ type [<ReferenceEquality>] FarseerPhysicsEngine =
         | CreateBodiesMessage createBodiesMessage -> FarseerPhysicsEngine.createBodies createBodiesMessage physicsEngine
         | DestroyBodyMessage destroyBodyMessage -> FarseerPhysicsEngine.destroyBody destroyBodyMessage physicsEngine
         | DestroyBodiesMessage destroyBodiesMessage -> FarseerPhysicsEngine.destroyBodies destroyBodiesMessage physicsEngine
+        | CreateJointMessage createJointMessage -> FarseerPhysicsEngine.createJoint createJointMessage physicsEngine
+        | CreateJointsMessage createJointsMessage -> FarseerPhysicsEngine.createJoints createJointsMessage physicsEngine
+        | DestroyJointMessage destroyJointMessage -> FarseerPhysicsEngine.destroyJoint destroyJointMessage physicsEngine
+        | DestroyJointsMessage destroyJointsMessage -> FarseerPhysicsEngine.destroyJoints destroyJointsMessage physicsEngine
         | SetBodyPositionMessage setBodyPositionMessage -> FarseerPhysicsEngine.setBodyPosition setBodyPositionMessage physicsEngine
         | SetBodyRotationMessage setBodyRotationMessage -> FarseerPhysicsEngine.setBodyRotation setBodyRotationMessage physicsEngine
         | SetBodyAngularVelocityMessage setBodyAngularVelocityMessage -> FarseerPhysicsEngine.setBodyAngularVelocity setBodyAngularVelocityMessage physicsEngine
@@ -522,10 +795,9 @@ type [<ReferenceEquality>] FarseerPhysicsEngine =
         // In truth, we just need a better physics engine implementation :)
         for body in physicsEngine.PhysicsContext.BodyList do
             if body.Awake && not body.IsStatic then
-                let bodySource = body.UserData :?> BodySource
                 let bodyTransformMessage =
                     BodyTransformMessage
-                        { BodySource = bodySource
+                        { BodySource = body.UserData :?> BodySourceInternal
                           Position = FarseerPhysicsEngine.toPixelV2 body.Position
                           Rotation = body.Rotation }
                 physicsEngine.IntegrationMessages.Add bodyTransformMessage
@@ -535,6 +807,7 @@ type [<ReferenceEquality>] FarseerPhysicsEngine =
         let physicsEngine =
             { PhysicsContext = FarseerPhysics.Dynamics.World (FarseerPhysicsEngine.toPhysicsV2 gravity)
               Bodies = BodyDictionary (HashIdentity.FromFunctions PhysicsId.hash PhysicsId.equals)
+              Joints = JointDictionary (HashIdentity.FromFunctions PhysicsId.hash PhysicsId.equals)
               PhysicsMessages = UList.makeEmpty Constants.Physics.MessageListConfig
               IntegrationMessages = List<IntegrationMessage> ()
               RebuildingHack = false }
@@ -617,14 +890,18 @@ module PhysicsEngine =
         | _ -> Convert.ToInt32 (categoryMask, 2)
 
     /// Localize a body shape to a specific physics object.
-    let localizeBodyShape (extent : Vector2) (bodyShape : BodyShape) =
+    let rec localizeBodyShape (extent : Vector2) (bodyShape : BodyShape) =
         match bodyShape with
-        | BodyBox bodyBox -> BodyBox { Extent = Vector2.Multiply (extent, bodyBox.Extent); Center = Vector2.Multiply (extent, bodyBox.Center) }
-        | BodyCircle bodyCircle -> BodyCircle { Radius = extent.X * bodyCircle.Radius; Center = extent.X * bodyCircle.Center }
-        | BodyCapsule bodyCapsule -> BodyCapsule { Height = extent.Y * bodyCapsule.Height; Radius = extent.Y * bodyCapsule.Radius; Center = extent.Y * bodyCapsule.Center }
+        | BodyEmpty -> BodyEmpty
+        | BodyBox bodyBox -> BodyBox { Extent = Vector2.Multiply (extent, bodyBox.Extent); Center = Vector2.Multiply (extent, bodyBox.Center); PropertiesOpt = bodyBox.PropertiesOpt }
+        | BodyCircle bodyCircle -> BodyCircle { Radius = extent.X * bodyCircle.Radius; Center = extent.X * bodyCircle.Center; PropertiesOpt = bodyCircle.PropertiesOpt }
+        | BodyCapsule bodyCapsule -> BodyCapsule { Height = extent.Y * bodyCapsule.Height; Radius = extent.Y * bodyCapsule.Radius; Center = extent.Y * bodyCapsule.Center; PropertiesOpt = bodyCapsule.PropertiesOpt }
         | BodyPolygon bodyPolygon ->
             let vertices = Array.map (fun vertex -> Vector2.Multiply (vertex, extent)) bodyPolygon.Vertices
-            BodyPolygon { Vertices = vertices; Center = Vector2.Multiply (extent, bodyPolygon.Center) }
+            BodyPolygon { Vertices = vertices; Center = Vector2.Multiply (extent, bodyPolygon.Center); PropertiesOpt = bodyPolygon.PropertiesOpt }
+        | BodyShapes bodyShapes ->
+            let bodyShapes = List.map (localizeBodyShape extent) bodyShapes
+            BodyShapes bodyShapes
 
     /// Check that the physics engine contain the body with the given physics id.
     let bodyExists physicsId (physicsEngine : PhysicsEngine) =

@@ -79,13 +79,16 @@ module WorldScreenModule =
                 | _ -> false
 
         /// Check that a screen exists in the world.
-        member this.GetExists world = World.getScreenExists this world
+        member this.Exists world = World.getScreenExists this world
+
+        /// Check that a screen is selected.
+        member this.Selected world = WorldModule.isSelected this world
 
         /// Check that a screen dispatches in the same manner as the dispatcher with the given type.
-        member this.DispatchesAs (dispatcherType, world) = Reflection.dispatchesAs dispatcherType (this.GetDispatcher world)
+        member this.Is (dispatcherType, world) = Reflection.dispatchesAs dispatcherType (this.GetDispatcher world)
 
         /// Check that a screen dispatches in the same manner as the dispatcher with the given type.
-        member this.DispatchesAs<'a> world = this.DispatchesAs (typeof<'a>, world)
+        member this.Is<'a> world = this.Is (typeof<'a>, world)
 
         /// Resolve a relation in the context of a screen.
         member this.Resolve relation = resolve<Screen> this relation
@@ -110,7 +113,7 @@ module WorldScreenModule =
 
                 // publish update event
                 let eventTrace = EventTrace.record "World" "updateScreen" EventTrace.empty
-                World.publishPlus World.sortSubscriptionsByHierarchy () (Events.Update --> screen) eventTrace Default.Game true world)
+                World.publishPlus World.sortSubscriptionsByHierarchy () (Events.Update --> screen) eventTrace Simulants.Game true world)
                 screen
                 world
 
@@ -123,7 +126,7 @@ module WorldScreenModule =
 
                 // publish post-update event
                 let eventTrace = EventTrace.record "World" "postUpdateScreen" EventTrace.empty
-                World.publishPlus World.sortSubscriptionsByHierarchy () (Events.PostUpdate --> screen) eventTrace Default.Game true world)
+                World.publishPlus World.sortSubscriptionsByHierarchy () (Events.PostUpdate --> screen) eventTrace Simulants.Game true world)
                 screen
                 world
 
@@ -143,10 +146,10 @@ module WorldScreenModule =
 
         /// Set the dissolve properties of a screen.
         [<FunctionBinding>]
-        static member setScreenDissolve dissolveData (screen : Screen) world =
-            let dissolveImageOpt = Some dissolveData.DissolveImage
-            let world = screen.SetIncoming { Transition.make Incoming with TransitionLifetime = dissolveData.IncomingTime; DissolveImageOpt = dissolveImageOpt } world
-            let world = screen.SetOutgoing { Transition.make Outgoing with TransitionLifetime = dissolveData.OutgoingTime; DissolveImageOpt = dissolveImageOpt } world
+        static member setScreenDissolve dissolveDescriptor songOpt (screen : Screen) world =
+            let dissolveImageOpt = Some dissolveDescriptor.DissolveImage
+            let world = screen.SetIncoming { Transition.make Incoming with TransitionLifetime = dissolveDescriptor.IncomingTime; DissolveImageOpt = dissolveImageOpt; SongOpt = songOpt } world
+            let world = screen.SetOutgoing { Transition.make Outgoing with TransitionLifetime = dissolveDescriptor.OutgoingTime; DissolveImageOpt = dissolveImageOpt; SongOpt = songOpt } world
             world
 
         /// Destroy a screen in the world immediately. Can be dangerous if existing in-flight publishing depends on the
@@ -200,14 +203,14 @@ module WorldScreenModule =
 
         /// Create a screen with a dissolving transition, and add it to the world.
         [<FunctionBinding "createDissolveScreen">]
-        static member createDissolveScreen5 dispatcherName nameOpt dissolveData world =
+        static member createDissolveScreen5 dispatcherName nameOpt dissolveDescriptor songOpt world =
             let (screen, world) = World.createScreen3 dispatcherName nameOpt world
-            let world = World.setScreenDissolve dissolveData screen world
+            let world = World.setScreenDissolve dissolveDescriptor songOpt screen world
             (screen, world)
         
         /// Create a screen with a dissolving transition, and add it to the world.
-        static member createDissolveScreen<'d when 'd :> ScreenDispatcher> nameOpt dissolveData world =
-            World.createDissolveScreen5 typeof<'d>.Name nameOpt dissolveData world
+        static member createDissolveScreen<'d when 'd :> ScreenDispatcher> nameOpt dissolveDescriptor world =
+            World.createDissolveScreen5 typeof<'d>.Name nameOpt dissolveDescriptor world
 
         /// Write a screen to a screen descriptor.
         static member writeScreen screen screenDescriptor world =
@@ -261,12 +264,12 @@ module WorldScreenModule =
         static member applyScreenBehavior setScreenSplash behavior (screen : Screen) world =
             match behavior with
             | Vanilla -> (screen, world)
-            | OmniScreen -> (screen, World.setOmniScreen screen world)
-            | Dissolve dissolveData -> (screen, World.setScreenDissolve dissolveData screen world)
-            | Splash (dissolveData, splashData, destination) ->
-                let world = World.setScreenDissolve dissolveData screen world
-                let world = setScreenSplash (Some splashData) destination screen world
+            | Dissolve (dissolveDescriptor, songOpt) -> (screen, World.setScreenDissolve dissolveDescriptor songOpt screen world)
+            | Splash (dissolveDescriptor, splashDescriptor, destination) ->
+                let world = World.setScreenDissolve dissolveDescriptor None screen world
+                let world = setScreenSplash (Some splashDescriptor) destination screen world
                 (screen, world)
+            | OmniScreen -> (screen, World.setOmniScreen screen world)
 
         /// Turn screen content into a live screen.
         static member expandScreenContent setScreenSplash content origin game world =
@@ -283,8 +286,8 @@ module WorldScreenModule =
                         World.readEntityFromFile filePath (Some entityName) (screen / layerName) world |> snd)
                         world entityFilePaths
                 let world =
-                    List.fold (fun world (simulant, left : World Lens, right, breaking) ->
-                        WorldModule.bind5 simulant left right breaking world)
+                    List.fold (fun world (simulant, left : World Lens, right) ->
+                        WorldModule.bind5 simulant left right world)
                         world binds
                 let world =
                     List.fold (fun world (handler, address, simulant) ->
@@ -295,12 +298,12 @@ module WorldScreenModule =
                             address simulant world)
                         world handlers
                 let world =
-                    List.fold (fun world (screen, lens, indexerOpt, mapper) ->
-                        World.expandLayerStream lens indexerOpt mapper origin screen world)
+                    List.fold (fun world (screen, lens, sieve, spread, indexOpt, mapper) ->
+                        World.expandLayers lens sieve spread indexOpt mapper origin screen world)
                         world layerStreams
                 let world =
-                    List.fold (fun world (layer, lens, indexerOpt, mapper) ->
-                        World.expandEntityStream lens indexerOpt mapper origin layer world)
+                    List.fold (fun world (layer, lens, sieve, spread, indexOpt, mapper) ->
+                        World.expandEntities lens sieve spread indexOpt mapper origin layer world)
                         world entityStreams
                 let world =
                     List.fold (fun world (owner : Entity, entityContents) ->

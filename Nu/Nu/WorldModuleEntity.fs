@@ -121,13 +121,16 @@ module WorldModuleEntity =
         static member private shouldPublishEntityChange alwaysPublish nonPersistent (entityState : EntityState) =
             not nonPersistent && (alwaysPublish || entityState.PublishChanges)
 
-        static member private publishEntityChange propertyName propertyValue (entity : Entity) world =
+        static member private publishEntityChange propertyName (propertyValue : obj) (entity : Entity) world =
             let world =
+                let changeData =
+                    match propertyValue with
+                    | :? DesignerProperty as dp -> { Name = propertyName; Value = dp.DesignerValue }
+                    | _ -> { Name = propertyName; Value = propertyValue }
                 let entityNames = Address.getNames entity.EntityAddress
                 let changeEventAddress = rtoa<ChangeData> [|"Change"; propertyName; "Event"; entityNames.[0]; entityNames.[1]; entityNames.[2]|]
                 let eventTrace = EventTrace.record "World" "publishEntityChange" EventTrace.empty
                 let allowWildcard = propertyName = "ParentNodeOpt"
-                let changeData = { Name = propertyName; Value = propertyValue }
                 World.publishPlus World.sortSubscriptionsByHierarchy changeData changeEventAddress eventTrace entity allowWildcard world
             world
 
@@ -485,7 +488,7 @@ module WorldModuleEntity =
                         let world =
                             World.withEventContext (fun world ->
                                 let world = facet.Register (entity, world)
-                                if WorldModule.isSimulantSelected entity world
+                                if WorldModule.isSelected entity world
                                 then facet.UnregisterPhysics (entity, world)
                                 else world)
                                 entity world
@@ -541,7 +544,7 @@ module WorldModuleEntity =
                         let world =
                             World.withEventContext (fun world ->
                                 let world = facet.Register (entity, world)
-                                if WorldModule.isSimulantSelected entity world
+                                if WorldModule.isSelected entity world
                                 then facet.RegisterPhysics (entity, world)
                                 else world)
                                 entity world
@@ -743,7 +746,7 @@ module WorldModuleEntity =
                 let world =
                     Array.fold (fun world (facet : Facet) ->
                         let world = facet.Register (entity, world)
-                        if WorldModule.isSimulantSelected entity world
+                        if WorldModule.isSelected entity world
                         then facet.RegisterPhysics (entity, world)
                         else world)
                         world facets
@@ -761,7 +764,7 @@ module WorldModuleEntity =
                 let world = dispatcher.Unregister (entity, world)
                 Array.fold (fun world (facet : Facet) ->
                     let world = facet.Unregister (entity, world)
-                    if WorldModule.isSimulantSelected entity world
+                    if WorldModule.isSelected entity world
                     then facet.UnregisterPhysics (entity, world)
                     else world)
                     world facets)
@@ -798,7 +801,7 @@ module WorldModuleEntity =
 
                 // mutate entity tree
                 let world =
-                    if WorldModule.isSimulantSelected entity world then
+                    if WorldModule.isSelected entity world then
                         let entityTree =
                             MutantCache.mutateMutant
                                 (fun () -> oldWorld.Dispatchers.RebuildEntityTree oldWorld)
@@ -834,7 +837,7 @@ module WorldModuleEntity =
                 
                 // mutate entity tree if entity is selected
                 let world =
-                    if WorldModule.isSimulantSelected entity world then
+                    if WorldModule.isSelected entity world then
                         let entityTree =
                             MutantCache.mutateMutant
                                 (fun () -> oldWorld.Dispatchers.RebuildEntityTree world)
@@ -858,7 +861,7 @@ module WorldModuleEntity =
 
         /// Create an entity and add it to the world.
         [<FunctionBinding "createEntity">]
-        static member createEntity5 dispatcherName nameOpt overlayNameDescriptor (layer : Layer) world =
+        static member createEntity5 dispatcherName nameOpt overlayDescriptor (layer : Layer) world =
 
             // find the entity's dispatcher
             let dispatchers = World.getEntityDispatchers world
@@ -869,7 +872,7 @@ module WorldModuleEntity =
 
             // compute the optional overlay name
             let overlayNameOpt =
-                match overlayNameDescriptor with
+                match overlayDescriptor with
                 | NoOverlay -> None
                 | RoutedOverlay -> Option.flatten (World.tryFindRoutedOverlayNameOpt dispatcherName world)
                 | DefaultOverlay -> Some (Option.getOrDefault dispatcherName (Option.flatten (World.tryFindRoutedOverlayNameOpt dispatcherName world)))
@@ -931,7 +934,7 @@ module WorldModuleEntity =
                         property entity world)
                     world descriptor.SimulantProperties
             let world =
-                if WorldModule.isSimulantSelected entity world
+                if WorldModule.isSelected entity world
                 then World.propagateEntityPhysics entity world
                 else world
             (entity, world)
@@ -1155,7 +1158,7 @@ module WorldModuleEntity =
         static member internal updateEntityInEntityTree oldOmnipresent oldViewType oldBoundsMax (entity : Entity) oldWorld world =
 
             // only need to do this when entity is selected
-            if WorldModule.isSimulantSelected entity world then
+            if WorldModule.isSelected entity world then
 
                 // OPTIMIZATION: work with the entity state directly to avoid function call overheads
                 let entityState = World.getEntityState entity world

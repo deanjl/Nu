@@ -1,5 +1,4 @@
 ﻿namespace OmniBlade
-open System
 open Prime
 open Nu
 open Nu.Declarative
@@ -8,18 +7,23 @@ open OmniBlade
 [<AutoOpen>]
 module AvatarDispatcherModule =
 
-    type AvatarMessage =
+    type [<NoComparison>] AvatarMessage =
         | Update
+        | Collision of CollisionData
+        | Separation of SeparationData
 
     type Entity with
-        
+
         member this.GetAvatarModel = this.GetModel<AvatarModel>
         member this.SetAvatarModel = this.SetModel<AvatarModel>
         member this.AvatarModel = this.Model<AvatarModel> ()
 
     type AvatarDispatcher () =
         inherit EntityDispatcher<AvatarModel, AvatarMessage, unit>
-            (AvatarModel.make Assets.FinnAnimationSheet Downward (v4Bounds (v2 128.0f 128.0f) Constants.Gameplay.CharacterSize))
+            (AvatarModel.make (v4Bounds (v2 128.0f 128.0f) Constants.Gameplay.CharacterSize) Assets.FinnAnimationSheet Downward)
+
+        static let sensorShapeId =
+            Gen.id
 
         static let getSpriteInset (avatar : Entity) world =
             let model = avatar.GetAvatarModel world
@@ -31,21 +35,20 @@ module AvatarDispatcherModule =
         static member Facets =
             [typeof<RigidBodyFacet>]
 
-        static member Properties =
-            [define Entity.AnimationDelay 6L
-             define Entity.CelSize Constants.Gameplay.CharacterSize
-             define Entity.CelRun 8
-             define Entity.FixedRotation true
-             define Entity.GravityScale 0.0f
-             define Entity.BodyShape (BodyCircle { Radius = 0.22f; Center = v2 0.0f -0.3f })]
+        override this.Channel (_, entity) =
+            [entity.UpdateEvent => [msg Update]
+             entity.CollisionEvent =|> fun evt -> [msg (Collision evt.Data)]
+             entity.SeparationEvent =|> fun evt -> [msg (Separation evt.Data)]]
 
-        override this.Channel (_, entity, _) =
-            [entity.UpdateEvent => [msg Update]]
-
-        override this.Initializers (model, entity, _) =
+        override this.Initializers (model, entity) =
+            let bodyShapes =
+                BodyShapes
+                    [BodyCircle { Radius = 0.22f; Center = v2 0.0f -0.3f; PropertiesOpt = None }
+                     BodyCircle { Radius = 0.33f; Center = v2 0.0f -0.3f; PropertiesOpt = Some { BodyShapeProperties.empty with BodyShapeId = sensorShapeId; IsSensorOpt = Some true }}]
             [entity.Bounds <== model.Map (fun model -> model.Bounds)
-             entity.LinearDamping == 12.0f
-             entity.GravityScale == 0.0f]
+             entity.FixedRotation == true
+             entity.GravityScale == 0.0f
+             entity.BodyShape == bodyShapes]
 
         override this.Message (model, message, entity, world) =
             let time = World.getTickTime world
@@ -66,6 +69,24 @@ module AvatarDispatcherModule =
 
                 // update bounds
                 let model = AvatarModel.updateBounds (constant (entity.GetBounds world)) model
+                just model
+
+            | Separation separation ->
+
+                // remove separated body shape
+                let model =
+                    if separation.Separator.BodyShapeId = sensorShapeId
+                    then AvatarModel.updateIntersectedBodyShapes (List.remove ((=) separation.Separatee)) model
+                    else model
+                just model
+
+            | Collision collision ->
+
+                // add collidee shape
+                let model =
+                    if collision.Collider.BodyShapeId = sensorShapeId
+                    then AvatarModel.updateIntersectedBodyShapes (fun shapes -> collision.Collidee :: shapes) model
+                    else model
                 just model
 
         override this.View (model, entity, world) =

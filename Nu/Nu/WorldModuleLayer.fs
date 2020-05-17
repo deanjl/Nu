@@ -72,10 +72,14 @@ module WorldModuleLayer =
 
         static member private publishLayerChange propertyName (propertyValue : obj) (layer : Layer) world =
             let world =
+                let changeData =
+                    match propertyValue with
+                    | :? DesignerProperty as dp -> { Name = propertyName; Value = dp.DesignerValue }
+                    | _ -> { Name = propertyName; Value = propertyValue }
                 let layerNames = Address.getNames layer.LayerAddress
                 let changeEventAddress = rtoa<ChangeData> [|"Change"; propertyName; "Event"; layerNames.[0]; layerNames.[1]|]
                 let eventTrace = EventTrace.record "World" "publishLayerChange" EventTrace.empty
-                World.publishPlus World.sortSubscriptionsByHierarchy { Name = propertyName; Value = propertyValue } changeEventAddress eventTrace layer false world
+                World.publishPlus World.sortSubscriptionsByHierarchy changeData changeEventAddress eventTrace layer false world
             world
 
         static member private getLayerStateOpt layer world =
@@ -121,7 +125,7 @@ module WorldModuleLayer =
         static member internal setLayerScriptFrame value layer world = World.updateLayerState (fun layerState -> if value <> layerState.ScriptFrame then Some { layerState with ScriptFrame = value } else None) Property? ScriptFrame value layer world
         static member internal getLayerName layer world = (World.getLayerState layer world).Name
         static member internal getLayerId layer world = (World.getLayerState layer world).Id
-        
+
         static member internal tryGetLayerProperty propertyName layer world =
             if World.getLayerExists layer world then
                 match Getters.TryGetValue propertyName with

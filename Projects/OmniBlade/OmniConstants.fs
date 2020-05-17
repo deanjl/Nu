@@ -1,5 +1,4 @@
 ﻿namespace OmniBlade
-open System
 open Prime
 open Nu
 open OmniBlade
@@ -16,7 +15,8 @@ module Constants =
     [<RequireQualifiedAccess>]
     module Field =
 
-        let WalkForce = 5000.0f
+        let WalkForce = 26000.0f
+        let LinearDamping = 19.0f
         let BackgroundDepth = -10.0f
         let ForgroundDepth = 0.0f
         let EffectDepth = 10.0f
@@ -48,14 +48,17 @@ module Constants =
         let GuiEffectDepth = 30.0f
 
     [<RequireQualifiedAccess>]
-    module OmniBlade =
-
-        let DissolveData =
+    module Dissolve =
+    
+        let Default =
             { IncomingTime = 20L
               OutgoingTime = 30L
               DissolveImage = asset<Image> Assets.GuiPackageName "Dissolve" }
-
-        let SplashData =
-            { DissolveData = DissolveData
+                  
+    [<RequireQualifiedAccess>]
+    module Splash =
+    
+        let Default =
+            { DissolveDescriptor = Dissolve.Default
               IdlingTime = 60L
               SplashImage = asset<Image> Assets.GuiPackageName "Nu" }

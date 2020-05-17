@@ -145,9 +145,6 @@ module WorldEntityModule =
         /// Get an entity's quick size.
         member this.GetQuickSize world = World.getEntityQuickSize this world
 
-        /// Set an entity's size by its quick size.
-        member this.QuickSize world = World.setEntitySize (this.GetQuickSize world) this world
-
         /// Get an entity's bounds, taking into account its overflow.
         member this.GetBoundsOverflow world = Math.makeBoundsOverflow (this.GetPosition world) (this.GetSize world) (this.GetOverflow world)
 
@@ -173,27 +170,33 @@ module WorldEntityModule =
              else true
 
         /// Check that an entity exists in the world.
-        member this.GetExists world = World.getEntityExists this world
+        member this.Exists world = World.getEntityExists this world
+
+        /// Check that an entity is selected.
+        member this.Selected world = WorldModule.isSelected this world
+
+        /// Set an entity's size by its quick size.
+        member this.QuickSize world = World.setEntitySize (this.GetQuickSize world) this world
 
         /// Propagate entity physics properties into the physics system.
         member this.PropagatePhysics world =
             World.withEventContext (fun world ->
-                if WorldModule.isSimulantSelected this world
+                if WorldModule.isSelected this world
                 then World.propagateEntityPhysics this world
                 else world)
                 this world
 
         /// Check that an entity uses a facet of the given type.
-        member this.FacetedAs (facetType, world) = Array.exists (fun facet -> getType facet = facetType) (this.GetFacets world)
+        member this.Has (facetType, world) = Array.exists (fun facet -> getType facet = facetType) (this.GetFacets world)
 
         /// Check that an entity uses a facet of the given type.
-        member this.FacetedAs<'a> world = this.FacetedAs (typeof<'a>, world)
+        member this.Has<'a> world = this.Has (typeof<'a>, world)
 
         /// Check that an entity dispatches in the same manner as the dispatcher with the given type.
-        member this.DispatchesAs (dispatcherType, world) = Reflection.dispatchesAs dispatcherType (this.GetDispatcher world)
+        member this.Is (dispatcherType, world) = Reflection.dispatchesAs dispatcherType (this.GetDispatcher world)
 
         /// Check that an entity dispatches in the same manner as the dispatcher with the given type.
-        member this.DispatchesAs<'a> world = this.DispatchesAs (typeof<'a>, world)
+        member this.Is<'a> world = this.Is (typeof<'a>, world)
 
         /// Resolve a relation in the context of an entity.
         member this.Resolve relation = resolve<Entity> this relation
@@ -223,7 +226,7 @@ module WorldEntityModule =
                     else Array.fold (fun world (facet : Facet) -> facet.Update (entity, world)) world facets
                 if World.getEntityPublishUpdates entity world then
                     let eventTrace = EventTrace.record "World" "updateEntity" EventTrace.empty
-                    World.publishPlus World.sortSubscriptionsByHierarchy () entity.UpdateEventCached eventTrace Default.Game false world
+                    World.publishPlus World.sortSubscriptionsByHierarchy () entity.UpdateEventCached eventTrace Simulants.Game false world
                 else world)
                 entity
                 world
@@ -239,7 +242,7 @@ module WorldEntityModule =
                     else Array.fold (fun world (facet : Facet) -> facet.PostUpdate (entity, world)) world facets
                 if World.getEntityPublishPostUpdates entity world then
                     let eventTrace = EventTrace.record "World" "postUpdateEntity" EventTrace.empty
-                    World.publishPlus World.sortSubscriptionsByHierarchy () entity.PostUpdateEventCached eventTrace Default.Game false world
+                    World.publishPlus World.sortSubscriptionsByHierarchy () entity.PostUpdateEventCached eventTrace Simulants.Game false world
                 else world)
                 entity
                 world
@@ -341,16 +344,16 @@ module WorldEntityModule =
                     layerDescriptor.EntitieDescriptors
                     ([], world)
 
-        /// Turn an entity stream into a series of live entities.
-        static member expandEntityStream (lens : Lens<obj, World>) indexerOpt mapper origin layer world =
-            let mapperGeneralized = fun i lens world -> mapper i lens world :> SimulantContent
-            World.expandSimulantStream lens indexerOpt mapperGeneralized origin layer world
+        /// Turn an entity lens into a series of live entities.
+        static member expandEntities (lens : Lens<obj, World>) sieve spread indexOpt mapper origin layer world =
+            let mapperGeneralized = fun i a w -> mapper i a w :> SimulantContent
+            World.expandSimulants lens sieve spread indexOpt mapperGeneralized origin layer world
 
         /// Turn entity content into a live entity.
         static member expandEntityContent guidOpt content origin layer world =
             match EntityContent.expand content layer world with
-            | Choice1Of3 (lens, indexerOpt, mapper) ->
-                World.expandEntityStream lens indexerOpt mapper origin layer world
+            | Choice1Of3 (lens, sieve, spread, indexOpt, mapper) ->
+                World.expandEntities lens sieve spread indexOpt mapper origin layer world
             | Choice2Of3 (_, descriptor, handlers, binds, content) ->
                 let (entity, world) =
                     World.createEntity4 DefaultOverlay descriptor layer world
@@ -373,8 +376,8 @@ module WorldEntityModule =
                             entity
                             world
                 let world =
-                    List.fold (fun world (simulant, left : World Lens, right, breaking) ->
-                        WorldModule.bind5 simulant left right breaking world)
+                    List.fold (fun world (simulant, left : World Lens, right) ->
+                        WorldModule.bind5 simulant left right world)
                         world binds
                 let world =
                     List.fold (fun world (handler, address, simulant) ->

@@ -8,85 +8,97 @@ open Nu
 
 /// Describes a generalized simulant value independent of the engine.
 /// Not used for serialization.
-type [<NoEquality; NoComparison>] SimulantDescriptor =
+type [<StructuralEquality; NoComparison>] SimulantDescriptor =
     { SimulantNameOpt : string option
       SimulantDispatcherName : string
       SimulantProperties : (string * Property) list
       SimulantChildren : SimulantDescriptor list }
 
-/// Describes a game value independent of the engine.
-/// Used to directly serialize a game.
-type [<NoComparison>] GameDescriptor =
-    { GameDispatcherName : string
-      GameProperties : Map<string, Symbol>
-      ScreenDescriptors : ScreenDescriptor list }
+/// Describes an entity value independent of the engine.
+/// Used to directly serialize an entity.
+type [<StructuralEquality; NoComparison>] EntityDescriptor =
+    { EntityDispatcherName : string
+      EntityProperties : Map<string, Symbol> }
 
-    /// The empty game descriptor.
-    static member empty =
-        { GameDispatcherName = String.Empty
-          GameProperties = Map.empty
-          ScreenDescriptors = [] }
-
-/// Describes a screen value independent of the engine.
-/// Used to directly serialize a screen.
-and [<NoComparison>] ScreenDescriptor =
-    { ScreenDispatcherName : string
-      ScreenProperties : Map<string, Symbol>
-      LayerDescriptors : LayerDescriptor list }
-
-    /// The empty screen descriptor.
-    static member empty =
-        { ScreenDispatcherName = String.Empty
-          ScreenProperties = Map.empty
-          LayerDescriptors = [] }
+[<RequireQualifiedAccess>]
+module EntityDescriptor =
 
     /// Derive a name from the dispatcher.
-    static member getNameOpt dispatcher =
-        dispatcher.ScreenProperties |>
+    let getNameOpt dispatcher =
+        dispatcher.EntityProperties |>
         Map.tryFind (Property? Name) |>
         Option.map symbolToValue<string>
 
+    /// The empty entity descriptor.
+    let empty =
+        { EntityDispatcherName = String.Empty
+          EntityProperties = Map.empty }
+
 /// Describes a layer value independent of the engine.
 /// Used to directly serialize a layer.
-and [<NoComparison>] LayerDescriptor =
+type [<StructuralEquality; NoComparison>] LayerDescriptor =
     { LayerDispatcherName : string
       LayerProperties : Map<string, Symbol>
       EntitieDescriptors : EntityDescriptor list }
 
-    /// The empty layer descriptor.
-    static member empty =
-        { LayerDispatcherName = String.Empty
-          LayerProperties = Map.empty
-          EntitieDescriptors = [] }
+[<RequireQualifiedAccess>]
+module LayerDescriptor =
 
     /// Derive a name from the dispatcher.
-    static member getNameOpt dispatcher =
+    let getNameOpt dispatcher =
         dispatcher.LayerProperties |>
         Map.tryFind (Property? Name) |>
         Option.map symbolToValue<string>
 
-/// Describes an entity value independent of the engine.
-/// Used to directly serialize an entity.
-and [<NoComparison>] EntityDescriptor =
-    { EntityDispatcherName : string
-      EntityProperties : Map<string, Symbol> }
+    /// The empty layer descriptor.
+    let empty =
+        { LayerDispatcherName = String.Empty
+          LayerProperties = Map.empty
+          EntitieDescriptors = [] }
 
-    /// The empty entity descriptor.
-    static member empty =
-        { EntityDispatcherName = String.Empty
-          EntityProperties = Map.empty }
+/// Describes a screen value independent of the engine.
+/// Used to directly serialize a screen.
+type [<StructuralEquality; NoComparison>] ScreenDescriptor =
+    { ScreenDispatcherName : string
+      ScreenProperties : Map<string, Symbol>
+      LayerDescriptors : LayerDescriptor list }
+
+[<RequireQualifiedAccess>]
+module ScreenDescriptor =
 
     /// Derive a name from the dispatcher.
-    static member getNameOpt dispatcher =
-        dispatcher.EntityProperties |>
+    let getNameOpt dispatcher =
+        dispatcher.ScreenProperties |>
         Map.tryFind (Property? Name) |>
         Option.map symbolToValue<string>
+
+    /// The empty screen descriptor.
+    let empty =
+        { ScreenDispatcherName = String.Empty
+          ScreenProperties = Map.empty
+          LayerDescriptors = [] }
+
+/// Describes a game value independent of the engine.
+/// Used to directly serialize a game.
+type [<StructuralEquality; NoComparison>] GameDescriptor =
+    { GameDispatcherName : string
+      GameProperties : Map<string, Symbol>
+      ScreenDescriptors : ScreenDescriptor list }
+
+[<RequireQualifiedAccess>]
+module GameDescriptor =
+
+    /// The empty game descriptor.
+    let empty =
+        { GameDispatcherName = String.Empty
+          GameProperties = Map.empty
+          ScreenDescriptors = [] }
 
 /// Initializes a property.
 type [<NoEquality; NoComparison>] PropertyInitializer =
     | PropertyDefinition of PropertyDefinition
     | EventHandlerDefinition of (Event -> obj) * obj Address
-    | BindDefinition of World Lens * World Lens * bool
+    | BindDefinition of World Lens * World Lens
 
 /// Contains primitives for describing simulants.
 [<RequireQualifiedAccess>]
@@ -133,7 +145,7 @@ module Describe =
             match initializer with
             | PropertyDefinition _ -> None
             | EventHandlerDefinition _ -> None
-            | BindDefinition (left, right, breaking) -> Some (simulant, left, right, breaking)) |>
+            | BindDefinition (left, right) -> Some (simulant, left, right)) |>
         List.definitize
 
     /// Describe a simulant with the given initializers and contained children.

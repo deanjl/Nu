@@ -9,18 +9,18 @@ module Assets =
     let GameplayPackageName = "Gameplay"
 
     // the various assets described by the project's 'AssetGraph.nuag' file
-    let NuSplashSound = asset<Audio> GuiPackageName "Nu"
-    let MachinerySong = asset<Audio> GuiPackageName "Machinery"
-    let DeadBlazeSong = asset<Audio> GameplayPackageName "DeadBlaze"
-    let HitSound = asset<Audio> GameplayPackageName "Hit"
-    let ExplosionSound = asset<Audio> GameplayPackageName "Explosion"
-    let ShotSound = asset<Audio> GameplayPackageName "Shot"
-    let JumpSound = asset<Audio> GameplayPackageName "Jump"
-    let DeathSound = asset<Audio> GameplayPackageName "Death"
     let EnemyBulletImage = asset<Image> GameplayPackageName "EnemyBullet"
     let PlayerBulletImage = asset<Image> GameplayPackageName "PlayerBullet"
     let EnemyImage = asset<Image> GameplayPackageName "Enemy"
     let PlayerImage = asset<Image> GameplayPackageName "Player"
+    let SplashSound = asset<Sound> GuiPackageName "Splash"
+    let HitSound = asset<Sound> GameplayPackageName "Hit"
+    let ExplosionSound = asset<Sound> GameplayPackageName "Explosion"
+    let ShotSound = asset<Sound> GameplayPackageName "Shot"
+    let JumpSound = asset<Sound> GameplayPackageName "Jump"
+    let DeathSound = asset<Sound> GameplayPackageName "Death"
+    let MachinerySong = { Volume = Constants.Audio.DefaultSongVolume; FadeOutMs = Constants.Audio.DefaultFadeOutMs; Song = asset<Song> GuiPackageName "Machinery" }
+    let DeadBlazeSong = { Volume = Constants.Audio.DefaultSongVolume * 2.0f; FadeOutMs = Constants.Audio.DefaultFadeOutMs; Song = asset<Song> GameplayPackageName "DeadBlaze" }
 
     // the file paths from which various simulants are loaded
     let TitleLayerFilePath = "Assets/Gui/Title.nulyr"

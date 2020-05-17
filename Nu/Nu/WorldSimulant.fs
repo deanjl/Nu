@@ -87,7 +87,7 @@ module WorldSimulantModule =
         /// Get the given simulant's dispatcher.
         static member getDispatcher (simulant : Simulant) (world : World) =
             match simulant with
-            | :? Game -> Default.Game.GetDispatcher world :> Dispatcher
+            | :? Game -> Simulants.Game.GetDispatcher world :> Dispatcher
             | :? Screen as screen -> screen.GetDispatcher world :> Dispatcher
             | :? Layer as layer -> layer.GetDispatcher world :> Dispatcher
             | :? Entity as entity -> entity.GetDispatcher world :> Dispatcher
@@ -152,7 +152,7 @@ module WorldSimulantModule =
             ignore (world : World)
             match simulant with
             | :? Game -> None
-            | :? Screen -> Some (Default.Game :> Simulant)
+            | :? Screen -> Some (Simulants.Game :> Simulant)
             | :? Layer as layer -> Some (layer.Parent :> Simulant)
             | :? Entity as entity -> Some (entity.Parent :> Simulant)
             | _ -> failwithumf ()
@@ -163,7 +163,7 @@ module WorldSimulantModule =
             ignore (world : World)
             match simulant with
             | :? Game -> failwithumf ()
-            | :? Screen -> Default.Game :> Simulant
+            | :? Screen -> Simulants.Game :> Simulant
             | :? Layer as layer -> layer.Parent :> Simulant
             | :? Entity as entity -> entity.Parent :> Simulant
             | _ -> failwithumf ()
@@ -199,7 +199,7 @@ module WorldSimulantModule =
         /// Attempt to convert an address to a concrete simulant reference.
         static member tryDerive address =
             match Address.getNames address with
-            | [||] -> Some (Default.Game :> Simulant)
+            | [||] -> Some (Simulants.Game :> Simulant)
             | [|_|] -> Some (Screen (Address.changeType<obj, Screen> address) :> Simulant)
             | [|_; _|] -> Some (Layer (Address.changeType<obj, Layer> address) :> Simulant)
             | [|_; _; _|] -> Some (Entity (Address.changeType<obj, Entity> address) :> Simulant)
@@ -232,23 +232,20 @@ module WorldSimulantModule =
             Stream.first
 
         /// Bind the left property to the value of the right, optionally breaking any cycles.
-        static member bind (left : Lens<'a, World>) (right : Lens<'a, World>) breaking world =
+        static member bind (left : Lens<'a, World>) (right : Lens<'a, World>) world =
             match left.This :> obj with
             | null -> failwithumf ()
-            | :? Simulant as simulant -> WorldModule.bind5 simulant left right breaking world
+            | :? Simulant as simulant -> WorldModule.bind5 simulant left right world
             | _ -> failwithumf ()
 
 [<AutoOpen>]
 module WorldSimulantOperators =
 
-    /// Bind one property to the value of another, optionally breaking potential cycles.
-    let bind<'a> (left : Lens<'a, World>) right breaking world = World.bind left right breaking world
+    /// Bind one property to the value of another.
+    let bind<'a> (left : Lens<'a, World>) right world = World.bind left right world
 
-    /// Equate two properties, not breaking potential cycles.
-    let inline (===) left right = bind left right false
-
-    /// Equate two properties, breaking potential cycles.
-    let inline (=/=) left right = bind left right true
+    /// Bind one property to the value of another.
+    let inline (===) left right = bind left right
 
 [<RequireQualifiedAccess>]
 module PropertyDescriptor =

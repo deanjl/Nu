@@ -10,15 +10,8 @@ open Nu
 [<AutoOpen; ModuleBinding>]
 module WorldPhysicsModule =
 
-    // HACK: exposes BodyShape property for earlier access.
-    type Entity with
-
-        member this.GetBodyShape world : BodyShape = this.Get Property? BodyShape world
-        member this.SetBodyShape (value : BodyShape) world = this.SetFast Property? BodyShape false false value world
-        member this.BodyShape = lens Property? BodyShape this.GetBodyShape this.SetBodyShape this
-
     /// The subsystem for the world's physics system.
-    type [<ReferenceEquality>] PhysicsEngineSubsystem =
+    type [<ReferenceEquality; NoComparison>] PhysicsEngineSubsystem =
         private
             { PhysicsEngine : PhysicsEngine }
 
@@ -26,38 +19,45 @@ module WorldPhysicsModule =
             match World.getLiveness world with
             | Running ->
                 match integrationMessage with
+                | BodyCollisionMessage bodyCollisionMessage ->
+                    let entity = bodyCollisionMessage.BodyShapeSource.Simulant :?> Entity
+                    if entity.Exists world then
+                        let collisionAddress = Events.Collision --> entity.EntityAddress
+                        let collisionData =
+                            { Collider = BodyShapeSource.fromInternal bodyCollisionMessage.BodyShapeSource
+                              Collidee = BodyShapeSource.fromInternal bodyCollisionMessage.BodyShapeSource2
+                              Normal = bodyCollisionMessage.Normal
+                              Speed = bodyCollisionMessage.Speed }
+                        let eventTrace = EventTrace.record "World" "handleIntegrationMessage" EventTrace.empty
+                        World.publish collisionData collisionAddress eventTrace Simulants.Game world
+                    else world
+                | BodySeparationMessage bodySeparationMessage ->
+                    let entity = bodySeparationMessage.BodyShapeSource.Simulant :?> Entity
+                    if entity.Exists world then
+                        let separationAddress = Events.Separation --> entity.EntityAddress
+                        let separationData =
+                            { Separator = BodyShapeSource.fromInternal bodySeparationMessage.BodyShapeSource
+                              Separatee = BodyShapeSource.fromInternal bodySeparationMessage.BodyShapeSource2  }
+                        let eventTrace = EventTrace.record "World" "handleIntegrationMessage" EventTrace.empty
+                        World.publish separationData separationAddress eventTrace Simulants.Game world
+                    else world
                 | BodyTransformMessage bodyTransformMessage ->
                     let bodySource = bodyTransformMessage.BodySource
-                    let entity = bodySource.SourceSimulant :?> Entity
-                    let bodyShape = entity.GetBodyShape world
-                    let bodyCenter = BodyShape.getCenter bodyShape
-                    let bodyOffset = bodyCenter * entity.GetSize world
+                    let entity = bodySource.Simulant :?> Entity
                     let transform = entity.GetTransform world
-                    let position = (bodyTransformMessage.Position - bodyOffset) - transform.Size * 0.5f
+                    let position = bodyTransformMessage.Position - transform.Size * 0.5f
                     let rotation = bodyTransformMessage.Rotation
                     let world =
-                        if bodyTransformMessage.BodySource.SourceBodyId = Guid.Empty then
+                        if bodyTransformMessage.BodySource.BodyId = Gen.idEmpty then
                             let transform2 = { transform with Position = position; Rotation = rotation }
                             if transform <> transform2
                             then entity.SetTransform transform2 world
                             else world
                         else world
                     let transformAddress = Events.Transform --> entity.EntityAddress
-                    let transformData = { BodySource = bodySource; Position = position; Rotation = rotation }
+                    let transformData = { BodySource = BodySource.fromInternal bodySource; Position = position; Rotation = rotation }
                     let eventTrace = EventTrace.record "World" "handleIntegrationMessage" EventTrace.empty
-                    World.publish transformData transformAddress eventTrace Default.Game world
-                | BodyCollisionMessage bodyCollisionMessage ->
-                    let entity = bodyCollisionMessage.BodySource.SourceSimulant :?> Entity
-                    if entity.GetExists world then
-                        let collisionAddress = Events.Collision --> entity.EntityAddress
-                        let collisionData =
-                            { Collider = bodyCollisionMessage.BodySource
-                              Collidee = bodyCollisionMessage.BodySource2
-                              Normal = bodyCollisionMessage.Normal
-                              Speed = bodyCollisionMessage.Speed }
-                        let eventTrace = EventTrace.record "World" "handleIntegrationMessage" EventTrace.empty
-                        World.publish collisionData collisionAddress eventTrace Default.Game world
-                    else world
+                    World.publish transformData transformAddress eventTrace Simulants.Game world
             | Exiting -> world
 
         member this.BodyExists physicsId = this.PhysicsEngine.BodyExists physicsId
@@ -169,6 +169,30 @@ module WorldPhysicsModule =
             let destroyBodiesMessage = DestroyBodiesMessage { PhysicsIds = physicsIds }
             World.enqueuePhysicsMessage destroyBodiesMessage world
 
+        /// Send a message to the physics system to create a physics joint.
+        [<FunctionBinding>]
+        static member createJoint (entity : Entity) entityId jointProperties world =
+            let createJointMessage = CreateJointMessage { SourceSimulant = entity; SourceId = entityId; JointProperties = jointProperties }
+            World.enqueuePhysicsMessage createJointMessage world
+
+        /// Send a message to the physics system to create physics joints.
+        [<FunctionBinding>]
+        static member createJoints (entity : Entity) entityId jointsProperties world =
+            let createJointsMessage = CreateJointsMessage { SourceSimulant = entity; SourceId = entityId; JointsProperties = jointsProperties }
+            World.enqueuePhysicsMessage createJointsMessage world
+
+        /// Send a message to the physics system to destroy a physics joint.
+        [<FunctionBinding>]
+        static member destroyJoint physicsId world =
+            let destroyJointMessage = DestroyJointMessage { PhysicsId = physicsId }
+            World.enqueuePhysicsMessage destroyJointMessage world
+
+        /// Send a message to the physics system to destroy physics joints.
+        [<FunctionBinding>]
+        static member destroyJoints physicsIds world =
+            let destroyJointsMessage = DestroyJointsMessage { PhysicsIds = physicsIds }
+            World.enqueuePhysicsMessage destroyJointsMessage world
+
         /// Send a message to the physics system to set the position of a body with the given physics id.
         [<FunctionBinding>]
         static member setBodyPosition position physicsId world =
@@ -213,7 +237,8 @@ module WorldPhysicsModule =
 
         /// Localize a body shape to a specific physics object.
         [<FunctionBinding>]
-        static member localizeBodyShape (extent : Vector2) (bodyShape : BodyShape) =
+        static member localizeBodyShape (extent : Vector2) (bodyShape : BodyShape) (world : World) =
+            ignore world // for world parameter for scripting
             PhysicsEngine.localizeBodyShape extent bodyShape
 
 /// The subsystem for the world's physics system.

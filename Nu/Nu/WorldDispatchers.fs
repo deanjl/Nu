@@ -102,15 +102,15 @@ module FacetModule =
             lens this.ModelName (this.GetModel entity) (flip this.SetModel entity) entity
 
         override this.Register (entity, world) =
-            let (model, world) = World.attachModel initial this.ModelName entity world
-            let channels = this.Channel (model, entity, world)
+            let (_, world) = World.attachModel initial this.ModelName entity world
+            let channels = this.Channel (this.Model entity, entity)
             let world = Signal.processChannels this.Message this.Command (this.Model entity) channels entity world
-            let content = this.Content (this.Model entity, entity, world)
+            let content = this.Content (this.Model entity, entity)
             let world =
                 List.fold (fun world content ->
                     World.expandEntityContent None content (FacetOrigin (entity, getTypeName this)) entity.Parent world)
                     world content
-            let initializers = this.Initializers (this.Model entity, entity, world)
+            let initializers = this.Initializers (this.Model entity, entity)
             List.fold (fun world initializer ->
                 match initializer with
                 | PropertyDefinition def ->
@@ -124,8 +124,8 @@ module FacetModule =
                     World.monitor (fun (evt : Event) world ->
                         WorldModule.trySignalFacet (handler evt) (getTypeName this) entity world)
                         eventAddress (entity :> Simulant) world
-                | BindDefinition (left, right, breaking) ->
-                    WorldModule.bind5 entity left right breaking world)
+                | BindDefinition (left, right) ->
+                    WorldModule.bind5 entity left right world)
                 world initializers
 
         override this.Actualize (entity, world) =
@@ -138,11 +138,11 @@ module FacetModule =
             | :? Signal<obj, 'command> as signal -> entity.SignalEntityFacet<'model, 'message, 'command> (match signal with Command command -> cmd command | _ -> failwithumf ()) (getTypeName this) world
             | _ -> Log.info "Incorrect signal type returned from event binding."; world
 
-        abstract member Initializers : Lens<'model, World> * Entity * World -> PropertyInitializer list
-        default this.Initializers (_, _, _) = []
+        abstract member Initializers : Lens<'model, World> * Entity -> PropertyInitializer list
+        default this.Initializers (_, _) = []
 
-        abstract member Channel : 'model * Entity * World -> Channel<'message, 'command, Entity, World> list
-        default this.Channel (_, _, _) = []
+        abstract member Channel : Lens<'model, World> * Entity -> Channel<'message, 'command, Entity, World> list
+        default this.Channel (_, _) = []
 
         abstract member Message : 'model * 'message * Entity * World -> 'model * Signal<'message, 'command> list
         default this.Message (model, _, _, _) = just model
@@ -150,8 +150,8 @@ module FacetModule =
         abstract member Command : 'model * 'command * Entity * World -> World * Signal<'message, 'command> list
         default this.Command (_, _, _, world) = just world
 
-        abstract member Content : Lens<'model, World> * Entity * World -> EntityContent list
-        default this.Content (_, _, _) = []
+        abstract member Content : Lens<'model, World> * Entity -> EntityContent list
+        default this.Content (_, _) = []
 
         abstract member View : 'model * Entity * World -> View list
         default this.View (_, _, _) = []
@@ -393,9 +393,9 @@ module TextFacetModule =
         member this.GetJustification world : Justification = this.Get Property? Justification world
         member this.SetJustification (value : Justification) world = this.SetFast Property? Justification false false value world
         member this.Justification = lens Property? Justification this.GetJustification this.SetJustification this
-        member this.GetColor world : Vector4 = this.Get Property? Color world
-        member this.SetColor (value : Vector4) world = this.SetFast Property? Color false false value world
-        member this.Color = lens Property? Color this.GetColor this.SetColor this
+        member this.GetTextColor world : Vector4 = this.Get Property? TextColor world
+        member this.SetTextColor (value : Vector4) world = this.SetFast Property? TextColor false false value world
+        member this.TextColor = lens Property? TextColor this.GetTextColor this.SetTextColor this
 
     type TextFacet () =
         inherit Facet ()
@@ -405,7 +405,7 @@ module TextFacetModule =
              define Entity.Font (AssetTag.make<Font> Assets.DefaultPackageName Assets.DefaultFontName)
              define Entity.Margins Vector2.Zero
              define Entity.Justification (Justified (JustifyCenter, JustifyMiddle))
-             define Entity.Color (Vector4 (0.0f, 0.0f, 0.0f, 1.0f))]
+             define Entity.TextColor (Vector4 (0.0f, 0.0f, 0.0f, 1.0f))]
 
         override this.Actualize (text, world) =
             let textStr = text.GetText world
@@ -423,7 +423,7 @@ module TextFacetModule =
                                       Size = text.GetSize world - text.GetMargins world * 2.0f
                                       ViewType = Absolute
                                       Font = text.GetFont world
-                                      Color = text.GetColor world
+                                      Color = text.GetTextColor world
                                       Justification = text.GetJustification world }}|])
                     world
             else world
@@ -472,6 +472,9 @@ module RigidBodyFacetModule =
         member this.GetCollisionMask world : string = this.Get Property? CollisionMask world
         member this.SetCollisionMask (value : string) world = this.SetFast Property? CollisionMask false false value world
         member this.CollisionMask = lens Property? CollisionMask this.GetCollisionMask this.SetCollisionMask this
+        member this.GetBodyShape world : BodyShape = this.Get Property? BodyShape world
+        member this.SetBodyShape (value : BodyShape) world = this.SetFast Property? BodyShape false false value world
+        member this.BodyShape = lens Property? BodyShape this.GetBodyShape this.SetBodyShape this
         member this.GetIsBullet world : bool = this.Get Property? IsBullet world
         member this.SetIsBullet (value : bool) world = this.SetFast Property? IsBullet false false value world
         member this.IsBullet = lens Property? IsBullet this.GetIsBullet this.SetIsBullet this
@@ -481,12 +484,13 @@ module RigidBodyFacetModule =
         member this.GetPhysicsId world : PhysicsId = this.Get Property? PhysicsId world
         member this.PhysicsId = lensReadOnly Property? PhysicsId this.GetPhysicsId this
         member this.CollisionEvent = Events.Collision --> this
+        member this.SeparationEvent = Events.Separation --> this
 
     type RigidBodyFacet () =
         inherit Facet ()
 
         static let getBodyShape (entity : Entity) world =
-            World.localizeBodyShape (entity.GetSize world) (entity.GetBodyShape world)
+            World.localizeBodyShape (entity.GetSize world) (entity.GetBodyShape world) world
 
         static member Properties =
             [define Entity.BodyType Dynamic
@@ -502,17 +506,17 @@ module RigidBodyFacetModule =
              define Entity.GravityScale 1.0f
              define Entity.CollisionCategories "1"
              define Entity.CollisionMask "@"
-             define Entity.BodyShape (BodyBox { Extent = Vector2 0.5f; Center = Vector2.Zero })
+             define Entity.BodyShape (BodyBox { Extent = Vector2 0.5f; Center = Vector2.Zero; PropertiesOpt = None })
              define Entity.IsBullet false
              define Entity.IsSensor false
-             computed Entity.PhysicsId (fun (entity : Entity) world -> { SourceId = entity.GetId world; BodyId = Guid.Empty }) None]
+             computed Entity.PhysicsId (fun (entity : Entity) world -> { SourceId = entity.GetId world; CorrelationId = Gen.idEmpty }) None]
 
         override this.RegisterPhysics (entity, world) =
             let bodyProperties = 
-                { BodyId = (entity.GetPhysicsId world).BodyId
+                { BodyId = (entity.GetPhysicsId world).CorrelationId
                   Position = entity.GetPosition world + entity.GetSize world * 0.5f
                   Rotation = entity.GetRotation world
-                  Shape = getBodyShape entity world
+                  BodyShape = getBodyShape entity world
                   BodyType = entity.GetBodyType world
                   Awake = entity.GetAwake world
                   Enabled = entity.GetEnabled world
@@ -542,32 +546,64 @@ module RigidBodiesFacetModule =
         member this.GetBodies world : Map<Guid, BodyProperties> = this.Get Property? Bodies world
         member this.SetBodies (value : Map<Guid, BodyProperties>) world = this.SetFast Property? Bodies false false value world
         member this.Bodies = lens Property? Bodies this.GetBodies this.SetBodies this
+        member this.GetJoints world : Map<Guid, JointProperties> = this.Get Property? Joints world
+        member this.SetJoints (value : Map<Guid, JointProperties>) world = this.SetFast Property? Joints false false value world
+        member this.Joints = lens Property? Joints this.GetJoints this.SetJoints this
 
     type RigidBodiesFacet () =
         inherit Facet ()
 
         static member Properties =
-            [define Entity.Bodies (Map.singleton Guid.Empty BodyProperties.empty)
-             computed Entity.PhysicsId (fun (entity : Entity) world -> { SourceId = entity.GetId world; BodyId = Guid.Empty }) None]
+            [define Entity.Bodies Map.empty
+             define Entity.Joints Map.empty
+             computed Entity.PhysicsId (fun (entity : Entity) world -> { SourceId = entity.GetId world; CorrelationId = Gen.idEmpty }) None]
 
         override this.RegisterPhysics (entity, world) =
             let position = entity.GetPosition world
             let size = entity.GetSize world
             let rotation = entity.GetRotation world
-            let bodiesProperties = entity.GetBodies world |> Map.toValueList
             let bodiesProperties =
-                List.map (fun (properties : BodyProperties) ->
+                entity.GetBodies world |>
+                Map.toValueList |>
+                List.map (fun properties ->
                     { properties with
                         Position = properties.Position + position
                         Rotation = properties.Rotation + rotation
-                        Shape = World.localizeBodyShape size properties.Shape })
-                    bodiesProperties
-            World.createBodies entity (entity.GetId world) bodiesProperties world
+                        BodyShape = World.localizeBodyShape size properties.BodyShape world })
+            let world = World.createBodies entity (entity.GetId world) bodiesProperties world
+            let jointsProperties = Map.toValueList (entity.GetJoints world)
+            let world = World.createJoints entity (entity.GetId world) jointsProperties world
+            world
 
         override this.UnregisterPhysics (entity, world) =
             let bodiesProperties = entity.GetBodies world |> Map.toValueList
-            let physicsIds = List.map (fun (properties : BodyProperties) -> { SourceId = entity.GetId world; BodyId = properties.BodyId }) bodiesProperties
+            let physicsIds = List.map (fun (properties : BodyProperties) -> { SourceId = entity.GetId world; CorrelationId = properties.BodyId }) bodiesProperties
             World.destroyBodies physicsIds world
+
+[<AutoOpen>]
+module JointFacetModule =
+
+    type Entity with
+
+        member this.GetJointDevice world : JointDevice = this.Get Property? JointDevice world
+        member this.SetJointDevice (value : JointDevice) world = this.SetFast Property? JointDevice false false value world
+        member this.JointDevice = lens Property? JointDevice this.GetJointDevice this.SetJointDevice this
+
+    type JointFacet () =
+        inherit Facet ()
+
+        static member Properties =
+            [define Entity.JointDevice JointEmpty
+             computed Entity.PhysicsId (fun (entity : Entity) world -> { SourceId = entity.GetId world; CorrelationId = Gen.idEmpty }) None]
+
+        override this.RegisterPhysics (entity, world) =
+            let jointProperties =
+                { JointId = (entity.GetPhysicsId world).CorrelationId
+                  JointDevice = (entity.GetJointDevice world) }
+            World.createJoint entity (entity.GetId world) jointProperties world
+
+        override this.UnregisterPhysics (entity, world) =
+            World.destroyJoint (entity.GetPhysicsId world) world
 
 [<AutoOpen>]
 module TileMapFacetModule =
@@ -587,36 +623,36 @@ module TileMapFacetModule =
     type TileMapFacet () =
         inherit Facet ()
 
-        let tryMakeTileMapData (tileMapAsset : TileMap AssetTag) world =
+        let tryMakeTileMapDescriptor (tileMapAsset : TileMap AssetTag) world =
             let metadataMap = World.getMetadata world
             match Metadata.tryGetTileMapMetadata tileMapAsset metadataMap with
-            | Some (_, _, map) ->
-                let mapSize = Vector2i (map.Width, map.Height)
-                let tileSize = Vector2i (map.TileWidth, map.TileHeight)
-                let tileSizeF = Vector2 (single tileSize.X, single tileSize.Y)
-                let tileMapSize = Vector2i (mapSize.X * tileSize.X, mapSize.Y * tileSize.Y)
-                let tileMapSizeF = Vector2 (single tileMapSize.X, single tileMapSize.Y)
-                let tileSet = map.Tilesets.[0] // MAGIC_VALUE: I'm not sure how to properly specify this
+            | Some (_, _, tileMap) ->
+                let tileSizeI = Vector2i (tileMap.TileWidth, tileMap.TileHeight)
+                let tileSizeF = Vector2 (single tileSizeI.X, single tileSizeI.Y)
+                let tileMapSizeM = Vector2i (tileMap.Width, tileMap.Height)
+                let tileMapSizeI = Vector2i (tileMapSizeM.X * tileSizeI.X, tileMapSizeM.Y * tileSizeI.Y)
+                let tileMapSizeF = Vector2 (single tileMapSizeI.X, single tileMapSizeI.Y)
+                let tileSet = tileMap.Tilesets.[0] // MAGIC_VALUE: I'm not sure how to properly specify this
                 let tileSetSize =
                     let tileSetWidthOpt = tileSet.Image.Width
                     let tileSetHeightOpt = tileSet.Image.Height
-                    Vector2i (tileSetWidthOpt.Value / tileSize.X, tileSetHeightOpt.Value / tileSize.Y)
-                Some { Map = map; MapSize = mapSize; TileSize = tileSize; TileSizeF = tileSizeF; TileMapSize = tileMapSize; TileMapSizeF = tileMapSizeF; TileSet = tileSet; TileSetSize = tileSetSize }
+                    Vector2i (tileSetWidthOpt.Value / tileSizeI.X, tileSetHeightOpt.Value / tileSizeI.Y)
+                Some { TileMap = tileMap; TileMapSizeM = tileMapSizeM; TileSizeI = tileSizeI; TileSizeF = tileSizeF; TileMapSizeI = tileMapSizeI; TileMapSizeF = tileMapSizeF; TileSet = tileSet; TileSetSize = tileSetSize }
             | None -> None
 
-        let makeTileData (tm : Entity) tmd (tl : TmxLayer) tileIndex world =
-            let mapRun = tmd.MapSize.X
+        let makeTileDescriptor (tm : Entity) tmd (tl : TmxLayer) tileIndex world =
+            let tileMapRun = tmd.TileMapSizeM.X
             let tileSetRun = tmd.TileSetSize.X
-            let (i, j) = (tileIndex % mapRun, tileIndex / mapRun)
+            let (i, j) = (tileIndex % tileMapRun, tileIndex / tileMapRun)
             let tile = tl.Tiles.[tileIndex]
             let gid = tile.Gid - tmd.TileSet.FirstGid
-            let gidPosition = gid * tmd.TileSize.X
+            let gidPosition = gid * tmd.TileSizeI.X
             let gid2 = Vector2i (gid % tileSetRun, gid / tileSetRun)
             let tileMapPosition = tm.GetPosition world
             let tilePosition =
                 Vector2i
-                    (int tileMapPosition.X + tmd.TileSize.X * i,
-                     int tileMapPosition.Y - tmd.TileSize.Y * (j + 1)) // subtraction for right-handedness
+                    (int tileMapPosition.X + tmd.TileSizeI.X * i,
+                     int tileMapPosition.Y - tmd.TileSizeI.Y * (j + 1)) // subtraction for right-handedness
             let tileSetTileOpt =
                 match tmd.TileSet.Tiles.TryGetValue (tile.Gid - 1) with
                 | (true, tile) -> Some tile
@@ -624,14 +660,14 @@ module TileMapFacetModule =
             { Tile = tile; I = i; J = j; Gid = gid; GidPosition = gidPosition; Gid2 = gid2; TilePosition = tilePosition; TileSetTileOpt = tileSetTileOpt }
 
         let getTileBodyProperties6 (tm : Entity) tmd tli td ti cexpr world =
-            let tileShape = World.localizeBodyShape (Vector2 (single tmd.TileSize.X, single tmd.TileSize.Y)) cexpr
+            let tileShape = World.localizeBodyShape (Vector2 (single tmd.TileSizeI.X, single tmd.TileSizeI.Y)) cexpr world
             { BodyId = Gen.idFromInts tli ti
               Position =
                 Vector2
-                    (single (td.TilePosition.X + tmd.TileSize.X / 2),
-                     single (td.TilePosition.Y + tmd.TileSize.Y / 2 + tmd.TileMapSize.Y))
+                    (single (td.TilePosition.X + tmd.TileSizeI.X / 2),
+                     single (td.TilePosition.Y + tmd.TileSizeI.Y / 2 + tmd.TileMapSizeI.Y))
               Rotation = tm.GetRotation world
-              Shape = tileShape
+              BodyShape = tileShape
               BodyType = BodyType.Static
               Awake = false
               Enabled = true
@@ -650,41 +686,41 @@ module TileMapFacetModule =
               IsSensor = false }
 
         let getTileBodyProperties tm tmd (tl : TmxLayer) tli ti world =
-            let td = makeTileData tm tmd tl ti world
+            let td = makeTileDescriptor tm tmd tl ti world
             match td.TileSetTileOpt with
             | Some tileSetTile ->
-                match tileSetTile.Properties.TryGetValue Constants.Physics.CollisionProperty with
+                match tileSetTile.Properties.TryGetValue Constants.TileMap.CollisionPropertyName with
                 | (true, cexpr) ->
                     let tileBody =
                         match cexpr with
-                        | "" -> BodyBox { Extent = Vector2 0.5f; Center = Vector2.Zero }
+                        | "" -> BodyBox { Extent = Vector2 0.5f; Center = Vector2.Zero; PropertiesOpt = None }
                         | _ -> scvalue<BodyShape> cexpr
                     let tileBodyProperties = getTileBodyProperties6 tm tmd tli td ti tileBody world
                     Some tileBodyProperties
                 | (false, _) -> None
             | None -> None
 
-        let getTileLayerBodyPropertyList tileMap tileMapData tileLayerIndex (tileLayer : TmxLayer) world =
+        let getTileLayerBodyPropertyList tileMap tileMapDescriptor tileLayerIndex (tileLayer : TmxLayer) world =
             Seq.foldi
                 (fun i bodyPropertyList _ ->
-                    match getTileBodyProperties tileMap tileMapData tileLayer tileLayerIndex i world with
+                    match getTileBodyProperties tileMap tileMapDescriptor tileLayer tileLayerIndex i world with
                     | Some bodyProperties -> bodyProperties :: bodyPropertyList
                     | None -> bodyPropertyList)
                 [] tileLayer.Tiles |>
             Seq.toList
 
-        let registerTileLayerPhysics (tileMap : Entity) tileMapData tileLayerIndex world tileLayer =
-            let bodyPropertyList = getTileLayerBodyPropertyList tileMap tileMapData tileLayerIndex tileLayer world
+        let registerTileLayerPhysics (tileMap : Entity) tileMapDescriptor tileLayerIndex world tileLayer =
+            let bodyPropertyList = getTileLayerBodyPropertyList tileMap tileMapDescriptor tileLayerIndex tileLayer world
             World.createBodies tileMap (tileMap.GetId world) bodyPropertyList world
 
-        let getTileLayerPhysicsIds (tileMap : Entity) tileMapData tileLayer tileLayerIndex world =
+        let getTileLayerPhysicsIds (tileMap : Entity) tileMapDescriptor tileLayer tileLayerIndex world =
             Seq.foldi
                 (fun tileIndex physicsIds _ ->
-                    let tileData = makeTileData tileMap tileMapData tileLayer tileIndex world
-                    match tileData.TileSetTileOpt with
+                    let tileDescriptor = makeTileDescriptor tileMap tileMapDescriptor tileLayer tileIndex world
+                    match tileDescriptor.TileSetTileOpt with
                     | Some tileSetTile ->
-                        if tileSetTile.Properties.ContainsKey Constants.Physics.CollisionProperty then
-                            let physicsId = { SourceId = tileMap.GetId world; BodyId = Gen.idFromInts tileLayerIndex tileIndex }
+                        if tileSetTile.Properties.ContainsKey Constants.TileMap.CollisionPropertyName then
+                            let physicsId = { SourceId = tileMap.GetId world; CorrelationId = Gen.idFromInts tileLayerIndex tileIndex }
                             physicsId :: physicsIds
                         else physicsIds
                     | None -> physicsIds)
@@ -703,26 +739,26 @@ module TileMapFacetModule =
 
         override this.RegisterPhysics (tileMap, world) =
             let tileMapAsset = tileMap.GetTileMapAsset world
-            match tryMakeTileMapData tileMapAsset world with
-            | Some tileMapData ->
+            match tryMakeTileMapDescriptor tileMapAsset world with
+            | Some tileMapDescriptor ->
                 Seq.foldi
-                    (registerTileLayerPhysics tileMap tileMapData)
+                    (registerTileLayerPhysics tileMap tileMapDescriptor)
                     world
-                    tileMapData.Map.Layers
+                    tileMapDescriptor.TileMap.Layers
             | None ->
                 Log.debug ("Could not make tile map data for '" + scstring tileMapAsset + "'.")
                 world
 
         override this.UnregisterPhysics (tileMap, world) =
             let tileMapAsset = tileMap.GetTileMapAsset world
-            match tryMakeTileMapData tileMapAsset world with
-            | Some tileMapData ->
+            match tryMakeTileMapDescriptor tileMapAsset world with
+            | Some tileMapDescriptor ->
                 Seq.foldi
                     (fun tileLayerIndex world (tileLayer : TmxLayer) ->
-                        let physicsIds = getTileLayerPhysicsIds tileMap tileMapData tileLayer tileLayerIndex world
+                        let physicsIds = getTileLayerPhysicsIds tileMap tileMapDescriptor tileLayer tileLayerIndex world
                         World.destroyBodies physicsIds world)
                     world
-                    tileMapData.Map.Layers
+                    tileMapDescriptor.TileMap.Layers
             | None ->
                 Log.debug ("Could not make tile map data for '" + scstring tileMapAsset + "'.")
                 world
@@ -743,7 +779,7 @@ module TileMapFacetModule =
                                     let yOffset = single (map.Height - j - 1) * tileSize.Y
                                     let position = tileMap.GetPosition world + v2 0.0f yOffset
                                     let depthOffset =
-                                        match layer.Properties.TryGetValue Constants.Physics.DepthProperty with
+                                        match layer.Properties.TryGetValue Constants.TileMap.DepthPropertyName with
                                         | (true, depth) -> scvalue depth
                                         | (false, _) -> single i * tileLayerClearance
                                     let depth = tileMap.GetDepth world + depthOffset
@@ -827,7 +863,7 @@ module NodeFacetModule =
                 | (Some relationOld, Some relationNew) ->
                     let parentOld = this.Resolve relationOld
                     let parentNew = this.Resolve relationNew
-                    if parentOld.GetExists world && parentNew.GetExists world then
+                    if parentOld.Exists world && parentNew.Exists world then
                         let position = this.GetPositionLocal world + parentNew.GetPosition world
                         let depth = this.GetDepthLocal world + parentNew.GetDepth world
                         let world = this.SetPosition position world
@@ -838,7 +874,7 @@ module NodeFacetModule =
                     else world
                 | (Some relationOld, None) ->
                     let parentOld = this.Resolve relationOld
-                    if parentOld.GetExists world then
+                    if parentOld.Exists world then
                         let position = this.GetPositionLocal world + parentOld.GetPosition world
                         let depth = this.GetDepthLocal world + parentOld.GetDepth world
                         let world = this.SetPosition position world
@@ -849,7 +885,7 @@ module NodeFacetModule =
                     else world
                 | (None, Some relationNew) ->
                     let parentNew = this.Resolve relationNew
-                    if parentNew.GetExists world then
+                    if parentNew.Exists world then
                         let position = this.GetPosition world - parentNew.GetPosition world
                         let depth = this.GetDepth world - parentNew.GetDepth world
                         let world = this.SetPositionLocal position world
@@ -866,12 +902,12 @@ module NodeFacetModule =
 
         member this.ParentNodeExists world =
             match this.GetParentNodeOpt world with
-            | Some relation -> (this.Resolve relation).GetExists world
+            | Some relation -> (this.Resolve relation).Exists world
             | None -> false
 
         member private this.GetChildNodes2 nodes world =
             let nodeOpt =
-                if this.FacetedAs<NodeFacet> world
+                if this.Has<NodeFacet> world
                 then Option.map this.Resolve (this.GetParentNodeOpt world)
                 else None
             match nodeOpt with
@@ -946,14 +982,14 @@ module NodeFacetModule =
                 if node = entity then
                     Log.trace "Cannot mount entity to itself."
                     World.choose oldWorld
-                elif entity.FacetedAs<RigidBodyFacet> world then
+                elif entity.Has<RigidBodyFacet> world then
                     Log.trace "Cannot mount a rigid body entity onto another entity. Instead, consider using physics constraints."
                     World.choose oldWorld
                 else
-                    let (unsubscribe, world) = World.monitorPlus handleNodePropertyChange node.Position.ChangeEvent entity world
-                    let (unsubscribe2, world) = World.monitorPlus handleNodePropertyChange node.Depth.ChangeEvent entity world
-                    let (unsubscribe3, world) = World.monitorPlus handleNodePropertyChange node.Visible.ChangeEvent entity world
-                    let (unsubscribe4, world) = World.monitorPlus handleNodePropertyChange node.Enabled.ChangeEvent entity world
+                    let (unsubscribe, world) = World.monitorPlus None None None handleNodePropertyChange node.Position.ChangeEvent entity world
+                    let (unsubscribe2, world) = World.monitorPlus None None None handleNodePropertyChange node.Depth.ChangeEvent entity world
+                    let (unsubscribe3, world) = World.monitorPlus None None None handleNodePropertyChange node.Visible.ChangeEvent entity world
+                    let (unsubscribe4, world) = World.monitorPlus None None None handleNodePropertyChange node.Enabled.ChangeEvent entity world
                     entity.SetNodeUnsubscribe (unsubscribe4 >> unsubscribe3 >> unsubscribe2 >> unsubscribe) world
             | None -> world
 
@@ -980,10 +1016,10 @@ module NodeFacetModule =
         override this.Register (entity, world) =
             let world = entity.SetNodeUnsubscribe id world // ensure unsubscribe function reference doesn't get copied in Gaia...
             let world = World.monitor handleNodeChange entity.ParentNodeOpt.ChangeEvent entity world
-            let world = World.monitorPlus handleLocalPropertyChange entity.PositionLocal.ChangeEvent entity world |> snd
-            let world = World.monitorPlus handleLocalPropertyChange entity.DepthLocal.ChangeEvent entity world |> snd
-            let world = World.monitorPlus handleLocalPropertyChange entity.VisibleLocal.ChangeEvent entity world |> snd
-            let world = World.monitorPlus handleLocalPropertyChange entity.EnabledLocal.ChangeEvent entity world |> snd
+            let world = World.monitorPlus None None None handleLocalPropertyChange entity.PositionLocal.ChangeEvent entity world |> snd
+            let world = World.monitorPlus None None None handleLocalPropertyChange entity.DepthLocal.ChangeEvent entity world |> snd
+            let world = World.monitorPlus None None None handleLocalPropertyChange entity.VisibleLocal.ChangeEvent entity world |> snd
+            let world = World.monitorPlus None None None handleLocalPropertyChange entity.EnabledLocal.ChangeEvent entity world |> snd
             let world = tryUpdateFromNode entity world
             let world = trySubscribeToNodePropertyChanges entity world
             world
@@ -1155,15 +1191,15 @@ module EntityDispatcherModule =
             lens Property? Model (this.GetModel entity) (flip this.SetModel entity) entity
 
         override this.Register (entity, world) =
-            let (model, world) = World.attachModel initial Property? Model entity world
-            let channels = this.Channel (model, entity, world)
+            let (_, world) = World.attachModel initial Property? Model entity world
+            let channels = this.Channel (this.Model entity, entity)
             let world = Signal.processChannels this.Message this.Command (this.Model entity) channels entity world
-            let content = this.Content (this.Model entity, entity, world)
+            let content = this.Content (this.Model entity, entity)
             let world =
                 List.fold (fun world content ->
                     World.expandEntityContent None content (SimulantOrigin entity) entity.Parent world)
                     world content
-            let initializers = this.Initializers (this.Model entity, entity, world)
+            let initializers = this.Initializers (this.Model entity, entity)
             List.fold (fun world initializer ->
                 match initializer with
                 | PropertyDefinition def ->
@@ -1177,8 +1213,8 @@ module EntityDispatcherModule =
                     World.monitor (fun (evt : Event) world ->
                         WorldModule.trySignal (handler evt) entity world)
                         eventAddress (entity :> Simulant) world
-                | BindDefinition (left, right, breaking) ->
-                    WorldModule.bind5 entity left right breaking world)
+                | BindDefinition (left, right) ->
+                    WorldModule.bind5 entity left right world)
                 world initializers
 
         override this.Actualize (entity, world) =
@@ -1194,11 +1230,11 @@ module EntityDispatcherModule =
             | :? Signal<obj, 'command> as signal -> entity.Signal<'model, 'message, 'command> (match signal with Command command -> cmd command | _ -> failwithumf ()) world
             | _ -> Log.info "Incorrect signal type returned from event binding."; world
 
-        abstract member Initializers : Lens<'model, World> * Entity * World -> PropertyInitializer list
-        default this.Initializers (_, _, _) = []
+        abstract member Initializers : Lens<'model, World> * Entity -> PropertyInitializer list
+        default this.Initializers (_, _) = []
 
-        abstract member Channel : 'model * Entity * World -> Channel<'message, 'command, Entity, World> list
-        default this.Channel (_, _, _) = []
+        abstract member Channel : Lens<'model, World> * Entity -> Channel<'message, 'command, Entity, World> list
+        default this.Channel (_, _) = []
 
         abstract member Message : 'model * 'message * Entity * World -> 'model * Signal<'message, 'command> list
         default this.Message (model, _, _, _) = just model
@@ -1206,8 +1242,8 @@ module EntityDispatcherModule =
         abstract member Command : 'model * 'command * Entity * World -> World * Signal<'message, 'command> list
         default this.Command (_, _, _, world) = just world
 
-        abstract member Content : Lens<'model, World> * Entity * World -> EntityContent list
-        default this.Content (_, _, _) = []
+        abstract member Content : Lens<'model, World> * Entity -> EntityContent list
+        default this.Content (_, _) = []
 
         abstract member View : 'model * Entity * World -> View list
         default this.View (_, _, _) = []
@@ -1286,8 +1322,8 @@ module GuiDispatcherModule =
              define Entity.SwallowMouseLeft true]
 
         override this.Register (gui, world) =
-            let world = World.monitorPlus handleMouseLeft Events.MouseLeftDown gui world |> snd
-            let world = World.monitorPlus handleMouseLeft Events.MouseLeftUp gui world |> snd
+            let world = World.monitorPlus None None None handleMouseLeft Events.MouseLeftDown gui world |> snd
+            let world = World.monitorPlus None None None handleMouseLeft Events.MouseLeftUp gui world |> snd
             world
 
     type [<AbstractClass>] GuiDispatcher<'model, 'message, 'command when 'model : equality> (model) =
@@ -1319,8 +1355,8 @@ module GuiDispatcherModule =
 
         override this.Register (gui, world) =
             let world = base.Register (gui, world)
-            let world = World.monitorPlus handleMouseLeft Events.MouseLeftDown gui world |> snd
-            let world = World.monitorPlus handleMouseLeft Events.MouseLeftUp gui world |> snd
+            let world = World.monitorPlus None None None handleMouseLeft Events.MouseLeftDown gui world |> snd
+            let world = World.monitorPlus None None None handleMouseLeft Events.MouseLeftUp gui world |> snd
             world
 
 [<AutoOpen>]
@@ -1337,8 +1373,8 @@ module ButtonDispatcherModule =
         member this.GetDownImage world : Image AssetTag = this.Get Property? DownImage world
         member this.SetDownImage (value : Image AssetTag) world = this.SetFast Property? DownImage false false value world
         member this.DownImage = lens Property? DownImage this.GetDownImage this.SetDownImage this
-        member this.GetClickSoundOpt world : Audio AssetTag option = this.Get Property? ClickSoundOpt world
-        member this.SetClickSoundOpt (value : Audio AssetTag option) world = this.SetFast Property? ClickSoundOpt false false value world
+        member this.GetClickSoundOpt world : Sound AssetTag option = this.Get Property? ClickSoundOpt world
+        member this.SetClickSoundOpt (value : Sound AssetTag option) world = this.SetFast Property? ClickSoundOpt false false value world
         member this.ClickSoundOpt = lens Property? ClickSoundOpt this.GetClickSoundOpt this.SetClickSoundOpt this
         member this.GetClickSoundVolume world : single = this.Get Property? ClickSoundVolume world
         member this.SetClickSoundVolume (value : single) world = this.SetFast Property? ClickSoundVolume false false value world
@@ -1398,12 +1434,12 @@ module ButtonDispatcherModule =
              define Entity.Down false
              define Entity.UpImage (AssetTag.make<Image> Assets.DefaultPackageName "Image")
              define Entity.DownImage (AssetTag.make<Image> Assets.DefaultPackageName "Image2")
-             define Entity.ClickSoundOpt (Some (AssetTag.make<Audio> Assets.DefaultPackageName "Sound"))
+             define Entity.ClickSoundOpt (Some (AssetTag.make<Sound> Assets.DefaultPackageName "Sound"))
              define Entity.ClickSoundVolume Constants.Audio.DefaultSoundVolume]
 
         override this.Register (button, world) =
-            let world = World.monitorPlus handleMouseLeftDown Events.MouseLeftDown button world |> snd
-            let world = World.monitorPlus handleMouseLeftUp Events.MouseLeftUp button world |> snd
+            let world = World.monitorPlus None None None handleMouseLeftDown Events.MouseLeftDown button world |> snd
+            let world = World.monitorPlus None None None handleMouseLeftUp Events.MouseLeftUp button world |> snd
             world
 
         override this.Actualize (button, world) =
@@ -1545,8 +1581,8 @@ module ToggleDispatcherModule =
         member this.GetClosedImage world : Image AssetTag = this.Get Property? ClosedImage world
         member this.SetClosedImage (value : Image AssetTag) world = this.SetFast Property? ClosedImage false false value world
         member this.ClosedImage = lens Property? ClosedImage this.GetClosedImage this.SetClosedImage this
-        member this.GetToggleSoundOpt world : Audio AssetTag option = this.Get Property? ToggleSoundOpt world
-        member this.SetToggleSoundOpt (value : Audio AssetTag option) world = this.SetFast Property? ToggleSoundOpt false false value world
+        member this.GetToggleSoundOpt world : Sound AssetTag option = this.Get Property? ToggleSoundOpt world
+        member this.SetToggleSoundOpt (value : Sound AssetTag option) world = this.SetFast Property? ToggleSoundOpt false false value world
         member this.ToggleSoundOpt = lens Property? ToggleSoundOpt this.GetToggleSoundOpt this.SetToggleSoundOpt this
         member this.GetToggleSoundVolume world : single = this.Get Property? ToggleSoundVolume world
         member this.SetToggleSoundVolume (value : single) world = this.SetFast Property? ToggleSoundVolume false false value world
@@ -1605,12 +1641,12 @@ module ToggleDispatcherModule =
              define Entity.Pressed false
              define Entity.OpenImage (AssetTag.make<Image> Assets.DefaultPackageName "Image")
              define Entity.ClosedImage (AssetTag.make<Image> Assets.DefaultPackageName "Image2")
-             define Entity.ToggleSoundOpt (Some (AssetTag.make<Audio> Assets.DefaultPackageName "Sound"))
+             define Entity.ToggleSoundOpt (Some (AssetTag.make<Sound> Assets.DefaultPackageName "Sound"))
              define Entity.ToggleSoundVolume Constants.Audio.DefaultSoundVolume]
 
         override this.Register (toggle, world) =
-            let world = World.monitorPlus handleMouseLeftDown Events.MouseLeftDown toggle world |> snd
-            let world = World.monitorPlus handleMouseLeftUp Events.MouseLeftUp toggle world |> snd
+            let world = World.monitorPlus None None None handleMouseLeftDown Events.MouseLeftDown toggle world |> snd
+            let world = World.monitorPlus None None None handleMouseLeftUp Events.MouseLeftUp toggle world |> snd
             world
 
         override this.Actualize (toggle, world) =
@@ -1733,8 +1769,8 @@ module FeelerDispatcherModule =
              define Entity.Touched false]
 
         override this.Register (feeler, world) =
-            let world = World.monitorPlus handleMouseLeftDown Events.MouseLeftDown feeler world |> snd
-            let world = World.monitorPlus handleMouseLeftUp Events.MouseLeftUp feeler world |> snd
+            let world = World.monitorPlus None None None handleMouseLeftDown Events.MouseLeftDown feeler world |> snd
+            let world = World.monitorPlus None None None handleMouseLeftUp Events.MouseLeftUp feeler world |> snd
             world
 
         override this.GetQuickSize (_, _) =
@@ -1774,8 +1810,8 @@ module FillBarDispatcherModule =
              define Entity.SwallowMouseLeft false
              define Entity.Fill 0.0f
              define Entity.FillInset 0.0f
-             define Entity.FillImage (AssetTag.make<Image> Assets.DefaultPackageName "Image9")
-             define Entity.BorderImage (AssetTag.make<Image> Assets.DefaultPackageName "Image10")]
+             define Entity.FillImage (AssetTag.make<Image> Assets.DefaultPackageName "Image10")
+             define Entity.BorderImage (AssetTag.make<Image> Assets.DefaultPackageName "Image11")]
 
         override this.Actualize (fillBar, world) =
             if fillBar.GetVisibleLayered world then
@@ -1888,7 +1924,7 @@ module CharacterDispatcherModule =
              define Entity.CelRun 8
              define Entity.FixedRotation true
              define Entity.GravityScale 3.0f
-             define Entity.BodyShape (BodyCapsule { Height = 0.5f; Radius = 0.25f; Center = v2Zero })
+             define Entity.BodyShape (BodyCapsule { Height = 0.5f; Radius = 0.25f; Center = v2Zero; PropertiesOpt = None })
              define Entity.CharacterIdleImage (AssetTag.make Assets.DefaultPackageName "CharacterIdle")
              define Entity.CharacterJumpImage (AssetTag.make Assets.DefaultPackageName "CharacterJump")
              define Entity.CharacterWalkSheet (AssetTag.make Assets.DefaultPackageName "CharacterWalk")
@@ -2006,15 +2042,15 @@ module LayerDispatcherModule =
             lens Property? Model (this.GetModel layer) (flip this.SetModel layer) layer
 
         override this.Register (layer, world) =
-            let (model, world) = World.attachModel initial Property? Model layer world
-            let channels = this.Channel (model, layer, world)
+            let (_, world) = World.attachModel initial Property? Model layer world
+            let channels = this.Channel (this.Model layer, layer)
             let world = Signal.processChannels this.Message this.Command (this.Model layer) channels layer world
-            let content = this.Content (this.Model layer, layer, world)
+            let content = this.Content (this.Model layer, layer)
             let world =
                 List.fold (fun world content ->
                     World.expandEntityContent None content (SimulantOrigin layer) layer world)
                     world content
-            let initializers = this.Initializers (this.Model layer, layer, world)
+            let initializers = this.Initializers (this.Model layer, layer)
             List.fold (fun world initializer ->
                 match initializer with
                 | PropertyDefinition def ->
@@ -2028,8 +2064,8 @@ module LayerDispatcherModule =
                     World.monitor (fun (evt : Event) world ->
                         WorldModule.trySignal (handler evt) layer world)
                         eventAddress (layer :> Simulant) world
-                | BindDefinition (left, right, breaking) ->
-                    WorldModule.bind5 layer left right breaking world)
+                | BindDefinition (left, right) ->
+                    WorldModule.bind5 layer left right world)
                 world initializers
 
         override this.Actualize (layer, world) =
@@ -2042,11 +2078,11 @@ module LayerDispatcherModule =
             | :? Signal<obj, 'command> as signal -> layer.Signal<'model, 'message, 'command> (match signal with Command command -> cmd command | _ -> failwithumf ()) world
             | _ -> Log.info "Incorrect signal type returned from event binding."; world
 
-        abstract member Initializers : Lens<'model, World> * Layer * World -> PropertyInitializer list
-        default this.Initializers (_, _, _) = []
+        abstract member Initializers : Lens<'model, World> * Layer -> PropertyInitializer list
+        default this.Initializers (_, _) = []
 
-        abstract member Channel : 'model * Layer * World -> Channel<'message, 'command, Layer, World> list
-        default this.Channel (_, _, _) = []
+        abstract member Channel : Lens<'model, World> * Layer -> Channel<'message, 'command, Layer, World> list
+        default this.Channel (_, _) = []
 
         abstract member Message : 'model * 'message * Layer * World -> 'model * Signal<'message, 'command> list
         default this.Message (model, _, _, _) = just model
@@ -2054,8 +2090,8 @@ module LayerDispatcherModule =
         abstract member Command : 'model * 'command * Layer * World -> World * Signal<'message, 'command> list
         default this.Command (_, _, _, world) = just world
 
-        abstract member Content : Lens<'model, World> * Layer * World -> EntityContent list
-        default this.Content (_, _, _) = []
+        abstract member Content : Lens<'model, World> * Layer -> EntityContent list
+        default this.Content (_, _) = []
 
         abstract member View : 'model * Layer * World -> View list
         default this.View (_, _, _) = []
@@ -2108,7 +2144,7 @@ module ScreenDispatcherModule =
             let (model, world) = World.attachModel initial Property? Model screen world
             let channels = this.Channel (model, screen, world)
             let world = Signal.processChannels this.Message this.Command (this.Model screen) channels screen world
-            let content = this.Content (this.Model screen, screen, world)
+            let content = this.Content (this.Model screen, screen)
             let world =
                 List.fold (fun world content ->
                     World.expandLayerContent None content (SimulantOrigin screen) screen world)
@@ -2127,8 +2163,8 @@ module ScreenDispatcherModule =
                     World.monitor (fun (evt : Event) world ->
                         WorldModule.trySignal (handler evt) screen world)
                         eventAddress (screen :> Simulant) world
-                | BindDefinition (left, right, breaking) ->
-                    WorldModule.bind5 screen left right breaking world)
+                | BindDefinition (left, right) ->
+                    WorldModule.bind5 screen left right world)
                 world initializers
 
         override this.Actualize (screen, world) =
@@ -2153,8 +2189,8 @@ module ScreenDispatcherModule =
         abstract member Command : 'model * 'command * Screen * World -> World * Signal<'message, 'command> list
         default this.Command (_, _, _, world) = just world
 
-        abstract member Content : Lens<'model, World> * Screen * World -> LayerContent list
-        default this.Content (_, _, _) = []
+        abstract member Content : Lens<'model, World> * Screen -> LayerContent list
+        default this.Content (_, _) = []
 
         abstract member View : 'model * Screen * World -> View list
         default this.View (_, _, _) = []

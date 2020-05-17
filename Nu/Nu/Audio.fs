@@ -9,32 +9,35 @@ open SDL2
 open Prime
 open Nu
 
-/// Audio. Currently just used as a phantom type.
-type Audio = private { __ : unit }
+/// Song. Currently just used as a phantom type.
+type Song = private { __ : unit }
 
-/// A message to the audio system to play a song.
-type [<StructuralEquality; NoComparison>] PlaySongMessage =
-    { TimeToFadeOutSongMs : int
+/// Sound. Currently just used as a phantom type.
+type Sound = private { __ : unit }
+
+/// Descrides a song.
+type [<StructuralEquality; NoComparison>] SongDescriptor =
+    { FadeOutMs : int
       Volume : single
-      Song : Audio AssetTag }
+      Song : Song AssetTag }
 
-/// A message to the audio system to play a sound.
-type [<StructuralEquality; NoComparison>] PlaySoundMessage =
+/// Describes a sound.
+type [<StructuralEquality; NoComparison>] SoundDescriptor =
     { Volume : single
-      Sound : Audio AssetTag }
+      Sound : Sound AssetTag }
 
 /// A message to the audio system.
 type [<StructuralEquality; NoComparison>] AudioMessage =
     | HintAudioPackageUseMessage of string
     | HintAudioPackageDisuseMessage of string
-    | PlaySoundMessage of PlaySoundMessage
-    | PlaySongMessage of PlaySongMessage
+    | PlaySoundMessage of SoundDescriptor
+    | PlaySongMessage of SongDescriptor
     | FadeOutSongMessage of int
     | StopSongMessage
     | ReloadAudioAssetsMessage
 
 /// An audio asset used by the audio system.
-type [<ReferenceEquality>] AudioAsset =
+type [<StructuralEquality; NoComparison>] AudioAsset =
     | WavAsset of nativeint
     | OggAsset of nativeint
 
@@ -50,7 +53,7 @@ type AudioPlayer =
     abstract Play : AudioMessage List -> unit
 
 /// The mock implementation of AudioPlayer.
-type [<ReferenceEquality>] MockAudioPlayer =
+type [<ReferenceEquality; NoComparison>] MockAudioPlayer =
     private
         { MockAudioPlayer : unit }
     
@@ -64,13 +67,12 @@ type [<ReferenceEquality>] MockAudioPlayer =
         { MockAudioPlayer = () }
 
 /// The SDL implementation of AudioPlayer.
-type [<ReferenceEquality>] SdlAudioPlayer =
+type [<ReferenceEquality; NoComparison>] SdlAudioPlayer =
     private
         { AudioContext : unit // audio context, interestingly, is global. Good luck encapsulating that!
           AudioPackages : AudioAsset Packages
           mutable AudioMessages : AudioMessage List
-          mutable CurrentSongOpt : PlaySongMessage option
-          mutable NextPlaySongOpt : PlaySongMessage option }
+          mutable CurrentSongOpt : SongDescriptor option }
 
     static member private haltSound () =
         SDL_mixer.Mix_HaltMusic () |> ignore
@@ -78,7 +80,7 @@ type [<ReferenceEquality>] SdlAudioPlayer =
         for i in [0 .. channelCount - 1] do
             SDL_mixer.Mix_HaltChannel i |> ignore
     
-    static member private tryLoadAudioAsset2 (asset : Audio Asset) =
+    static member private tryLoadAudioAsset2 (asset : obj Asset) =
         match Path.GetExtension asset.FilePath with
         | ".wav" ->
             let wavOpt = SDL_mixer.Mix_LoadWAV asset.FilePath
@@ -101,7 +103,6 @@ type [<ReferenceEquality>] SdlAudioPlayer =
         | Right assetGraph ->
             match AssetGraph.tryLoadAssetsFromPackage true (Some Constants.Associations.Audio) packageName assetGraph with
             | Right assets ->
-                let assets = List.map Asset.specialize<Audio> assets
                 let audioAssetOpts = List.map SdlAudioPlayer.tryLoadAudioAsset2 assets
                 let audioAssets = List.definitize audioAssetOpts
                 match Dictionary.tryFind packageName audioPlayer.AudioPackages with
@@ -116,7 +117,7 @@ type [<ReferenceEquality>] SdlAudioPlayer =
         | Left error ->
             Log.info ("Audio package load failed due to unloadable asset graph due to: '" + error)
 
-    static member private tryLoadAudioAsset (assetTag : Audio AssetTag) audioPlayer =
+    static member private tryLoadAudioAsset (assetTag : obj AssetTag) audioPlayer =
         let assetsOpt =
             if audioPlayer.AudioPackages.ContainsKey assetTag.PackageName then
                 Dictionary.tryFind assetTag.PackageName audioPlayer.AudioPackages
@@ -128,7 +129,7 @@ type [<ReferenceEquality>] SdlAudioPlayer =
 
     static member private playSong playSongMessage audioPlayer =
         let song = playSongMessage.Song
-        match SdlAudioPlayer.tryLoadAudioAsset song audioPlayer with
+        match SdlAudioPlayer.tryLoadAudioAsset (AssetTag.generalize song) audioPlayer with
         | Some audioAsset ->
             match audioAsset with
             | WavAsset _ ->
@@ -159,7 +160,7 @@ type [<ReferenceEquality>] SdlAudioPlayer =
 
     static member private handlePlaySound playSoundMessage audioPlayer =
         let sound = playSoundMessage.Sound
-        match SdlAudioPlayer.tryLoadAudioAsset sound audioPlayer with
+        match SdlAudioPlayer.tryLoadAudioAsset (AssetTag.generalize sound) audioPlayer with
         | Some audioAsset ->
             match audioAsset with
             | WavAsset wavAsset ->
@@ -170,15 +171,7 @@ type [<ReferenceEquality>] SdlAudioPlayer =
             Log.info ("PlaySoundMessage failed due to unloadable assets for '" + scstring sound + "'.")
     
     static member private handlePlaySong playSongMessage audioPlayer =
-        if SDL_mixer.Mix_PlayingMusic () = 1 then
-            if audioPlayer.CurrentSongOpt <> Some playSongMessage then
-                if  playSongMessage.TimeToFadeOutSongMs <> 0 &&
-                    not (SDL_mixer.Mix_FadingMusic () = SDL_mixer.Mix_Fading.MIX_FADING_OUT) then
-                    SDL_mixer.Mix_FadeOutMusic playSongMessage.TimeToFadeOutSongMs |> ignore
-                else
-                    SDL_mixer.Mix_HaltMusic () |> ignore
-                audioPlayer.NextPlaySongOpt <- Some playSongMessage
-        else SdlAudioPlayer.playSong playSongMessage audioPlayer
+        SdlAudioPlayer.playSong playSongMessage audioPlayer
     
     static member private handleFadeOutSong timeToFadeOutSongMs =
         if SDL_mixer.Mix_PlayingMusic () = 1 then
@@ -213,21 +206,9 @@ type [<ReferenceEquality>] SdlAudioPlayer =
             SdlAudioPlayer.handleAudioMessage audioMessage audioPlayer
     
     static member private tryUpdateCurrentSong audioPlayer =
-        if SDL_mixer.Mix_PlayingMusic () = 1 then audioPlayer
-        else { audioPlayer with CurrentSongOpt = None }
-    
-    static member private tryUpdateNextSong audioPlayer =
-        match audioPlayer.NextPlaySongOpt with
-        | Some nextPlaySong ->
-            if SDL_mixer.Mix_PlayingMusic () = 0 then
-                SdlAudioPlayer.handlePlaySong nextPlaySong audioPlayer
-                audioPlayer.NextPlaySongOpt <- None
-        | None -> ()
-    
-    static member private updateAudioPlayer audioPlayer =
-        audioPlayer |>
-            SdlAudioPlayer.tryUpdateCurrentSong |>
-            SdlAudioPlayer.tryUpdateNextSong
+        if SDL_mixer.Mix_PlayingMusic () = 1 then
+            audioPlayer.CurrentSongOpt <- None
+        
     
     /// Make a NuAudioPlayer.
     static member make () =
@@ -237,8 +218,7 @@ type [<ReferenceEquality>] SdlAudioPlayer =
             { AudioContext = ()
               AudioPackages = dictPlus []
               AudioMessages = List ()
-              CurrentSongOpt = None
-              NextPlaySongOpt = None }
+              CurrentSongOpt = None }
         audioPlayer
     
     interface AudioPlayer with
@@ -256,7 +236,7 @@ type [<ReferenceEquality>] SdlAudioPlayer =
 
         member audioPlayer.Play audioMessages =
             SdlAudioPlayer.handleAudioMessages audioMessages audioPlayer
-            SdlAudioPlayer.updateAudioPlayer audioPlayer
+            SdlAudioPlayer.tryUpdateCurrentSong audioPlayer
 
 [<RequireQualifiedAccess>]
 module AudioPlayer =

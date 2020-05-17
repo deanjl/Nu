@@ -5,13 +5,15 @@ open Prime
 open Nu
 
 type [<CustomEquality; CustomComparison>] Advent =
+    | Opened of Guid
+    | KilledFinalBoss
     | SavedPrincess
-    | FoughtBaddie of bool
 
     member private this.ToInt () =
         match this with
-        | SavedPrincess -> 0
-        | FoughtBaddie _ -> 1
+        | Opened guid -> hash guid
+        | KilledFinalBoss -> 1
+        | SavedPrincess -> 2
 
     override this.GetHashCode () =
         let rand = Rand.makeFromInt (this.ToInt ())
@@ -35,8 +37,9 @@ type [<CustomEquality; CustomComparison>] Advent =
             | :? Advent as thatAdvent -> (this :> IComparable<Advent>).CompareTo thatAdvent
             | _ -> -1
 
-type Inventory =
-    { Items : Map<ItemType, int> }
+type [<StructuralEquality; NoComparison>] Inventory =
+    { Items : Map<ItemType, int>
+      Gold : int }
 
     static member getKeyItems inv =
         inv.Items |>
@@ -57,6 +60,13 @@ type Inventory =
         | Some itemCount when itemCount > 0 -> true
         | _ -> false
 
+    static member addItem item inventory =
+        match Map.tryFind item inventory.Items with
+        | Some itemCount ->
+            { inventory with Items = Map.add item (inc itemCount) inventory.Items }
+        | None ->
+            { inventory with Items = Map.add item 1 inventory.Items }
+
     static member removeItem item inventory =
         match Map.tryFind item inventory.Items with
         | Some itemCount when itemCount > 1 ->
@@ -65,63 +75,40 @@ type Inventory =
             { inventory with Items = Map.remove item inventory.Items }
         | _ -> inventory
 
-type CharacterIndex =
+type [<StructuralEquality; StructuralComparison>] CharacterIndex =
     | AllyIndex of int
     | EnemyIndex of int
-
     static member isTeammate index index2 =
         match (index, index2) with
         | (AllyIndex _, AllyIndex _) -> true
         | (EnemyIndex _, EnemyIndex _) -> true
         | (_, _) -> false
 
-type AutoBattle =
-    { AutoTarget : CharacterIndex
-      AutoTechOpt : TechType option }
-
-/// The state of a character.
-/// Used both inside and outside of battle.
-/// Level is calculated from base experience + added experience.
-type CharacterState =
-    { CharacterIndex : CharacterIndex // key
-      ArchetypeType : ArchetypeType
+type [<StructuralEquality; NoComparison>] CharacterState =
+    { ArchetypeType : ArchetypeType
       ExpPoints : int
-      HitPoints : int
-      TechPoints : int
       WeaponOpt : WeaponType option
       ArmorOpt : ArmorType option
       Accessories : AccessoryType list
+      HitPoints : int
+      TechPoints : int
       Statuses : StatusType Set
       Defending : bool
       Charging : bool
       PowerBuff : single
       ShieldBuff : single
       MagicBuff : single
-      CounterBuff : single
-      ActionTime : int
-      AutoBattleOpt : AutoBattle option
-      AnimationSheet : Image AssetTag }
+      CounterBuff : single }
 
-    member this.PartyIndex = match this.CharacterIndex with AllyIndex index | EnemyIndex index -> index
-    member this.IsAlly = match this.CharacterIndex with AllyIndex _ -> true | EnemyIndex _ -> false
-    member this.IsEnemy = not this.IsAlly
+    member this.Level = Algorithms.expPointsToLevel this.ExpPoints
     member this.IsHealthy = this.HitPoints > 0
     member this.IsWounded = this.HitPoints <= 0
-    member this.Level = Algorithms.expPointsToLevel this.ExpPoints
     member this.HitPointsMax = Algorithms.hitPointsMax this.ArmorOpt this.ArchetypeType this.Level
     member this.TechPointsMax = Algorithms.techPointsMax this.ArmorOpt this.ArchetypeType this.Level
     member this.Power = Algorithms.power this.WeaponOpt this.PowerBuff this.ArchetypeType this.Level
     member this.Magic = Algorithms.magic this.WeaponOpt this.MagicBuff this.ArchetypeType this.Level
     member this.Shield effectType = Algorithms.shield effectType this.Accessories this.ShieldBuff this.ArchetypeType this.Level
     member this.Techs = Algorithms.techs this.ArchetypeType this.Level
-
-    static member isTeammate (state : CharacterState) (state2 : CharacterState) =
-        CharacterIndex.isTeammate state.CharacterIndex state2.CharacterIndex
-        
-    static member runningTechAutoBattle state =
-        match state.AutoBattleOpt with
-        | Some autoBattle -> Option.isSome autoBattle.AutoTechOpt
-        | None -> false
 
     static member getAttackResult effectType (source : CharacterState) (target : CharacterState) =
         let power = source.Power
@@ -130,21 +117,11 @@ type CharacterState =
         let damage = single damageUnscaled |> int |> max 1
         damage
 
-    static member updateActionTime updater state =
-        { state with ActionTime = updater state.ActionTime }
-
-    static member updateAutoBattleOpt updater state =
-        { state with AutoBattleOpt = updater state.AutoBattleOpt }
-
     static member updateHitPoints updater (state : CharacterState) =
-        let (hitPoints, cancel) = updater state.HitPoints
+        let hitPoints = updater state.HitPoints
         let hitPoints = max 0 hitPoints
         let hitPoints = min state.HitPointsMax hitPoints
-        let autoBattleOpt = 
-            match state.AutoBattleOpt with
-            | Some autoBattle when cancel -> Some { autoBattle with AutoTechOpt = None }
-            | _ -> None
-        { state with HitPoints = hitPoints; AutoBattleOpt = autoBattleOpt }
+        { state with HitPoints = hitPoints }
 
     static member updateTechPoints updater state =
         let specialPoints = updater state.TechPoints
@@ -165,37 +142,49 @@ type CharacterState =
         elif state.Charging then Charging
         else Poising
 
-    static member make characterIndex characterType expPoints weaponOpt armorOpt accessories animationSheet =
-        let (archetypeType, levelBase) =
-            match Map.tryFind characterType data.Value.Characters with
-            | Some characterData -> (characterData.ArchetypeType, characterData.LevelBase)
-            | None -> (Squire, 0)
+    static member make characterData expPoints weaponOpt armorOpt accessories =
+        let levelBase = characterData.LevelBase
+        let archetypeType = characterData.ArchetypeType
         let expPointsTotal = Algorithms.levelToExpPoints levelBase + expPoints
         let level = Algorithms.expPointsToLevel expPointsTotal
         let hitPointsMax = Algorithms.hitPointsMax armorOpt archetypeType level
         let techPointsMax = Algorithms.hitPointsMax armorOpt archetypeType level
         let characterState =
-            { CharacterIndex = characterIndex
-              ArchetypeType = archetypeType
+            { ArchetypeType = archetypeType
               ExpPoints = expPointsTotal
-              HitPoints = hitPointsMax
-              TechPoints = techPointsMax
               WeaponOpt = weaponOpt
               ArmorOpt = armorOpt
               Accessories = accessories
+              HitPoints = hitPointsMax
+              TechPoints = techPointsMax
               Statuses = Set.empty
               Defending = false
               Charging = false
               PowerBuff = 1.0f
               MagicBuff = 1.0f
               ShieldBuff = 1.0f
-              CounterBuff = 1.0f
-              ActionTime = 0
-              AutoBattleOpt = None
-              AnimationSheet = animationSheet }
+              CounterBuff = 1.0f }
         characterState
 
-type CharacterAnimationState =
+    static member empty =
+        let characterState =
+            { ArchetypeType = Squire
+              ExpPoints = 0
+              WeaponOpt = None
+              ArmorOpt = None
+              Accessories = []
+              HitPoints = 1
+              TechPoints = 0
+              Statuses = Set.empty
+              Defending = false
+              Charging = false
+              PowerBuff = 1.0f
+              MagicBuff = 1.0f
+              ShieldBuff = 1.0f
+              CounterBuff = 1.0f }
+        characterState
+
+type [<StructuralEquality; NoComparison>] CharacterAnimationState =
     { TimeStart : int64
       AnimationSheet : Image AssetTag
       AnimationCycle : CharacterAnimationCycle
@@ -276,7 +265,13 @@ type CharacterAnimationState =
         | Some progress -> progress = 1.0f
         | None -> false
 
-type CharacterInputState =
+    static member empty =
+        { TimeStart = 0L
+          AnimationSheet = Assets.FinnAnimationSheet
+          AnimationCycle = IdleCycle
+          Direction = Downward }
+
+type [<StructuralEquality; StructuralComparison>] CharacterInputState =
     | NoInput
     | RegularMenu
     | TechMenu

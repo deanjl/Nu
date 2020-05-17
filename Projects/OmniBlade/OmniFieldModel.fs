@@ -6,31 +6,91 @@ open Nu
 type Legionnaire =
     { LegionIndex : int // key
       PartyIndexOpt : int option
-      CharacterType : CharacterType }
+      CharacterType : CharacterType
+      ExpPoints : int
+      WeaponOpt : WeaponType option
+      ArmorOpt : ArmorType option
+      Accessories : AccessoryType list }
+
+    static member empty =
+        { LegionIndex = 0
+          PartyIndexOpt = Some 0
+          CharacterType = Ally Finn
+          ExpPoints = 0
+          WeaponOpt = None
+          ArmorOpt = None
+          Accessories = [] }
+
+type [<StructuralEquality; NoComparison>] DialogForm =
+    | DialogThin
+    | DialogMedium
+    | DialogLarge
+
+type [<StructuralEquality; NoComparison>] DialogModel =
+    { DialogForm : DialogForm
+      DialogText : Dialog
+      DialogProgress : int }
 
 [<RequireQualifiedAccess>]
 module FieldModel =
 
-    type [<ReferenceEquality; NoComparison>] FieldModel =
+    type [<StructuralEquality; NoComparison>] FieldModel =
         private
             { FieldType_ : FieldType
-              Legion : Map<int, Legionnaire>
-              Advents_ : Set<Advent>
+              Avatar_ : AvatarModel
+              Legion_ : Map<int, Legionnaire>
+              Advents_ : Advent Set
               Inventory_ : Inventory
-              Gold_ : int }
+              DialogOpt_ : DialogModel option
+              BattleOpt_ : BattleModel option}
 
+        (* Local Properties *)
         member this.FieldType = this.FieldType_
+        member this.Avatar = this.Avatar_
+        member this.Legion = this.Legion_
+        member this.Advents = this.Advents_
+        member this.Inventory = this.Inventory_
+        member this.DialogOpt = this.DialogOpt_
+        member this.BattleOpt = this.BattleOpt_
 
-        static member getPartyMembers fieldModel =
-            Map.filter
-                (fun _ legionnaire -> Option.isSome legionnaire.PartyIndexOpt)
-                fieldModel.Legion
+    let getParty fieldModel =
+        fieldModel.Legion_ |>
+        Map.filter (fun _ legionnaire -> Option.isSome legionnaire.PartyIndexOpt) |>
+        Map.toSeq |>
+        Seq.tryTake 3 |>
+        Map.ofSeq
 
-        static member make fieldType legion advents inventory gold =
-            { FieldType_ = fieldType
-              Legion = legion
-              Advents_ = advents
-              Inventory_ = inventory
-              Gold_ = gold }
+    let updateAvatar updater fieldModel =
+        { fieldModel with Avatar_ = updater fieldModel.Avatar_ }
+
+    let updateAdvents updater model =
+        { model with Advents_ = updater model.Advents_ }
+
+    let updateInventory updater model =
+        { model with Inventory_ = updater model.Inventory_ }
+
+    let updateDialogOpt updater model =
+        { model with DialogOpt_ = updater model.DialogOpt_ }
+
+    let updateBattleOpt updater model =
+        { model with BattleOpt_ = updater model.BattleOpt_ }
+
+    let make fieldType avatarModel legion advents inventory =
+        { FieldType_ = fieldType
+          Avatar_ = avatarModel
+          Legion_ = legion
+          Advents_ = advents
+          Inventory_ = inventory
+          DialogOpt_ = None
+          BattleOpt_ = None }
+
+    let empty =
+        { FieldType_ = DebugField
+          Avatar_ = AvatarModel.empty
+          Legion_ = Map.singleton 0 Legionnaire.empty
+          Advents_ = Set.empty
+          Inventory_ = { Items = Map.empty; Gold = 0 }
+          DialogOpt_ = None
+          BattleOpt_ = None }
 
 type FieldModel = FieldModel.FieldModel

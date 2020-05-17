@@ -163,7 +163,7 @@ module Gaia =
         let layerNodeKey = scstring entity.Parent
         let layerNode = form.hierarchyTreeView.Nodes.[layerNodeKey]
         entityNode.Name <- entityNodeKey
-        if entity.FacetedAs<NodeFacet> world then
+        if entity.Has<NodeFacet> world then
             match entity.GetParentNodeOpt world with
             | Some relation ->
                 let entityParent = resolve entity relation
@@ -186,7 +186,7 @@ module Gaia =
         // imperatively.
         let treeState = getExpansionState form.hierarchyTreeView
         form.hierarchyTreeView.Nodes.Clear ()
-        let layers = World.getLayers Default.Screen world
+        let layers = World.getLayers Simulants.DefaultScreen world
         for layer in layers do
             let layerNode = TreeNode layer.Name
             layerNode.Name <- scstring layer
@@ -209,7 +209,7 @@ module Gaia =
 
         // add layers imperatively to preserve existing layer tabs
         // NOTE: adding layers in reverse works better when opening anew
-        let layers = World.getLayers Default.Screen world
+        let layers = World.getLayers Simulants.DefaultScreen world
         let layerTabPages = form.layerTabControl.TabPages
         for layer in Seq.rev layers do
             let layerName = layer.Name
@@ -235,7 +235,7 @@ module Gaia =
         match form.entityPropertyGrid.SelectedObject with
         | :? EntityTypeDescriptorSource as entityTds ->
             Globals.World <- world // must be set for property grid
-            if entityTds.DescribedEntity.GetExists world
+            if entityTds.DescribedEntity.Exists world
             then form.entityPropertyGrid.Refresh ()
             else deselectEntity form world
         | _ -> ()
@@ -253,7 +253,7 @@ module Gaia =
         match form.layerPropertyGrid.SelectedObject with
         | :? LayerTypeDescriptorSource as layerTds ->
             Globals.World <- world // must be set for property grid
-            if layerTds.DescribedLayer.GetExists world
+            if layerTds.DescribedLayer.Exists world
             then form.layerPropertyGrid.Refresh ()
             else deselectLayer form world
         | _ -> ()
@@ -334,7 +334,7 @@ module Gaia =
                     updateEditorState (fun editorState ->
                         let mousePositionWorld = World.mouseToWorld (entity.GetViewType world) mousePosition world
                         let entityPosition =
-                            if entity.FacetedAs<NodeFacet> world && entity.ParentNodeExists world
+                            if entity.Has<NodeFacet> world && entity.ParentNodeExists world
                             then entity.GetPositionLocal world
                             else entity.GetPosition world
                         { editorState with DragEntityState = DragEntityPosition (entityPosition + mousePositionWorld, mousePositionWorld, entity) })
@@ -370,9 +370,9 @@ module Gaia =
         | DragCameraNone -> (Resolve, world)
 
     let private monitorEntityEvents (layer : Layer) form world =
-        let world = World.monitorPlus (handleNuChangeParentNodeOpt form) (Events.Change Property? ParentNodeOpt --> layer --> Events.Wildcard) layer world |> snd
-        let world = World.monitorPlus (handleNuEntityRegister form) (Events.Register --> layer --> Events.Wildcard) layer world |> snd
-        let world = World.monitorPlus (handleNuEntityUnregistering form) (Events.Unregistering --> layer --> Events.Wildcard) layer world |> snd
+        let world = World.monitorPlus None None None (handleNuChangeParentNodeOpt form) (Events.Change Property? ParentNodeOpt --> layer --> Events.Wildcard) layer world |> snd
+        let world = World.monitorPlus None None None (handleNuEntityRegister form) (Events.Register --> layer --> Events.Wildcard) layer world |> snd
+        let world = World.monitorPlus None None None (handleNuEntityUnregistering form) (Events.Unregistering --> layer --> Events.Wildcard) layer world |> snd
         world
 
     let private trySaveSelectedLayer filePath world =
@@ -396,9 +396,9 @@ module Gaia =
             let layerDescriptorStr = File.ReadAllText filePath
             let layerDescriptor = scvalue<LayerDescriptor> layerDescriptorStr
             let layerName = match layerDescriptor.LayerProperties.TryFind "Name" with Some (Atom (name, _)) -> name | _ -> failwithumf ()
-            let layer = Default.Screen / layerName
-            if not (layer.GetExists world) then
-                let (layer, world) = World.readLayer layerDescriptor None Default.Screen world
+            let layer = Simulants.DefaultScreen / layerName
+            if not (layer.Exists world) then
+                let (layer, world) = World.readLayer layerDescriptor None Simulants.DefaultScreen world
                 form.layerTabControl.SelectedTab.Text <- layer.Name
                 form.layerTabControl.SelectedTab.Name <- layer.Name
                 let world = updateEditorState (fun editorState -> { editorState with SelectedLayer = layer }) world
@@ -469,7 +469,7 @@ module Gaia =
         let selectedLayer = (getEditorState world).SelectedLayer
         let entityNames =
             World.getEntities selectedLayer world |>
-            Seq.filter (fun entity -> entity.FacetedAs<NodeFacet> world) |>
+            Seq.filter (fun entity -> entity.Has<NodeFacet> world) |>
             Seq.filter (fun entity -> not (Gen.isName entity.Name)) |>
             Seq.map (fun entity -> entity.Name) |>
             flip Seq.append [Constants.Editor.NonePick] |>
@@ -892,7 +892,7 @@ module Gaia =
                 let layerName = layerCreationForm.nameTextBox.Text
                 let layerDispatcherName = layerCreationForm.dispatcherTextBox.Text
                 try if String.length layerName = 0 then failwith "Layer name cannot be empty in Gaia due to WinForms limitations."
-                    let world = World.createLayer4 layerDispatcherName (Some layerName) Default.Screen world |> snd
+                    let world = World.createLayer4 layerDispatcherName (Some layerName) Simulants.DefaultScreen world |> snd
                     refreshLayerTabs form world
                     refreshHierarchyTreeView form world
                     deselectEntity form world
@@ -960,7 +960,7 @@ module Gaia =
                     let layerTabControl = form.layerTabControl
                     let layerTab = layerTabControl.SelectedTab
                     { editorState with
-                        SelectedLayer = Default.Screen / layerTab.Text
+                        SelectedLayer = Simulants.DefaultScreen / layerTab.Text
                         FilePaths = Map.remove layer.LayerAddress editorState.FilePaths })
                     world
 
@@ -1087,7 +1087,7 @@ module Gaia =
             let selectedLayer =
                 let layerTabControl = form.layerTabControl
                 let layerTab = layerTabControl.SelectedTab
-                Default.Screen / layerTab.Text
+                Simulants.DefaultScreen / layerTab.Text
             let world = updateEditorState (fun editorState -> { editorState with SelectedLayer = selectedLayer}) world
             refreshEntityTreeView form world
             refreshEntityPropertyGrid form world
@@ -1332,14 +1332,14 @@ module Gaia =
                 // NOTE: in https://github.com/bryanedds/Nu/issues/272, we found that we need to check for an entity's
                 // existence here because it could be deleted right as the drag operation begins if the delete button
                 // is held during selection
-                if entity.GetExists world then
+                if entity.Exists world then
                     let (positionSnap, _) = getSnaps form
                     let mousePosition = World.getMousePositionF world
                     let mousePositionWorld = World.mouseToWorld (entity.GetViewType world) mousePosition world
                     let entityPosition = (pickOffset - mousePositionWorldOrig) + (mousePositionWorld - mousePositionWorldOrig)
                     let entityPositionSnapped = Math.snap2F positionSnap entityPosition
                     let world =
-                        if entity.FacetedAs<NodeFacet> world && entity.ParentNodeExists world
+                        if entity.Has<NodeFacet> world && entity.ParentNodeExists world
                         then entity.SetPositionLocal entityPositionSnapped world
                         else entity.SetPosition entityPositionSnapped world
                     let world = entity.PropagatePhysics world
@@ -1404,8 +1404,8 @@ module Gaia =
 
     /// Attach Gaia to the given world.
     let attachToWorld targetDir form world =
-        if World.getSelectedScreen world = Default.Screen then
-            let layers = World.getLayers Default.Screen world |> Seq.toList
+        if World.getSelectedScreen world = Simulants.DefaultScreen then
+            let layers = World.getLayers Simulants.DefaultScreen world |> Seq.toList
             let (defaultLayer, world) =
                 match layers with
                 | defaultLayer :: _ ->
@@ -1419,17 +1419,17 @@ module Gaia =
                               SelectedLayer = defaultLayer
                               FilePaths = Map.empty }
                         let world = World.addKeyedValue Globals.EditorGuid editorState world
-                        let world = World.subscribePlus Gen.id (handleNuMouseRightDown form) Events.MouseRightDown Default.Game world |> snd
-                        let world = World.subscribePlus Gen.id (handleNuEntityDragBegin form) Events.MouseLeftDown Default.Game world |> snd
-                        let world = World.subscribePlus Gen.id (handleNuEntityDragEnd form) Events.MouseLeftUp Default.Game world |> snd
-                        let world = World.subscribePlus Gen.id (handleNuCameraDragBegin form) Events.MouseCenterDown Default.Game world |> snd
-                        let world = World.subscribePlus Gen.id (handleNuCameraDragEnd form) Events.MouseCenterUp Default.Game world |> snd
+                        let world = World.subscribePlus Gen.id None None None (handleNuMouseRightDown form) Events.MouseRightDown Simulants.Game world |> snd
+                        let world = World.subscribePlus Gen.id None None None (handleNuEntityDragBegin form) Events.MouseLeftDown Simulants.Game world |> snd
+                        let world = World.subscribePlus Gen.id None None None (handleNuEntityDragEnd form) Events.MouseLeftUp Simulants.Game world |> snd
+                        let world = World.subscribePlus Gen.id None None None (handleNuCameraDragBegin form) Events.MouseCenterDown Simulants.Game world |> snd
+                        let world = World.subscribePlus Gen.id None None None (handleNuCameraDragEnd form) Events.MouseCenterUp Simulants.Game world |> snd
                         (defaultLayer, world)
                     | Some _ -> (defaultLayer, world) // NOTE: conclude world is already attached
-                | [] -> failwith ("Cannot attach Gaia to a world with no layers inside the '" + scstring Default.Screen + "' screen.")
+                | [] -> failwith ("Cannot attach Gaia to a world with no layers inside the '" + scstring Simulants.DefaultScreen + "' screen.")
             let world = List.fold (fun world layer -> monitorEntityEvents layer form world) world layers
             (defaultLayer, world)
-        else failwith ("Cannot attach Gaia to a world with a screen selected other than '" + scstring Default.Screen + "'.")
+        else failwith ("Cannot attach Gaia to a world with a screen selected other than '" + scstring Simulants.DefaultScreen + "'.")
 
     let rec private tryRun3 runWhile sdlDeps (form : GaiaForm) =
         try World.runWithoutCleanUp
@@ -1684,7 +1684,7 @@ module Gaia =
                 then plugin.GetEditorScreenDispatcher ()
                 else typeof<ScreenDispatcher>
             let (screen, world) =
-                World.createScreen3 screenDispatcher.Name (Some Default.Screen.Name) world
+                World.createScreen3 screenDispatcher.Name (Some Simulants.DefaultScreen.Name) world
             let world =
                 if Seq.isEmpty (World.getLayers screen world)
                 then World.createLayer (Some "Layer") screen world |> snd

@@ -30,8 +30,8 @@ module Nu =
                     | :? DesignerProperty as designerProperty -> (Option.get left.SetOpt) ({ designerProperty with DesignerValue = value } :> obj) world
                     | _ -> (Option.get left.SetOpt) value world
                 else world
-            world
-        else world
+            (Cascade, world)
+        else (Cascade, world)
 
     /// Propagate lensed property by property name.
     let private tryPropagateByName simulant leftName (right : World Lens) (_ : Event) world =
@@ -42,19 +42,21 @@ module Nu =
                 match right.GetWithoutValidation world with
                 | :? DesignerProperty as property -> property.DesignerValue
                 | value -> value
-            match World.tryGetProperty leftName simulant world with
-            | Some property ->
-                if property.PropertyType = typeof<DesignerProperty> then
-                    let designerProperty = property.PropertyValue :?> DesignerProperty
-                    let property = { PropertyType = typeof<DesignerProperty>; PropertyValue = { designerProperty with DesignerValue = value }}
-                    World.trySetProperty leftName alwaysPublish nonPersistent property simulant world |> snd
-                else
-                    let property = { property with PropertyValue = value }
-                    World.trySetProperty leftName alwaysPublish nonPersistent property simulant world |> snd
-            | None ->
-                Log.debug "Property propagation failed. You have used a composed lens on a faux simulant reference, which is not supported."
-                world
-        else world
+            let world =
+                match World.tryGetProperty leftName simulant world with
+                | Some property ->
+                    if property.PropertyType = typeof<DesignerProperty> then
+                        let designerProperty = property.PropertyValue :?> DesignerProperty
+                        let property = { PropertyType = typeof<DesignerProperty>; PropertyValue = { designerProperty with DesignerValue = value }}
+                        World.trySetProperty leftName alwaysPublish nonPersistent property simulant world |> snd
+                    else
+                        let property = { property with PropertyValue = value }
+                        World.trySetProperty leftName alwaysPublish nonPersistent property simulant world |> snd
+                | None ->
+                    Log.debug "Property propagation failed. You have used a composed lens on a faux simulant reference, which is not supported."
+                    world
+            (Cascade, world)
+        else (Cascade, world)
 
     /// Initialize the Nu game engine.
     let init nuConfig =
@@ -175,13 +177,13 @@ module Nu =
                 let handler = handler :?> World PropertyChangeHandler
                 let (unsubscribe, world) =
                     World.subscribePlus
-                        Gen.id
+                        Gen.id None None None
                         (fun (event : Event<obj, _>) world ->
                             let data = event.Data :?> ChangeData
                             let world = handler data.Value world
                             (Cascade, world))
                         (rtoa (Array.append [|"Change"; propertyName; "Event"|] (Address.getNames simulant.SimulantAddress)))
-                        (Default.Game :> Simulant)
+                        (Simulants.Game :> Simulant)
                         (world :?> World)
                 (box unsubscribe, box world)
 
@@ -248,9 +250,9 @@ module Nu =
                 World.setLocalFrame oldLocalFrame world
                 struct (evaleds, world)
 
-            // init isSimulantSelected F# reach-around
-            WorldModule.isSimulantSelected <- fun simulant world ->
-                World.isSimulantSelected simulant world
+            // init isSelected F# reach-around
+            WorldModule.isSelected <- fun simulant world ->
+                World.isSelected simulant world
                 
             // init admitScreenElements F# reach-around
             WorldModule.admitScreenElements <- fun screen world ->
@@ -301,15 +303,31 @@ module Nu =
                     world entities
 
             // init bind5 F# reach-around
-            WorldModule.bind5 <- fun simulant left right breaking world ->
+            WorldModule.bind5 <- fun simulant left right world ->
                 let tryPropagate =
                     if notNull (left.This :> obj)
                     then tryPropagateByLens left right
                     else tryPropagateByName simulant left.Name right
-                let world = tryPropagate Unchecked.defaultof<_> world // propagate immediately to start things out synchronized
-                let breaker = if breaking then Stream.noMoreThanOncePerUpdate else Stream.id
-                let world = Stream.make (atooa Events.Register --> right.This.SimulantAddress) |> breaker |> Stream.optimize |> Stream.monitor tryPropagate right.This $ world
-                Stream.make (atooa (Events.Change right.Name) --> right.This.SimulantAddress) |> breaker |> Stream.optimize |> Stream.monitor tryPropagate right.This $ world
+                let (_, world) =
+                    // propagate immediately to start things out synchronized
+                    tryPropagate Unchecked.defaultof<_> world
+                let (_, world) =
+                    World.monitorPlus
+                        None None None
+                        tryPropagate
+                        (Events.Register --> right.This.SimulantAddress)
+                        right.This
+                        world
+                let (_, world) =
+                    World.monitorPlus
+                        (match right.PayloadOpt with Some payload -> Some (payload :?> (ChangeData -> obj option -> World -> obj)) | None -> None)
+                        (Some (fun a a2Opt _ -> match a2Opt with Some a2 -> a <> a2 | None -> true))
+                        None
+                        tryPropagate
+                        (Events.Change right.Name --> right.This.SimulantAddress)
+                        right.This
+                        world
+                world
 
             // init remaining reach-arounds
             WorldModule.register <- fun simulant world -> World.register simulant world
@@ -382,6 +400,8 @@ module WorldModule3 =
                  (typeof<ScriptFacet>.Name, ScriptFacet () :> Facet)
                  (typeof<TextFacet>.Name, TextFacet () :> Facet)
                  (typeof<RigidBodyFacet>.Name, RigidBodyFacet () :> Facet)
+                 (typeof<RigidBodiesFacet>.Name, RigidBodiesFacet () :> Facet)
+                 (typeof<JointFacet>.Name, JointFacet () :> Facet)
                  (typeof<TileMapFacet>.Name, TileMapFacet () :> Facet)
                  (typeof<StaticSpriteFacet>.Name, StaticSpriteFacet () :> Facet)
                  (typeof<AnimatedSpriteFacet>.Name, AnimatedSpriteFacet () :> Facet)]
@@ -400,7 +420,7 @@ module WorldModule3 =
                 let eventTracer = Log.remark "Event"
                 let eventTracing = Core.getEventTracing ()
                 let eventFilter = Core.getEventFilter ()
-                let globalSimulant = Default.Game
+                let globalSimulant = Simulants.Game
                 let globalSimulantGeneralized = { GpgAddress = atoa globalSimulant.GameAddress }
                 EventSystemDelegate.make eventTracer eventTracing eventFilter globalSimulant globalSimulantGeneralized
 
@@ -442,8 +462,8 @@ module WorldModule3 =
             let world = World.make plugin eventDelegate dispatchers subsystems scriptingEnv ambientState spatialTree (snd defaultGameDispatcher)
             
             // subscribe to subscribe and unsubscribe events
-            let world = World.subscribe World.handleSubscribeAndUnsubscribe Events.Subscribe Default.Game world
-            let world = World.subscribe World.handleSubscribeAndUnsubscribe Events.Unsubscribe Default.Game world
+            let world = World.subscribe World.handleSubscribeAndUnsubscribe Events.Subscribe Simulants.Game world
+            let world = World.subscribe World.handleSubscribeAndUnsubscribe Events.Unsubscribe Simulants.Game world
 
             // finally, register the game
             World.registerGame world
@@ -452,9 +472,9 @@ module WorldModule3 =
         static member makeDefault () =
             let worldConfig = WorldConfig.defaultConfig
             let world = World.makeEmpty worldConfig
-            let world = World.createScreen (Some Default.Screen.Name) world |> snd
-            let world = World.createLayer (Some Default.Layer.Name) Default.Screen world |> snd
-            let world = World.createEntity (Some Default.Entity.Name) DefaultOverlay Default.Layer world |> snd
+            let world = World.createScreen (Some Simulants.DefaultScreen.Name) world |> snd
+            let world = World.createLayer (Some Simulants.DefaultLayer.Name) Simulants.DefaultScreen world |> snd
+            let world = World.createEntity (Some Simulants.DefaultEntity.Name) DefaultOverlay Simulants.DefaultLayer world |> snd
             world
 
         /// Attempt to make the world, returning either a Right World on success, or a Left string
@@ -473,7 +493,7 @@ module WorldModule3 =
                     let eventTracer = Log.remark "Event"
                     let eventTracing = Core.getEventTracing ()
                     let eventFilter = Core.getEventFilter ()
-                    let globalSimulant = Default.Game
+                    let globalSimulant = Simulants.Game
                     let globalSimulantGeneralized = { GpgAddress = atoa globalSimulant.GameAddress }
                     EventSystemDelegate.make eventTracer eventTracing eventFilter globalSimulant globalSimulantGeneralized
                     
@@ -549,8 +569,8 @@ module WorldModule3 =
                     let world = List.fold (fun world (key, value) -> World.addKeyedValue key value world) world kvps
 
                     // subscribe to subscribe and unsubscribe events
-                    let world = World.subscribe World.handleSubscribeAndUnsubscribe Events.Subscribe Default.Game world
-                    let world = World.subscribe World.handleSubscribeAndUnsubscribe Events.Unsubscribe Default.Game world
+                    let world = World.subscribe World.handleSubscribeAndUnsubscribe Events.Subscribe Simulants.Game world
+                    let world = World.subscribe World.handleSubscribeAndUnsubscribe Events.Unsubscribe Simulants.Game world
 
                     // try to load the prelude for the scripting language
                     match World.tryEvalPrelude world with

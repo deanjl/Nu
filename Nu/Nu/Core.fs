@@ -85,14 +85,3 @@ module CoreOperators =
     /// The implicit conversion operator.
     /// Same as the (!!) operator found in Prime, but placed here to expose it directly from Nu.
     let inline (!!) (arg : ^a) : ^b = ((^a or ^b) : (static member op_Implicit : ^a -> ^b) arg)
-
-    /// Make a pair of values.
-    /// TODO: move this into Prime.
-    let pair a b = (a, b)
-
-[<RequireQualifiedAccess>]
-module Seq =
-
-    /// Eagerly evaluate a sequence.
-    /// TODO: move this into Prime.
-    let eval seq = seq |> Seq.toArray |> Seq.ofArray

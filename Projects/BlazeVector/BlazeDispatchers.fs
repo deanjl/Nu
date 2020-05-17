@@ -45,7 +45,7 @@ module BulletModule =
              define Entity.LinearDamping 0.0f
              define Entity.GravityScale 0.0f
              define Entity.IsBullet true
-             define Entity.BodyShape (BodyCircle { Radius = 0.5f; Center = Vector2.Zero })
+             define Entity.BodyShape (BodyCircle { Radius = 0.5f; Center = Vector2.Zero; PropertiesOpt = None })
              define Entity.StaticImage Assets.PlayerBulletImage
              define Entity.Age 0L]
 
@@ -71,7 +71,7 @@ module EnemyModule =
         inherit EntityDispatcher ()
         
         static let move (enemy : Entity) world =
-            let force = Vector2 (-250.0f, -2500.0f)
+            let force = Vector2 (-750.0f, -2500.0f)
             World.applyBodyForce force (enemy.GetPhysicsId world) world
 
         static let die (enemy : Entity) world =
@@ -86,8 +86,8 @@ module EnemyModule =
         static let handleCollision evt world =
             let enemy = evt.Subscriber : Entity
             if World.isTicking world then
-                let collidee = evt.Data.Collidee.SourceSimulant :?> Entity
-                let isBullet = collidee.DispatchesAs<BulletDispatcher> world
+                let collidee = evt.Data.Collidee.Entity
+                let isBullet = collidee.Is<BulletDispatcher> world
                 if isBullet then
                     let world = enemy.SetHealth (enemy.GetHealth world - 1) world
                     let world = World.playSound Constants.Audio.DefaultSoundVolume Assets.HitSound world
@@ -105,7 +105,7 @@ module EnemyModule =
              define Entity.FixedRotation true
              define Entity.LinearDamping 3.0f
              define Entity.GravityScale 0.0f
-             define Entity.BodyShape (BodyCapsule { Height = 0.5f; Radius = 0.25f; Center = Vector2.Zero })
+             define Entity.BodyShape (BodyCapsule { Height = 0.5f; Radius = 0.25f; Center = Vector2.Zero; PropertiesOpt = None })
              define Entity.CelCount 6
              define Entity.CelRun 4
              define Entity.CelSize (Vector2 (48.0f, 96.0f))
@@ -134,7 +134,7 @@ module PlayerModule =
     type PlayerDispatcher () =
         inherit EntityDispatcher ()
 
-        static let [<Literal>] WalkForce = 1000.0f
+        static let [<Literal>] WalkForce = 1100.0f
         static let [<Literal>] FallForce = -4000.0f
         static let [<Literal>] ClimbForce = 1500.0f
 
@@ -212,7 +212,7 @@ module PlayerModule =
              define Entity.Friction 0.0f
              define Entity.LinearDamping 3.0f
              define Entity.GravityScale 0.0f
-             define Entity.BodyShape (BodyCapsule { Height = 0.5f; Radius = 0.25f; Center = Vector2.Zero })
+             define Entity.BodyShape (BodyCapsule { Height = 0.5f; Radius = 0.25f; Center = Vector2.Zero; PropertiesOpt = None })
              define Entity.CelCount 16
              define Entity.CelRun 4
              define Entity.CelSize (Vector2 (48.0f, 96.0f))
@@ -238,7 +238,7 @@ module SceneModule =
     type SceneDispatcher () =
         inherit LayerDispatcher<unit, unit, SceneCommand> ()
 
-        override this.Channel (_, scene, _) =
+        override this.Channel (_, scene) =
             [scene.UpdateEvent => [cmd AdjustCamera]
              scene.UpdateEvent => [cmd PlayerFall]]
 
@@ -257,7 +257,7 @@ module SceneModule =
                 | PlayerFall ->
                     if Simulants.Player.HasFallen world && World.isSelectedScreenIdling world then
                         let world = World.playSound Constants.Audio.DefaultSoundVolume Assets.DeathSound world
-                        if Simulants.Title.GetExists world
+                        if Simulants.Title.Exists world
                         then World.transitionScreen Simulants.Title world
                         else world
                     else world
@@ -268,7 +268,6 @@ module GameplayModule =
 
     type GameplayCommand =
         | StartPlay
-        | StoppingPlay
         | StopPlay
 
     type GameplayDispatcher () =
@@ -308,7 +307,6 @@ module GameplayModule =
 
         override this.Channel (_, gameplay, _) =
             [gameplay.SelectEvent => [cmd StartPlay]
-             gameplay.OutgoingStartEvent => [cmd StoppingPlay]
              gameplay.DeselectEvent => [cmd StopPlay]]
 
         override this.Command (_, command, gameplay, world) =
@@ -316,10 +314,7 @@ module GameplayModule =
                 match command with
                 | StartPlay ->
                     let world = createScene gameplay world
-                    let world = createSectionLayers gameplay world
-                    World.playSong 0 1.0f Assets.DeadBlazeSong world
-                | StoppingPlay ->
-                    World.fadeOutSong Constants.Audio.DefaultTimeToFadeOutSongMs world
+                    createSectionLayers gameplay world
                 | StopPlay ->
                     let sectionNames = [for i in 0 .. SectionCount - 1 do yield SectionName + scstring i]
                     let layerNames = Simulants.Scene.Name :: sectionNames

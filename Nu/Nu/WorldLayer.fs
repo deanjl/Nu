@@ -64,13 +64,16 @@ module WorldLayerModule =
                 | _ -> false
 
         /// Check that a layer exists in the world.
-        member this.GetExists world = World.getLayerExists this world
+        member this.Exists world = World.getLayerExists this world
+
+        /// Check that a layer is selected.
+        member this.Selected world = WorldModule.isSelected this world
 
         /// Check that a layer dispatches in the same manner as the dispatcher with the given type.
-        member this.DispatchesAs (dispatcherType, world) = Reflection.dispatchesAs dispatcherType (this.GetDispatcher world)
+        member this.Is (dispatcherType, world) = Reflection.dispatchesAs dispatcherType (this.GetDispatcher world)
 
         /// Check that a layer dispatches in the same manner as the dispatcher with the given type.
-        member this.DispatchesAs<'a> world = this.DispatchesAs (typeof<'a>, world)
+        member this.Is<'a> world = this.Is (typeof<'a>, world)
 
         /// Resolve a relation in the context of a layer.
         member this.Resolve relation = resolve<Layer> this relation
@@ -95,7 +98,7 @@ module WorldLayerModule =
 
                 // publish update event
                 let eventTrace = EventTrace.record "World" "updateLayer" EventTrace.empty
-                World.publishPlus World.sortSubscriptionsByHierarchy () (Events.Update --> layer) eventTrace Default.Game true world)
+                World.publishPlus World.sortSubscriptionsByHierarchy () (Events.Update --> layer) eventTrace Simulants.Game true world)
                 layer
                 world
 
@@ -108,7 +111,7 @@ module WorldLayerModule =
 
                 // publish post-update event
                 let eventTrace = EventTrace.record "World" "postUpdateLayer" EventTrace.empty
-                World.publishPlus World.sortSubscriptionsByHierarchy () (Events.PostUpdate --> layer) eventTrace Default.Game true world)
+                World.publishPlus World.sortSubscriptionsByHierarchy () (Events.PostUpdate --> layer) eventTrace Simulants.Game true world)
                 layer
                 world
 
@@ -242,16 +245,16 @@ module WorldLayerModule =
             let layerDescriptor = scvalue<LayerDescriptor> layerDescriptorStr
             World.readLayer layerDescriptor nameOpt screen world
 
-        /// Turn a layers stream into a series of live layers.
-        static member expandLayerStream (lens : Lens<obj, World>) indexerOpt mapper origin screen world =
-            let mapperGeneralized = fun i lens world -> mapper i lens world :> SimulantContent
-            World.expandSimulantStream lens indexerOpt mapperGeneralized origin screen world
+        /// Turn a layers lens into a series of live layers.
+        static member expandLayers (lens : Lens<obj, World>) sieve spread indexOpt mapper origin screen world =
+            let mapperGeneralized = fun i a w -> mapper i a w :> SimulantContent
+            World.expandSimulants lens sieve spread indexOpt mapperGeneralized origin screen world
 
         /// Turn layer content into a live layer.
         static member expandLayerContent guidOpt content origin screen world =
             match LayerContent.expand content screen world with
-            | Choice1Of3 (lens, indexerOpt, mapper) ->
-                World.expandLayerStream lens indexerOpt mapper origin screen world
+            | Choice1Of3 (lens, sieve, spread, indexOpt, mapper) ->
+                World.expandLayers lens sieve spread indexOpt mapper origin screen world
             | Choice2Of3 (_, descriptor, handlers, binds, streams, entityFilePaths, entityContents) ->
                 let (layer, world) =
                     World.createLayer3 descriptor screen world
@@ -260,8 +263,8 @@ module WorldLayerModule =
                         World.readEntityFromFile filePath (Some entityName) layer world |> snd)
                         world entityFilePaths
                 let world =
-                    List.fold (fun world (simulant, left : World Lens, right, breaking) ->
-                        WorldModule.bind5 simulant left right breaking world)
+                    List.fold (fun world (simulant, left : World Lens, right) ->
+                        WorldModule.bind5 simulant left right world)
                         world binds
                 let world =
                     List.fold (fun world (handler, address, simulant) ->
@@ -272,8 +275,8 @@ module WorldLayerModule =
                             address simulant world)
                         world handlers
                 let world =
-                    List.fold (fun world (layer, lens, indexerOpt, mapper) ->
-                        World.expandEntityStream lens indexerOpt mapper origin layer world)
+                    List.fold (fun world (layer, lens, sieve, spread, indexOpt, mapper) ->
+                        World.expandEntities lens sieve spread indexOpt mapper origin layer world)
                         world streams
                 let world =
                     List.fold (fun world (owner, entityContents) ->

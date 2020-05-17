@@ -6,7 +6,6 @@ open Nu
 module Simulants =
 
     // global
-    let Game = Default.Game
     let Splash = Screen "Splash"
 
     // title
@@ -22,16 +21,17 @@ module Simulants =
     let CreditsBack = CreditsGui / "Back"
 
     // field
-    let Field = Default.Screen
+    let Field = Simulants.DefaultScreen
     let FieldHud = Field / "Hud"
     let FieldBack = FieldHud / "Back"
     let FieldScene = Field / "Scene"
     let FieldTileMap = FieldScene / "TileMap"
     let FieldAvatar = FieldScene / "Avatar"
+    let FieldInteract = FieldScene / "Interact"
+    let FieldDialog = FieldScene / "Dialog"
 
     // battle
     let Battle = Screen "Battle"
     let BattleHud = Battle / "Hud"
-    let BattleBack = BattleHud / "Back"
     let BattleScene = Battle / "Scene"
     let BattleRide = BattleScene / "Ride"

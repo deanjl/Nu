@@ -6,7 +6,7 @@ module Simulants =
 
     // here we create an entity reference for Elmario. This is useful for simulants that you want
     // to refer to from multiple places
-    let Elmario = Default.Layer / "Elmario"
+    let Elmario = Simulants.DefaultLayer / "Elmario"
 
 // this is our Elm-style command type
 type Command =
@@ -20,7 +20,7 @@ type ElmarioDispatcher () =
     inherit GameDispatcher<unit, unit, Command> (())
 
     // here we channel from events to signals
-    override this.Channel (_, game, _) =
+    override this.Channel (_, game) =
         [game.KeyboardKeyDownEvent =|> fun evt ->
             if evt.Data.KeyboardKey = KeyboardKey.Up && not evt.Data.Repeated
             then [cmd Jump]
@@ -47,16 +47,16 @@ type ElmarioDispatcher () =
             | Jump ->
                 let physicsId = Simulants.Elmario.GetPhysicsId world
                 if World.isBodyOnGround physicsId world then
-                    let world = World.applyBodyForce (v2 0.0f 200000.0f) physicsId world
+                    let world = World.applyBodyForce (v2 0.0f 175000.0f) physicsId world
                     World.playSound Constants.Audio.DefaultSoundVolume (asset "Gameplay" "Jump") world
                 else world
             | Nop -> world
         just world
 
     // here we describe the content of the game including elmario, the ground he walks on, and a rock.
-    override this.Content (_, _, _) =
-        [Content.screen Default.Screen.Name Vanilla []
-            [Content.layer Default.Layer.Name []
+    override this.Content (_, _) =
+        [Content.screen Simulants.DefaultScreen.Name Vanilla []
+            [Content.layer Simulants.DefaultLayer.Name []
                 [Content.character Simulants.Elmario.Name
                     [Entity.Position == v2 0.0f 0.0f
                      Entity.Size == v2 144.0f 144.0f]

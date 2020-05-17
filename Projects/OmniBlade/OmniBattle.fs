@@ -1,5 +1,4 @@
 ﻿namespace OmniBlade
-open System
 open FSharpx.Collections
 open Prime
 open Nu
@@ -9,11 +8,12 @@ open OmniBlade
 [<AutoOpen>]
 module OmniBattle =
 
-    type [<NoComparison>] Hop =
+    type [<StructuralEquality; NoComparison>] Hop =
         { HopStart : Vector2
           HopStop : Vector2 }
 
     type BattleMessage =
+        | Tick
         | RegularItemSelect of CharacterIndex * string
         | RegularItemCancel of CharacterIndex
         | ConsumableItemSelect of CharacterIndex * string
@@ -41,18 +41,15 @@ module OmniBattle =
         | WoundCharacter of CharacterIndex
         | ResetCharacter of CharacterIndex
         | DestroyCharacter of CharacterIndex
-        | Tick
 
     type [<NoComparison>] BattleCommand =
-        | FadeSong
-        | PlaySound of int64 * single * AssetTag<Audio>
+        | UpdateEye
         | DisplayCancel of CharacterIndex
         | DisplayHitPointsChange of CharacterIndex * int
         | DisplayBolt of CharacterIndex
         | DisplayHop of Hop
         | DisplayCircle of Vector2 * single
-        | InitializeBattle
-        | FinalizeBattle
+        | PlaySound of int64 * single * AssetTag<Sound>
 
     type Screen with
 
@@ -61,14 +58,7 @@ module OmniBattle =
         member this.BattleModel = this.Model<BattleModel> ()
 
     type BattleDispatcher () =
-        inherit ScreenDispatcher<BattleModel, BattleMessage, BattleCommand>
-            (// TODO: data-drive ally positions
-             let allies =
-                [CharacterModel.make (AllyIndex 0) (Ally Finn) 0 (Some "WoodenSword") (Some "LeatherVest") [] Assets.FinnAnimationSheet Rightward (v4Bounds (v2 -224.0f -168.0f) Constants.Gameplay.CharacterSize)
-                 CharacterModel.make (AllyIndex 1) (Ally Glenn) 0 (Some "StoneSword") (Some "LeatherMail") [] Assets.GlennAnimationSheet Leftward (v4Bounds (v2 224.0f 64.0f) Constants.Gameplay.CharacterSize)]
-             let inventory = { Items = Map.ofList [(Consumable GreenHerb, 2); (Consumable RedHerb, 2)] }
-             let model = BattleModel.make allies inventory 100 DebugBattle 0L
-             model)
+        inherit ScreenDispatcher<BattleModel, BattleMessage, BattleCommand> (BattleModel.empty)
 
         static let tickAttack sourceIndex (targetIndexOpt : CharacterIndex option) time timeLocal model =
             match targetIndexOpt with
@@ -189,12 +179,11 @@ module OmniBattle =
 
         and tickReady time timeStart model =
             let timeLocal = time - timeStart
-            match timeLocal with
-            | 0L -> withMsg model ReadyCharacters
-            | 30L ->
+            if timeLocal = 0L then withMsg model ReadyCharacters
+            elif timeLocal >= 30L then
                 let model = BattleModel.updateBattleState (constant BattleRunning) model
                 withMsg model PoiseCharacters
-            | _ -> just model
+            else just model
 
         and tickCurrentCommand time currentCommand model =
             let timeLocal = time - currentCommand.TimeStart
@@ -293,14 +282,16 @@ module OmniBattle =
             (model, sigs)
 
         override this.Channel (_, battle, _) =
-            [battle.OutgoingStartEvent => [cmd FadeSong]
-             battle.SelectEvent => [cmd InitializeBattle]
-             battle.DeselectEvent => [cmd FinalizeBattle]
-             battle.UpdateEvent => [msg Tick]]
+            [battle.UpdateEvent => [msg Tick; cmd UpdateEye]]
 
         override this.Message (model, message, _, world) =
 
             match message with
+            | Tick ->
+                if World.isTicking world
+                then tick (World.getTickTime world) model
+                else just model
+
             | RegularItemSelect (characterIndex, item) ->
                 let model =
                     match item with
@@ -589,7 +580,7 @@ module OmniBattle =
                 | None -> just model
                     
             | TechCharacterAmbient (sourceIndex, _, _) ->
-                if Simulants.BattleRide.GetExists world then
+                if Simulants.BattleRide.Exists world then
                     let model =
                         let tags = Simulants.BattleRide.GetEffectTags world
                         match Map.tryFind "Tag" tags with
@@ -644,20 +635,11 @@ module OmniBattle =
                 let model = if character.IsEnemy then BattleModel.removeCharacter characterIndex model else model
                 just model
 
-            | Tick ->
-                if World.isTicking world
-                then tick (World.getTickTime world) model
-                else just model
-
-        override this.Command (model, command, battle, world) =
+        override this.Command (model, command, _, world) =
 
             match command with
-            | FadeSong ->
-                let world = World.fadeOutSong Constants.Audio.DefaultTimeToFadeOutSongMs world
-                just world
-
-            | PlaySound (delay, volume, sound) ->
-                let world = World.schedule (World.playSound volume sound) (World.getTickTime world + delay) world
+            | UpdateEye ->
+                let world = World.setEyeCenter v2Zero world
                 just world
 
             | DisplayCancel targetIndex ->
@@ -714,54 +696,52 @@ module OmniBattle =
                 let world = entity.SetSelfDestruct true world
                 just world
 
-            | InitializeBattle ->
-                let world = World.hintRenderPackageUse Assets.BattlePackageName world
-                let world = World.hintAudioPackageUse Assets.BattlePackageName world
-                let world = World.playSong 0 Constants.Audio.DefaultSongVolume Assets.BattleSong world
-                let model = BattleModel.updateBattleState (constant (BattleReady (World.getTickTime world))) model
-                let world = battle.SetBattleModel model world
+            | PlaySound (delay, volume, sound) ->
+                let world = World.schedule (World.playSound volume sound) (World.getTickTime world + delay) world
                 just world
 
-            | FinalizeBattle ->
-                let world = World.hintRenderPackageDisuse Assets.BattlePackageName world
-                just (World.hintAudioPackageDisuse Assets.BattlePackageName world)
+        override this.Content (model, screen) =
 
-        member private this.SceneContent (model : Lens<BattleModel, World>, _ : Screen, _ : World) =
+            [// scene layer
+             let background = Simulants.BattleScene / "Background"
+             Content.layer Simulants.BattleScene.Name []
 
-            let background = Simulants.BattleScene / "Background"
-            Content.layer Simulants.BattleScene.Name []
-
-                [Content.label background.Name
+                [// background
+                 Content.label background.Name
                     [background.Position == v2 -480.0f -512.0f
                      background.Size == v2 1024.0f 1024.0f
                      background.Depth == Constants.Battle.BackgroundDepth
                      background.LabelImage == asset "Battle" "Background"]
 
-                 Content.entitiesIndexedBy
-                    (model --> fun model -> BattleModel.getAllies model |> seq)
-                    (fun model -> model.PartyIndex)
+                 // allies
+                 Content.entitiesIndexed model
+                    (fun model -> BattleModel.getAllies model) (constant >> id)
+                    (Some (fun model -> model.PartyIndex))
                     (fun index model _ -> Content.entity<CharacterDispatcher> ("Ally+" + scstring index) [Entity.CharacterModel <== model])
 
-                 Content.entitiesIndexedBy
-                    (model --> fun model -> BattleModel.getEnemies model |> seq)
-                    (fun model -> model.PartyIndex)
+                 // enemies
+                 Content.entitiesIndexed model
+                    (fun model -> BattleModel.getEnemies model) (constant >> id)
+                    (Some (fun model -> model.PartyIndex))
                     (fun index model _ -> Content.entity<CharacterDispatcher> ("Enemy+" + scstring index) [Entity.CharacterModel <== model])]
 
-        member private this.InputContent (model : Lens<BattleModel, World>, screen : Screen, _ : World) =
+             // input layers
+             Content.layers model (fun model -> BattleModel.getAllies model) (constant >> id) $ fun index ally _ ->
 
-            Content.layers (model --> fun model -> BattleModel.getAllies model |> seq) $ fun index ally _ ->
-
+                // input layer
                 let allyIndex = AllyIndex index
                 let input = screen / ("Input" + "+" + scstring index)
                 Content.layer input.Name []
 
-                    [Content.fillBar "HealthBar" 
+                    [// health bar
+                     Content.fillBar "HealthBar" 
                         [Entity.Size == v2 64.0f 8.0f
                          Entity.Center <== ally --> fun ally -> ally.BottomOffset
                          Entity.Depth == Constants.Battle.GuiDepth
                          Entity.Visible <== ally --> fun ally -> ally.HitPoints > 0
                          Entity.Fill <== ally --> fun ally -> single ally.HitPoints / single ally.HitPointsMax]
 
+                     // regular menu
                      Content.entity<RingMenuDispatcher> "RegularMenu"
                         [Entity.Position <== ally --> fun ally -> ally.CenterOffset
                          Entity.Depth == Constants.Battle.GuiDepth
@@ -777,6 +757,7 @@ module OmniBattle =
                          Entity.ItemSelectEvent ==|> fun evt -> msg (RegularItemSelect (allyIndex, evt.Data))
                          Entity.CancelEvent ==> msg (RegularItemCancel allyIndex)]
 
+                     // consumable menu
                      Content.entity<RingMenuDispatcher> "ConsumableMenu"
                         [Entity.Position <== ally --> fun ally -> ally.CenterOffset
                          Entity.Depth == Constants.Battle.GuiDepth
@@ -789,6 +770,7 @@ module OmniBattle =
                          Entity.ItemSelectEvent ==|> fun evt -> msg (ConsumableItemSelect (allyIndex, evt.Data))
                          Entity.CancelEvent ==> msg (ConsumableItemCancel allyIndex)]
 
+                     // tech menu
                      Content.entity<RingMenuDispatcher> "TechMenu"
                         [Entity.Position <== ally --> fun ally -> ally.CenterOffset
                          Entity.Depth == Constants.Battle.GuiDepth
@@ -809,14 +791,16 @@ module OmniBattle =
                          Entity.ItemSelectEvent ==|> fun evt -> msg (TechItemSelect (allyIndex, evt.Data))
                          Entity.CancelEvent ==> msg (TechItemCancel allyIndex)]
 
+                     // reticles
                      Content.entity<ReticlesDispatcher> "Reticles"
                         [Entity.Position <== ally --> fun ally -> ally.CenterOffset
                          Entity.Depth == Constants.Battle.GuiDepth
                          Entity.Visible <== ally --> fun ally -> match ally.InputState with AimReticles _ -> true | _ -> false
-                         Entity.ReticlesModel <== model --> fun model -> { BattleModel = model; AimType = (BattleModel.getCharacter allyIndex model).InputState.AimType }
+                         Entity.ReticlesModel <== model --> fun model ->
+                            let aimType =
+                                match BattleModel.tryGetCharacter allyIndex model with
+                                | Some character -> character.InputState.AimType
+                                | None -> NoAim
+                            { BattleModel = model; AimType = aimType }
                          Entity.TargetSelectEvent ==|> fun evt -> msg (ReticlesSelect (evt.Data, allyIndex))
-                         Entity.CancelEvent ==> msg (ReticlesCancel allyIndex)]]
-
-        override this.Content (model, screen, world) =
-            [this.SceneContent (model, screen, world)
-             this.InputContent (model, screen, world)]
+                         Entity.CancelEvent ==> msg (ReticlesCancel allyIndex)]]]

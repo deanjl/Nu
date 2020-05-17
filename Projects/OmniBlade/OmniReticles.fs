@@ -1,5 +1,4 @@
 ﻿namespace OmniBlade
-open System
 open Prime
 open Nu
 open Nu.Declarative
@@ -8,7 +7,7 @@ open OmniBlade
 [<AutoOpen>]
 module OmniReticles =
 
-    type [<NoComparison>] ReticlesModel =
+    type [<StructuralEquality; NoComparison>] ReticlesModel =
         { BattleModel : BattleModel
           AimType : AimType }
 
@@ -35,7 +34,7 @@ module OmniReticles =
             | TargetCancel -> just (World.publish () rets.CancelEvent [] rets world)
             | TargetSelect index -> just (World.publish index rets.TargetSelectEvent [] rets world)
 
-        override this.Content (model, rets, _) =
+        override this.Content (model, rets) =
             let buttonName = rets.Name + "+" + "Cancel"
             let button = rets.Parent / buttonName
             [Content.button button.Name
@@ -46,7 +45,9 @@ module OmniReticles =
                  Entity.UpImage == asset Assets.BattlePackageName "CancelUp"
                  Entity.DownImage == asset Assets.BattlePackageName "CancelDown"
                  Entity.ClickEvent ==> cmd TargetCancel]
-             Content.entities (model --> fun model -> BattleModel.getTargets model.AimType model.BattleModel |> seq) $ fun index character world ->
+             Content.entities model
+                (fun model -> (model.AimType, model.BattleModel))
+                (fun (aimType, battleModel) _ -> BattleModel.getTargets aimType battleModel) $ fun index character world ->
                 let buttonName = rets.Name + "+" + "Reticle" + "+" + scstring index
                 let button = rets.Parent / buttonName
                 Content.button button.Name

@@ -16,7 +16,7 @@ type MyGameDispatcher () =
     inherit GameDispatcher<unit, unit, MyGameCommand> ()
 
     // here we channel from events to signals
-    override this.Channel (_, _, _) =
+    override this.Channel (_, _) =
         [Simulants.TitleCredits.ClickEvent => [cmd ShowCredits]
          Simulants.TitlePlay.ClickEvent => [cmd ShowGameplay]
          Simulants.TitleExit.ClickEvent => [cmd ExitGame]
@@ -34,11 +34,11 @@ type MyGameDispatcher () =
         just world
 
     // here we describe the content of the game including all of its screens.
-    override this.Content (_, _, _) =
-        [Content.screen Simulants.Splash.Name (Splash (Default.DissolveData, Default.SplashData, Simulants.Title)) [] []
-         Content.screenFromLayerFile Simulants.Title.Name (Dissolve Default.DissolveData) "Assets/Gui/Title.nulyr"
-         Content.screenFromLayerFile Simulants.Credits.Name (Dissolve Default.DissolveData) "Assets/Gui/Credits.nulyr"
-         Content.screen<MyGameplayDispatcher> Simulants.Gameplay.Name (Dissolve Default.DissolveData) [] []]
+    override this.Content (_, _) =
+        [Content.screen Simulants.Splash.Name (Splash (Constants.Dissolve.Default, Constants.Splash.Default, Simulants.Title)) [] []
+         Content.screenFromLayerFile Simulants.Title.Name (Dissolve (Constants.Dissolve.Default, None)) "Assets/Gui/Title.nulyr"
+         Content.screenFromLayerFile Simulants.Credits.Name (Dissolve (Constants.Dissolve.Default, None)) "Assets/Gui/Credits.nulyr"
+         Content.screen<MyGameplayDispatcher> Simulants.Gameplay.Name (Dissolve (Constants.Dissolve.Default, None)) [] []]
 
     // here we hint to the renderer and audio system that the 'Gui' package should be loaded ahead of time
     override this.Register (game, world) =

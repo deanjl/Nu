@@ -1,5 +1,4 @@
 ﻿namespace OmniBlade
-open System
 open Prime
 open Nu
 open Nu.Declarative
@@ -19,7 +18,7 @@ module PropDispatcherModule =
 
     type PropDispatcher () =
         inherit EntityDispatcher<PropModel, PropMessage, unit>
-            (PropModel.make (Chest (BrassChest, Unlocked, Consumable GreenHerb)) (v4Bounds v2Zero Constants.Gameplay.TileSize) 0.0f)
+            (PropModel.make (v4Bounds v2Zero Constants.Gameplay.TileSize) 0.0f Set.empty PropData.empty)
 
         static member Facets =
             [typeof<RigidBodyFacet>]
@@ -27,12 +26,12 @@ module PropDispatcherModule =
         static member Properties =
             [define Entity.FixedRotation true
              define Entity.GravityScale 0.0f
-             define Entity.BodyShape (BodyBox { Extent = v2 0.5f 0.5f; Center = v2Zero })]
+             define Entity.BodyShape (BodyBox { Extent = v2 0.5f 0.5f; Center = v2Zero; PropertiesOpt = None })]
 
-        override this.Channel (_, entity, _) =
+        override this.Channel (_, entity) =
             [entity.UpdateEvent => [msg Update]]
 
-        override this.Initializers (model, entity, _) =
+        override this.Initializers (model, entity) =
             [entity.Bounds <== model --> fun model -> model.Bounds
              entity.IsSensor <== model --> fun model -> match model.PropData with Sensor -> true | _ -> false
              entity.BodyType == Static
@@ -49,16 +48,20 @@ module PropDispatcherModule =
                 just model
 
         override this.View (model, entity, world) =
-
             if entity.GetVisibleLayered world && entity.GetInView world then
                 let image =
                     match model.PropData with
-                    | Chest (chestType, _, _) ->
+                    | Chest (_, chestType, chestId, _, _) ->
                         match chestType with
-                        | WoodenChest -> Assets.WoodenChestImage
-                        | BrassChest -> Assets.BrassChestImage
-                    | _ ->
-                        Assets.CancelImage
+                        | WoodenChest ->
+                            if Set.contains (Opened chestId) model.Advents
+                            then Assets.WoodenChestImageOpened
+                            else Assets.WoodenChestImageClosed
+                        | BrassChest ->
+                            if Set.contains (Opened chestId) model.Advents
+                            then Assets.BrassChestImageOpened
+                            else Assets.BrassChestImageClosed
+                    | _ -> Assets.CancelImage
                 [Render
                     (LayerableDescriptor
                         { Depth = entity.GetDepth world

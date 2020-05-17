@@ -122,10 +122,10 @@ module WorldGameModule =
         member this.MouseToEntity viewType entityPosition mousePosition world = World.mouseToEntity viewType entityPosition mousePosition world
 
         /// Check that a game dispatches in the same manner as the dispatcher with the given type.
-        member this.DispatchesAs (dispatcherType, world) = Reflection.dispatchesAs dispatcherType (this.GetDispatcher world)
+        member this.Is (dispatcherType, world) = Reflection.dispatchesAs dispatcherType (this.GetDispatcher world)
 
         /// Check that a game dispatches in the same manner as the dispatcher with the given type.
-        member this.DispatchesAs<'a> world = this.DispatchesAs (typeof<'a>, world)
+        member this.Is<'a> world = this.Is (typeof<'a>, world)
 
         /// Resolve a relation in the context of a game.
         member this.Resolve relation = resolve<Game> this relation
@@ -142,7 +142,7 @@ module WorldGameModule =
     type World with
 
         static member internal registerGame world =
-            let game = Default.Game
+            let game = Simulants.Game
             let world =
                 World.withEventContext (fun world ->
                     let dispatcher = game.GetDispatcher world
@@ -154,7 +154,7 @@ module WorldGameModule =
             World.choose world
 
         static member internal unregisterGame world =
-            let game = Default.Game
+            let game = Simulants.Game
             let world =
                 World.withEventContext (fun world ->
                     let dispatcher = game.GetDispatcher world
@@ -166,7 +166,7 @@ module WorldGameModule =
             World.choose world
 
         static member internal updateGame world =
-            let game = Default.Game
+            let game = Simulants.Game
             World.withEventContext (fun world ->
 
                 // update via dispatcher
@@ -181,7 +181,7 @@ module WorldGameModule =
                 world
 
         static member internal postUpdateGame world =
-            let game = Default.Game
+            let game = Simulants.Game
             World.withEventContext (fun world ->
                 
                 // post-update via dispatcher
@@ -196,7 +196,7 @@ module WorldGameModule =
                 world
 
         static member internal actualizeGame world =
-            let game = Default.Game
+            let game = Simulants.Game
             World.withEventContext (fun world ->
                 let dispatcher = game.GetDispatcher world
                 let world = dispatcher.Actualize (game, world)
@@ -221,7 +221,7 @@ module WorldGameModule =
         /// Determine if a simulant is contained by, or is the same as, the currently selected screen or the omni-screen.
         /// Game is always considered 'selected' as well.
         [<FunctionBinding>]
-        static member isSimulantSelected (simulant : Simulant) world =
+        static member isSelected (simulant : Simulant) world =
             match Address.getNames simulant.SimulantAddress with
             | [||] -> true
             | names ->

@@ -16,8 +16,7 @@ module OmniCharacter =
         member this.CharacterModel = this.Model<CharacterModel> ()
 
     type CharacterDispatcher () =
-        inherit EntityDispatcher<CharacterModel, unit, unit>
-            (CharacterModel.make (AllyIndex 0) (Ally Finn) 0 None None [] Assets.FinnAnimationSheet Rightward (v4Bounds v2Zero v2One))
+        inherit EntityDispatcher<CharacterModel, unit, unit> (CharacterModel.empty)
 
         static let getSpriteInset (character : Entity) world =
             let model = character.GetCharacterModel world
@@ -42,7 +41,7 @@ module OmniCharacter =
             let pulseIntensity = sin (pulseProgress * single Math.PI)
             let model = character.GetCharacterModel world
             let statuses = model.Statuses
-            if CharacterModel.runningTechAutoBattle model then Vector4 (1.0f,0.0f,0.0f,pulseIntensity) // red
+            if CharacterModel.isAutoBattling model then Vector4 (1.0f,0.0f,0.0f,pulseIntensity) // red
             elif Set.contains PoisonStatus statuses then Vector4 (0.0f,1.0f,0.0f,pulseIntensity) // green
             elif Set.contains MuteStatus statuses then Vector4 (0.1f,1.0f,0.0f,pulseIntensity) // orange
             elif Set.contains SleepStatus statuses then Vector4 (0.0f,0.0f,1.0f,pulseIntensity) // blue
@@ -51,7 +50,7 @@ module OmniCharacter =
         static member Properties =
             [define Entity.Omnipresent true]
 
-        override this.Initializers (model, _, _) =
+        override this.Initializers (model, _) =
             [Entity.Bounds <== model --> fun (model : CharacterModel) -> model.Bounds]
 
         override this.View (model, character, world) =
