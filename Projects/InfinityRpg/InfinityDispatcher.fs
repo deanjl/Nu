@@ -32,7 +32,7 @@ module InfinityDispatcherModule =
             // do not persist the hud when saving gameplay
             Simulants.Hud.SetPersistent false world
 
-        override this.Channel (_, _, _) =
+        override this.Channel (_, _) =
             [Simulants.Title.IncomingStartEvent => [cmd PlayTitleSong]
              Simulants.Title.OutgoingStartEvent => [cmd FadeSong]
              Simulants.TitleCredits.ClickEvent => [cmd ShowCredits]
@@ -47,15 +47,15 @@ module InfinityDispatcherModule =
             let world =
                 match command with
                 | PlayTitleSong -> World.playSong 0 1.0f Assets.ButterflyGirlSong world
-                | FadeSong -> World.fadeOutSong Constants.Audio.DefaultTimeToFadeOutSongMs world
+                | FadeSong -> World.fadeOutSong Constants.Audio.DefaultFadeOutMs world
                 | ShowTitle -> World.transitionScreen Simulants.Title world
                 | ShowCredits -> World.transitionScreen Simulants.Credits world
                 | ShowGameplay load -> world |> Simulants.Gameplay.SetShallLoadGame load |> World.transitionScreen Simulants.Gameplay
                 | ExitGame -> World.exit world
             just world
 
-        override this.Content (_, _, _) =
-            [Content.screen Simulants.Splash.Name (Splash (Constants.InfinityRpg.DissolveData, Constants.InfinityRpg.SplashData, Simulants.Title)) [] []
-             Content.screenFromLayerFile Simulants.Title.Name (Dissolve Constants.InfinityRpg.DissolveData) Assets.TitleLayerFilePath
-             Content.screenFromLayerFile Simulants.Credits.Name (Dissolve Constants.InfinityRpg.DissolveData) Assets.CreditsLayerFilePath
-             Content.screenFromLayerFile<GameplayDispatcher> Simulants.Gameplay.Name (Dissolve Constants.InfinityRpg.DissolveData) Assets.HudLayerFilePath]
+        override this.Content (_, _) =
+            [Content.screen Simulants.Splash.Name (Splash (Constants.InfinityRpg.DissolveDescriptor, Constants.InfinityRpg.SplashData, Simulants.Title)) [] []
+             Content.screenFromLayerFile Simulants.Title.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None)) Assets.TitleLayerFilePath
+             Content.screenFromLayerFile Simulants.Credits.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None)) Assets.CreditsLayerFilePath
+             Content.screenFromLayerFile<GameplayDispatcher> Simulants.Gameplay.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None)) Assets.HudLayerFilePath]

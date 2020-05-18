@@ -20,14 +20,14 @@ module Constants =
     module InfinityRpg =
 
         // dissolve constants
-        let DissolveData =
+        let DissolveDescriptor =
             { IncomingTime = 20L
               OutgoingTime = 30L
               DissolveImage = asset<Image> Assets.GuiPackageName "Dissolve" }
 
         // splash constants
         let SplashData =
-            { DissolveData = DissolveData
+            { DissolveDescriptor = DissolveDescriptor
               IdlingTime = 60L
               SplashImage = asset<Image> Assets.GuiPackageName "Nu" }
 

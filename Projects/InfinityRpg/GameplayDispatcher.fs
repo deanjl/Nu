@@ -41,7 +41,7 @@ module GameplayDispatcherModule =
 
         static let getCharacters world =
             let entities = World.getEntities Simulants.Scene world
-            Seq.filter (fun (entity : Entity) -> entity.DispatchesAs<CharacterDispatcher> world) entities
+            Seq.filter (fun (entity : Entity) -> entity.Is<CharacterDispatcher> world) entities
 
         static let tryGetCharacterAtPosition position world =
             let characters = getCharacters world
@@ -55,7 +55,7 @@ module GameplayDispatcherModule =
 
         static let getEnemies world =
             let entities = World.getEntities Simulants.Scene world
-            Seq.filter (fun (entity : Entity) -> entity.DispatchesAs<EnemyDispatcher> world) entities
+            Seq.filter (fun (entity : Entity) -> entity.Is<EnemyDispatcher> world) entities
 
         static let updateEnemiesBy by world =
             let enemies = getEnemies world |> Seq.toList
@@ -610,13 +610,13 @@ module GameplayDispatcherModule =
              define Screen.OngoingRandState Rand.DefaultSeedState
              define Screen.ShallLoadGame false]
 
-        override this.Channel (_, _, _) =
+        override this.Channel (_, _) =
             [Simulants.Player.CharacterActivityState.ChangeEvent => [cmd ToggleHaltButton]
-             Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSimulantSelected Simulants.HudFeeler =|> fun evt -> [cmd (HandlePlayerInput (TouchInput evt.Data))]
-             Stream.make Simulants.HudDetailUp.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailUp => [cmd (HandlePlayerInput (DetailInput Upward))]
-             Stream.make Simulants.HudDetailRight.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailRight => [cmd (HandlePlayerInput (DetailInput Rightward))]
-             Stream.make Simulants.HudDetailDown.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailDown => [cmd (HandlePlayerInput (DetailInput Downward))]
-             Stream.make Simulants.HudDetailLeft.DownEvent |> Stream.isSimulantSelected Simulants.HudDetailLeft => [cmd (HandlePlayerInput (DetailInput Leftward))]
+             Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSelected Simulants.HudFeeler =|> fun evt -> [cmd (HandlePlayerInput (TouchInput evt.Data))]
+             Stream.make Simulants.HudDetailUp.DownEvent |> Stream.isSelected Simulants.HudDetailUp => [cmd (HandlePlayerInput (DetailInput Upward))]
+             Stream.make Simulants.HudDetailRight.DownEvent |> Stream.isSelected Simulants.HudDetailRight => [cmd (HandlePlayerInput (DetailInput Rightward))]
+             Stream.make Simulants.HudDetailDown.DownEvent |> Stream.isSelected Simulants.HudDetailDown => [cmd (HandlePlayerInput (DetailInput Downward))]
+             Stream.make Simulants.HudDetailLeft.DownEvent |> Stream.isSelected Simulants.HudDetailLeft => [cmd (HandlePlayerInput (DetailInput Leftward))]
              Simulants.Gameplay.UpdateEvent => [cmd Tick]
              Simulants.Gameplay.SelectEvent => [cmd RunGameplay]
              Simulants.HudSaveGame.ClickEvent =|> fun evt -> [cmd (SaveGame evt.Subscriber)]
@@ -629,14 +629,14 @@ module GameplayDispatcherModule =
                 | ToggleHaltButton -> Simulants.HudHalt.SetEnabled (isPlayerNavigatingPath world) world
                 | HandlePlayerInput input -> handlePlayerInput input world
                 | SaveGame gameplay -> World.writeScreenToFile Assets.SaveFilePath gameplay world; world
-                | QuittingGameplay -> World.playSong Constants.Audio.DefaultTimeToFadeOutSongMs 1.0f Assets.ButterflyGirlSong world
+                | QuittingGameplay -> World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.ButterflyGirlSong world
                 | QuitGameplay -> World.destroyLayer Simulants.Scene world
                 | RunGameplay ->
                     let world =
                         if Simulants.Gameplay.GetShallLoadGame world && File.Exists Assets.SaveFilePath
                         then runLoadGameplay world
                         else runNewGameplay world
-                    World.playSong Constants.Audio.DefaultTimeToFadeOutSongMs 1.0f Assets.HerosVengeanceSong world
+                    World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 | Tick -> tick world
                 | Nop -> world
             just world
