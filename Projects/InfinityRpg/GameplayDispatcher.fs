@@ -611,17 +611,17 @@ module GameplayDispatcherModule =
              define Screen.ShallLoadGame false]
 
         override this.Channel (_, _) =
-            [Simulants.Player.CharacterActivityState.ChangeEvent => [cmd ToggleHaltButton]
-             Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSelected Simulants.HudFeeler =|> fun evt -> [cmd (HandlePlayerInput (TouchInput evt.Data))]
-             Stream.make Simulants.HudDetailUp.DownEvent |> Stream.isSelected Simulants.HudDetailUp => [cmd (HandlePlayerInput (DetailInput Upward))]
-             Stream.make Simulants.HudDetailRight.DownEvent |> Stream.isSelected Simulants.HudDetailRight => [cmd (HandlePlayerInput (DetailInput Rightward))]
-             Stream.make Simulants.HudDetailDown.DownEvent |> Stream.isSelected Simulants.HudDetailDown => [cmd (HandlePlayerInput (DetailInput Downward))]
-             Stream.make Simulants.HudDetailLeft.DownEvent |> Stream.isSelected Simulants.HudDetailLeft => [cmd (HandlePlayerInput (DetailInput Leftward))]
-             Simulants.Gameplay.UpdateEvent => [cmd Tick]
-             Simulants.Gameplay.SelectEvent => [cmd RunGameplay]
-             Simulants.HudSaveGame.ClickEvent =|> fun evt -> [cmd (SaveGame evt.Subscriber)]
-             Simulants.Title.SelectEvent => [cmd QuittingGameplay]
-             Simulants.Gameplay.DeselectEvent => [cmd QuitGameplay]]
+            [Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
+             Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSelected Simulants.HudFeeler =|> fun evt -> cmd (HandlePlayerInput (TouchInput evt.Data))
+             Stream.make Simulants.HudDetailUp.DownEvent |> Stream.isSelected Simulants.HudDetailUp => cmd (HandlePlayerInput (DetailInput Upward))
+             Stream.make Simulants.HudDetailRight.DownEvent |> Stream.isSelected Simulants.HudDetailRight => cmd (HandlePlayerInput (DetailInput Rightward))
+             Stream.make Simulants.HudDetailDown.DownEvent |> Stream.isSelected Simulants.HudDetailDown => cmd (HandlePlayerInput (DetailInput Downward))
+             Stream.make Simulants.HudDetailLeft.DownEvent |> Stream.isSelected Simulants.HudDetailLeft => cmd (HandlePlayerInput (DetailInput Leftward))
+             Simulants.Gameplay.UpdateEvent => cmd Tick
+             Simulants.Gameplay.SelectEvent => cmd RunGameplay
+             Simulants.HudSaveGame.ClickEvent =|> fun evt -> cmd (SaveGame evt.Subscriber)
+             Simulants.Title.SelectEvent => cmd QuittingGameplay
+             Simulants.Gameplay.DeselectEvent => cmd QuitGameplay]
 
         override this.Command (_, command, _, world) =
             let world =
