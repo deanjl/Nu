@@ -122,7 +122,8 @@ module FacetModule =
                 | EventHandlerDefinition (handler, partialAddress) ->
                     let eventAddress = partialAddress --> entity
                     World.monitor (fun (evt : Event) world ->
-                        WorldModule.trySignalFacet (handler evt) (getTypeName this) entity world)
+                        let world = WorldModule.trySignalFacet (handler evt) (getTypeName this) entity world
+                        (Cascade, world))
                         eventAddress (entity :> Simulant) world
                 | BindDefinition (left, right) ->
                     WorldModule.bind5 entity left right world)
@@ -223,12 +224,14 @@ module EffectFacetModule =
         static let handleEffectsChanged evt world =
             let entity = evt.Subscriber : Entity
             let effectsOpt = entity.GetEffects world
-            setEffect effectsOpt entity world
+            let world = setEffect effectsOpt entity world
+            (Cascade, world)
 
         static let handleAssetsReload evt world =
             let entity = evt.Subscriber : Entity
             let effectsOpt = entity.GetEffects world
-            setEffect effectsOpt entity world
+            let world = setEffect effectsOpt entity world
+            (Cascade, world)
 
         static member Properties =
             [define Entity.PublishChanges true
@@ -344,12 +347,14 @@ module ScriptFacetModule =
             let script = entity.GetScript world
             let scriptFrame = Scripting.DeclarationFrame HashIdentity.Structural
             let world = World.setEntityScriptFrame scriptFrame entity world
-            evalManyWithLogging script scriptFrame entity world |> snd'
+            let world = evalManyWithLogging script scriptFrame entity world |> snd'
+            (Cascade, world)
 
         static let handleRegisterScriptChanged evt world =
             let entity = evt.Subscriber : Entity
             let world = World.unregisterEntity entity world
-            World.registerEntity entity world
+            let world = World.registerEntity entity world
+            (Cascade, world)
 
         static member Properties =
             [define Entity.PublishChanges true
@@ -997,7 +1002,7 @@ module NodeFacetModule =
             let entity = evt.Subscriber
             let world = tryUpdateFromNode entity world
             let world = trySubscribeToNodePropertyChanges entity world
-            world
+            (Cascade, world)
 
         static member Properties =
             [define Entity.ParentNodeOpt None
@@ -1166,8 +1171,7 @@ module EntityDispatcherModule =
             property.DesignerValue :?> 'model
 
         member this.SetModel<'model when 'model : equality> (value : 'model) world =
-            let model = this.Get<DesignerProperty> Property? Model world
-            this.Set<DesignerProperty> Property? Model { model with DesignerValue = value } world
+            this.Set<DesignerProperty> Property? Model { DesignerType = typeof<'model>; DesignerValue = value } world
 
         member this.Model<'model when 'model : equality> () =
             lens<'model> Property? Model this.GetModel<'model> this.SetModel<'model> this
@@ -1211,7 +1215,8 @@ module EntityDispatcherModule =
                 | EventHandlerDefinition (handler, partialAddress) ->
                     let eventAddress = partialAddress --> entity
                     World.monitor (fun (evt : Event) world ->
-                        WorldModule.trySignal (handler evt) entity world)
+                        let world = WorldModule.trySignal (handler evt) entity world
+                        (Cascade, world))
                         eventAddress (entity :> Simulant) world
                 | BindDefinition (left, right) ->
                     WorldModule.bind5 entity left right world)
@@ -2017,8 +2022,7 @@ module LayerDispatcherModule =
             property.DesignerValue :?> 'model
 
         member this.SetModel<'model when 'model : equality> (value : 'model) world =
-            let model = this.Get<DesignerProperty> Property? Model world
-            this.Set<DesignerProperty> Property? Model { model with DesignerValue = value } world
+            this.Set<DesignerProperty> Property? Model { DesignerType = typeof<'model>; DesignerValue = value } world
 
         member this.Model<'model when 'model : equality> () =
             lens<'model> Property? Model this.GetModel<'model> this.SetModel<'model> this
@@ -2062,7 +2066,8 @@ module LayerDispatcherModule =
                 | EventHandlerDefinition (handler, partialAddress) ->
                     let eventAddress = partialAddress --> layer
                     World.monitor (fun (evt : Event) world ->
-                        WorldModule.trySignal (handler evt) layer world)
+                        let world = WorldModule.trySignal (handler evt) layer world
+                        (Cascade, world))
                         eventAddress (layer :> Simulant) world
                 | BindDefinition (left, right) ->
                     WorldModule.bind5 layer left right world)
@@ -2116,8 +2121,7 @@ module ScreenDispatcherModule =
             property.DesignerValue :?> 'model
 
         member this.SetModel<'model when 'model : equality> (value : 'model) world =
-            let model = this.Get<DesignerProperty> Property? Model world
-            this.Set<DesignerProperty> Property? Model { model with DesignerValue = value } world
+            this.Set<DesignerProperty> Property? Model { DesignerType = typeof<'model>; DesignerValue = value } world
 
         member this.Model<'model when 'model : equality> () =
             lens<'model> Property? Model this.GetModel<'model> this.SetModel<'model> this
@@ -2161,7 +2165,8 @@ module ScreenDispatcherModule =
                 | EventHandlerDefinition (handler, partialAddress) ->
                     let eventAddress = partialAddress --> screen
                     World.monitor (fun (evt : Event) world ->
-                        WorldModule.trySignal (handler evt) screen world)
+                        let world = WorldModule.trySignal (handler evt) screen world
+                        (Cascade, world))
                         eventAddress (screen :> Simulant) world
                 | BindDefinition (left, right) ->
                     WorldModule.bind5 screen left right world)

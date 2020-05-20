@@ -282,7 +282,8 @@ module OmniBattle =
             (model, sigs)
 
         override this.Channel (_, battle) =
-            [battle.UpdateEvent => [msg Tick; cmd UpdateEye]]
+            [battle.UpdateEvent => msg Tick
+             battle.PostUpdateEvent => cmd UpdateEye]
 
         override this.Message (model, message, _, world) =
 
@@ -714,15 +715,15 @@ module OmniBattle =
                      background.LabelImage == asset "Battle" "Background"]
 
                  // allies
-                 Content.entitiesIndexed model
+                 Content.entitiesIndexedBy model
                     (fun model -> BattleModel.getAllies model) (constant >> id)
-                    (Some (fun model -> model.PartyIndex))
+                    (fun model -> model.PartyIndex)
                     (fun index model _ -> Content.entity<CharacterDispatcher> ("Ally+" + scstringm index) [Entity.CharacterModel <== model])
 
                  // enemies
-                 Content.entitiesIndexed model
+                 Content.entitiesIndexedBy model
                     (fun model -> BattleModel.getEnemies model) (constant >> id)
-                    (Some (fun model -> model.PartyIndex))
+                    (fun model -> model.PartyIndex)
                     (fun index model _ -> Content.entity<CharacterDispatcher> ("Enemy+" + scstringm index) [Entity.CharacterModel <== model])]
 
              // input layers

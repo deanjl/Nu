@@ -138,6 +138,9 @@ module WorldTypes =
     let mutable internal setPropertyOpt = Unchecked.defaultof<string -> Propertied -> obj option -> Type -> obj -> obj>
     let mutable internal handlePropertyChange = Unchecked.defaultof<string -> Propertied -> obj -> obj -> obj * obj>
 
+    // EventSystem reach-arounds.
+    let mutable internal handleUserDefinedCallback = Unchecked.defaultof<obj -> obj -> obj -> Handling * obj>
+
     // OPTIMIZATION: Entity flag bit-masks; only for use by internal reflection facilities.
     let [<Literal>] internal ImperativeMask =            0b0000000001
     let [<Literal>] internal PublishChangesMask =        0b0000000010
@@ -1042,8 +1045,7 @@ module WorldTypes =
                 | :? Entity as entity -> UMap.containsKey entity.EntityAddress this.EntityStates
                 | :? Layer as layer -> UMap.containsKey layer.LayerAddress this.LayerStates
                 | :? Screen as screen -> UMap.containsKey screen.ScreenAddress this.ScreenStates
-                | :? Game
-                | :? GlobalSimulantGeneralized -> true
+                | :? Game | :? GlobalSimulantGeneralized -> true
                 | _  -> false
 
             member this.GetPropertyOpt<'a> propertyName simulant =
@@ -1072,6 +1074,10 @@ module WorldTypes =
                 Debug.World.Chosen <- this :> obj
 #endif
                 this
+
+            member this.HandleUserDefinedCallback userDefined data world =
+                let (handling, worldObj) = handleUserDefinedCallback userDefined data (world :> obj)
+                (handling, worldObj :?> World)
 
             member this.PublishEventHook (simulant : Simulant) publisher eventData eventAddress eventTrace subscription world =
                 let (handling, world) =
