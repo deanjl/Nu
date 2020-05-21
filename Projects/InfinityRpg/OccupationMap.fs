@@ -60,8 +60,7 @@ module OccupationMap =
         | CancelTurn -> occupationMap
         | NoTurn -> occupationMap
 
-    // note: the function 'makeFromFieldTiles' makes an FSharp.Map from every single tile, creating a performance bottleneck for larger maps.
-    // solution is to simply leave the entry empty when the tile is passable, only adding entries for tiles that are not passable.
+    // NOTE: the function 'makeFromFieldTiles' makes an FSharp.Map from every single tile, creating a performance bottleneck for larger maps. solution is to simply leave the entry empty when the tile is passable, only adding entries for tiles that are not passable.
 
     let makeFromFieldTiles fieldTiles =
         Map.fold

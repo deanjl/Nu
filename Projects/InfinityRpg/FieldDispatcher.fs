@@ -50,6 +50,7 @@ module FieldDispatcherModule =
             if World.isBoundsInView viewType bounds world then
                 let fieldMap = field.GetFieldMapNp world
                 let image = fieldMap.FieldTileSheet
+                let tiles = fieldMap.FieldTiles // TODO: filter out-of-view tiles
                 let sprites =
                     Map.foldBack
                         (fun tilePositionM tile sprites ->
@@ -67,7 +68,7 @@ module FieldDispatcherModule =
                                   Glow = Vector4.Zero
                                   Flip = FlipNone }
                             sprite :: sprites)
-                        fieldMap.FieldTiles [] |>
+                        tiles [] |>
                     Array.ofList
 
                 World.enqueueRenderMessage
