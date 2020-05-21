@@ -50,7 +50,13 @@ module FieldDispatcherModule =
             if World.isBoundsInView viewType bounds world then
                 let fieldMap = field.GetFieldMapNp world
                 let image = fieldMap.FieldTileSheet
-                let tiles = fieldMap.FieldTiles // TODO: filter out-of-view tiles
+                let mInViewBounds = World.getViewBounds viewType world |> MInViewBounds.make
+                let tiles =
+                    fieldMap.FieldTiles
+                    |> Map.filter (fun k v -> k.X >= mInViewBounds.Left)
+                    |> Map.filter (fun k v -> k.Y >= mInViewBounds.Bottom)
+                    |> Map.filter (fun k v -> k.X <= mInViewBounds.Right)
+                    |> Map.filter (fun k v -> k.Y <= mInViewBounds.Top)
                 let sprites =
                     Map.foldBack
                         (fun tilePositionM tile sprites ->

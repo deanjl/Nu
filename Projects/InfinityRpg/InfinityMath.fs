@@ -13,12 +13,6 @@ type MapBounds =
     { CornerNegative : Vector2i
       CornerPositive : Vector2i }
 
-type Direction =
-    | Upward
-    | Rightward
-    | Downward
-    | Leftward
-
 [<RequireQualifiedAccess>]
 module MapBounds =
 
@@ -28,6 +22,12 @@ module MapBounds =
              point.X > bounds.CornerPositive.X ||
              point.Y < bounds.CornerNegative.Y ||
              point.Y > bounds.CornerPositive.Y)
+
+type Direction =
+    | Upward
+    | Rightward
+    | Downward
+    | Leftward
 
 [<RequireQualifiedAccess>]
 module Direction =
@@ -174,6 +174,12 @@ module Direction =
 [<AutoOpen>]
 module MathModule =
 
+    let isSnapped i =
+        i % Constants.Layout.TileSizeI.X = 0
+    
+    let itom i =
+        i / Constants.Layout.TileSizeI.X
+    
     let vmtovi vm =
         Vector2i.Multiply (vm, Constants.Layout.TileSizeI)
 

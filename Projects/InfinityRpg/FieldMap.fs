@@ -16,6 +16,23 @@ type [<NoEquality; NoComparison>] FieldMap =
       FieldTiles : Map<Vector2i, FieldTile>
       FieldTileSheet : Image AssetTag }
 
+type MInViewBounds =
+    { Left : int
+      Bottom : int
+      Right : int
+      Top : int }
+
+[<RequireQualifiedAccess>]
+module MInViewBounds =
+
+    let make (viewBounds : Vector4) =
+        let right = int viewBounds.Z
+        let top = int viewBounds.W
+        { Left = itom (int viewBounds.X)
+          Bottom = itom (int viewBounds.Y)
+          Right = if isSnapped right then itom right else (itom right) + 1
+          Top = if isSnapped top then itom top else (itom top) + 1 }
+
 type FieldUnit =
     { OffsetCount : Vector2i
       IsHorizontal : bool
