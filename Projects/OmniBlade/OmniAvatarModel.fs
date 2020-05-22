@@ -1,15 +1,17 @@
 ﻿namespace OmniBlade
+open System
 open Prime
 open Nu
 
 [<RequireQualifiedAccess>]
 module AvatarModel =
 
-    type [<StructuralEquality; NoComparison>] AvatarModel =
+    type [<CustomEquality; NoComparison>] AvatarModel =
         private
-            { BoundsOriginal_ : Vector4
+            { Dirty_ : Guid
+              BoundsOriginal_ : Vector4
               Bounds_ : Vector4
-              AnimationState : CharacterAnimationState
+              AnimationState_ : CharacterAnimationState
               IntersectedBodyShapes_ : BodyShapeSource list }
 
         (* Bounds Original Properties *)
@@ -27,56 +29,62 @@ module AvatarModel =
         member this.Size = this.Bounds_.Size
 
         (* AnimationState Properties *)
-        member this.TimeStart = this.AnimationState.TimeStart
-        member this.AnimationSheet = this.AnimationState.AnimationSheet
-        member this.AnimationCycle = this.AnimationState.AnimationCycle
-        member this.Direction = this.AnimationState.Direction
+        member this.TimeStart = this.AnimationState_.TimeStart
+        member this.AnimationSheet = this.AnimationState_.AnimationSheet
+        member this.AnimationCycle = this.AnimationState_.AnimationCycle
+        member this.Direction = this.AnimationState_.Direction
 
         (* Local Properties *)
         member this.IntersectedBodyShapes = this.IntersectedBodyShapes_
 
+        (* Equals *)
+        override this.GetHashCode () = hash this.Dirty_
+        override this.Equals thatObj = match thatObj with :? AvatarModel as that -> this.Dirty_ = that.Dirty_ | _ -> false
+
     let getAnimationIndex time avatar =
-        CharacterAnimationState.index time avatar.AnimationState
+        CharacterAnimationState.index time avatar.AnimationState_
 
     let getAnimationProgressOpt time avatar =
-        CharacterAnimationState.progressOpt time avatar.AnimationState
+        CharacterAnimationState.progressOpt time avatar.AnimationState_
 
     let getAnimationFinished time avatar =
-        CharacterAnimationState.getFinished time avatar.AnimationState
+        CharacterAnimationState.getFinished time avatar.AnimationState_
 
     let updateIntersectedBodyShapes updater (avatar : AvatarModel) =
-        { avatar with IntersectedBodyShapes_ = updater avatar.IntersectedBodyShapes_ }
+        { avatar with Dirty_ = Gen.id; IntersectedBodyShapes_ = updater avatar.IntersectedBodyShapes_ }
 
     let updateBounds updater (avatar : AvatarModel) =
-        { avatar with Bounds_ = updater avatar.Bounds_ }
+        { avatar with Dirty_ = Gen.id; Bounds_ = updater avatar.Bounds_ }
 
     let updatePosition updater (avatar : AvatarModel) =
-        { avatar with Bounds_ = avatar.Position |> updater |> avatar.Bounds.WithPosition }
+        { avatar with Dirty_ = Gen.id; Bounds_ = avatar.Position |> updater |> avatar.Bounds.WithPosition }
 
     let updateCenter updater (avatar : AvatarModel) =
-        { avatar with Bounds_ = avatar.Center |> updater |> avatar.Bounds.WithCenter }
+        { avatar with Dirty_ = Gen.id; Bounds_ = avatar.Center |> updater |> avatar.Bounds.WithCenter }
 
     let updateBottom updater (avatar : AvatarModel) =
-        { avatar with Bounds_ = avatar.Bottom |> updater |> avatar.Bounds.WithBottom }
+        { avatar with Dirty_ = Gen.id; Bounds_ = avatar.Bottom |> updater |> avatar.Bounds.WithBottom }
 
     let updateDirection updater (avatar : AvatarModel) =
-        { avatar with AnimationState = { avatar.AnimationState with Direction = updater avatar.AnimationState.Direction }}
+        { avatar with Dirty_ = Gen.id; AnimationState_ = { avatar.AnimationState_ with Direction = updater avatar.AnimationState_.Direction }}
 
     let animate time cycle avatar =
-        { avatar with AnimationState = CharacterAnimationState.setCycle (Some time) cycle avatar.AnimationState }
+        { avatar with Dirty_ = Gen.id; AnimationState_ = CharacterAnimationState.setCycle (Some time) cycle avatar.AnimationState_ }
 
     let make bounds animationSheet direction =
         let animationState = { TimeStart = 0L; AnimationSheet = animationSheet; AnimationCycle = IdleCycle; Direction = direction }
-        { BoundsOriginal_ = bounds
+        { Dirty_ = Gen.id
+          BoundsOriginal_ = bounds
           Bounds_ = bounds
-          AnimationState = animationState
+          AnimationState_ = animationState
           IntersectedBodyShapes_ = [] }
 
     let empty =
         let bounds = v4Bounds (v2Dup 128.0f) Constants.Gameplay.CharacterSize
-        { BoundsOriginal_ = bounds
+        { Dirty_ = Gen.id
+          BoundsOriginal_ = bounds
           Bounds_ = bounds
-          AnimationState = CharacterAnimationState.empty
+          AnimationState_ = CharacterAnimationState.empty
           IntersectedBodyShapes_ = [] }
 
 type AvatarModel = AvatarModel.AvatarModel

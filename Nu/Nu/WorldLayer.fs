@@ -14,6 +14,9 @@ module WorldLayerModule =
     
         member this.GetDispatcher world = World.getLayerDispatcher this world
         member this.Dispatcher = lensReadOnly Property? Dispatcher this.GetDispatcher this
+        member this.GetModel<'a> world = World.getLayerModel<'a> this world
+        member this.SetModel<'a> value world = World.setLayerModel<'a> value this world
+        member this.Model<'a> () = lens Property? Model this.GetModel<'a> this.SetModel<'a> this
         member this.GetDepth world = World.getLayerDepth this world
         member this.SetDepth value world = World.setLayerDepth value this world
         member this.Depth = lens Property? Depth this.GetDepth this.SetDepth this
@@ -29,7 +32,7 @@ module WorldLayerModule =
         member this.CreationTimeStamp = lensReadOnly Property? CreationTimeStamp this.GetCreationTimeStamp this
         member this.GetId world = World.getLayerId this world
         member this.Id = lensReadOnly Property? Id this.GetId this
-        
+
         member this.ChangeEvent propertyName = Events.Change propertyName --> this
         member this.RegisterEvent = Events.Register --> this
         member this.UnregisteringEvent = Events.Unregistering --> this
@@ -90,37 +93,28 @@ module WorldLayerModule =
     type World with
 
         static member internal updateLayer (layer : Layer) world =
-            World.withEventContext (fun world ->
-                
-                // update via dispatcher
-                let dispatcher = layer.GetDispatcher world
-                let world = dispatcher.Update (layer, world)
 
-                // publish update event
-                let eventTrace = EventTrace.record "World" "updateLayer" EventTrace.empty
-                World.publishPlus () (Events.Update --> layer) eventTrace Simulants.Game false world)
-                layer
-                world
+            // update via dispatcher
+            let dispatcher = layer.GetDispatcher world
+            let world = dispatcher.Update (layer, world)
+
+            // publish update event
+            let eventTrace = EventTrace.record "World" "updateLayer" EventTrace.empty
+            World.publishPlus () (Events.Update --> layer) eventTrace Simulants.Game false world
 
         static member internal postUpdateLayer (layer : Layer) world =
-            World.withEventContext (fun world ->
 
-                // post-update via dispatcher
-                let dispatcher = layer.GetDispatcher world
-                let world = dispatcher.PostUpdate (layer, world)
+            // post-update via dispatcher
+            let dispatcher = layer.GetDispatcher world
+            let world = dispatcher.PostUpdate (layer, world)
 
-                // publish post-update event
-                let eventTrace = EventTrace.record "World" "postUpdateLayer" EventTrace.empty
-                World.publishPlus () (Events.PostUpdate --> layer) eventTrace Simulants.Game false world)
-                layer
-                world
+            // publish post-update event
+            let eventTrace = EventTrace.record "World" "postUpdateLayer" EventTrace.empty
+            World.publishPlus () (Events.PostUpdate --> layer) eventTrace Simulants.Game false world
 
         static member internal actualizeLayer (layer : Layer) world =
-            World.withEventContext (fun world ->
-                let dispatcher = layer.GetDispatcher world
-                dispatcher.Actualize (layer, world))
-                layer
-                world
+            let dispatcher = layer.GetDispatcher world
+            dispatcher.Actualize (layer, world)
 
         /// Get all the layers in a screen.
         [<FunctionBinding>]

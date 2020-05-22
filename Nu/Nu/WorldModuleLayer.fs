@@ -58,8 +58,6 @@ module WorldModuleLayer =
 #if DEBUG
             if not (UMap.containsKey layer.LayerAddress world.LayerStates) then
                 failwith ("Cannot set the state of a non-existent layer '" + scstring layer.LayerAddress + "'")
-            if not (World.qualifyEventContext (atooa layer.LayerAddress) world) then
-                failwith "Cannot set the state of a layer in an unqualifed event context."
 #endif
             let layerStates = UMap.add layer.LayerAddress layerState world.LayerStates
             World.choose { world with LayerStates = layerStates }
@@ -113,6 +111,8 @@ module WorldModuleLayer =
         static member internal getLayerExists layer world =
             Option.isSome (World.getLayerStateOpt layer world)
 
+        static member internal getLayerModelProperty layer world = (World.getLayerState layer world).Model
+        static member internal getLayerModel<'a> layer world = (World.getLayerState layer world).Model.DesignerValue :?> 'a
         static member internal getLayerDispatcher layer world = (World.getLayerState layer world).Dispatcher
         static member internal getLayerDepth layer world = (World.getLayerState layer world).Depth
         static member internal setLayerDepth value layer world = World.updateLayerState (fun layerState -> if value <> layerState.Depth then Some { layerState with Depth = value } else None) Property? Depth value layer world
@@ -125,6 +125,23 @@ module WorldModuleLayer =
         static member internal setLayerScriptFrame value layer world = World.updateLayerState (fun layerState -> if value <> layerState.ScriptFrame then Some { layerState with ScriptFrame = value } else None) Property? ScriptFrame value layer world
         static member internal getLayerName layer world = (World.getLayerState layer world).Name
         static member internal getLayerId layer world = (World.getLayerState layer world).Id
+        
+        static member internal setLayerModelProperty (value : DesignerProperty) layer world =
+            World.updateLayerState
+                (fun layerState ->
+                    if value.DesignerValue <> layerState.Model.DesignerValue
+                    then Some { layerState with Model = { layerState.Model with DesignerValue = value.DesignerValue }}
+                    else None)
+                Property? Model value.DesignerValue layer world
+
+        static member internal setLayerModel<'a> (value : 'a) layer world =
+            World.updateLayerState
+                (fun layerState ->
+                    let valueObj = value :> obj
+                    if valueObj <> layerState.Model.DesignerValue
+                    then Some { layerState with Model = { DesignerType = typeof<'a>; DesignerValue = valueObj }}
+                    else None)
+                Property? Model value layer world
 
         static member internal tryGetLayerProperty propertyName layer world =
             if World.getLayerExists layer world then
@@ -195,22 +212,16 @@ module WorldModuleLayer =
             else failwith ("Cannot detach layer property '" + propertyName + "'; layer '" + layer.Name + "' is not found.")
 
         static member internal registerLayer layer world =
-            World.withEventContext (fun world ->
-                let dispatcher = World.getLayerDispatcher layer world
-                let world = dispatcher.Register (layer, world)
-                let eventTrace = EventTrace.record "World" "registerLayer" EventTrace.empty
-                World.publish () (rtoa<unit> [|"Register"; "Event"|] --> layer) eventTrace layer false world)
-                layer
-                world
+            let dispatcher = World.getLayerDispatcher layer world
+            let world = dispatcher.Register (layer, world)
+            let eventTrace = EventTrace.record "World" "registerLayer" EventTrace.empty
+            World.publish () (rtoa<unit> [|"Register"; "Event"|] --> layer) eventTrace layer false world
 
         static member internal unregisterLayer layer world =
-            World.withEventContext (fun world ->
-                let dispatcher = World.getLayerDispatcher layer world
-                let eventTrace = EventTrace.record "World" "unregisteringLayer" EventTrace.empty
-                let world = World.publish () (rtoa<unit> [|"Unregistering"; "Event"|] --> layer) eventTrace layer false world
-                dispatcher.Unregister (layer, world))
-                layer
-                world
+            let dispatcher = World.getLayerDispatcher layer world
+            let eventTrace = EventTrace.record "World" "unregisteringLayer" EventTrace.empty
+            let world = World.publish () (rtoa<unit> [|"Unregistering"; "Event"|] --> layer) eventTrace layer false world
+            dispatcher.Unregister (layer, world)
 
         static member internal addLayer mayReplace layerState layer world =
             let isNew = not (World.getLayerExists layer world)
@@ -275,6 +286,7 @@ module WorldModuleLayer =
     /// Initialize property getters.
     let private initGetters () =
         Getters.Add ("Dispatcher", fun layer world -> { PropertyType = typeof<LayerDispatcher>; PropertyValue = World.getLayerDispatcher layer world })
+        Getters.Add ("Model", fun layer world -> let designerProperty = World.getLayerModelProperty layer world in { PropertyType = designerProperty.DesignerType; PropertyValue = designerProperty.DesignerValue })
         Getters.Add ("Depth", fun layer world -> { PropertyType = typeof<single>; PropertyValue = World.getLayerDepth layer world })
         Getters.Add ("Visible", fun layer world -> { PropertyType = typeof<single>; PropertyValue = World.getLayerVisible layer world })
         Getters.Add ("Persistent", fun layer world -> { PropertyType = typeof<bool>; PropertyValue = World.getLayerPersistent layer world })
@@ -286,6 +298,7 @@ module WorldModuleLayer =
     /// Initialize property setters.
     let private initSetters () =
         Setters.Add ("Dispatcher", fun _ _ world -> (false, world))
+        Setters.Add ("Model", fun property layer world -> (true, World.setLayerModelProperty { DesignerType = property.PropertyType; DesignerValue = property.PropertyValue } layer world))
         Setters.Add ("Depth", fun property layer world -> (true, World.setLayerDepth (property.PropertyValue :?> single) layer world))
         Setters.Add ("Visible", fun property layer world -> (true, World.setLayerVisible (property.PropertyValue :?> bool) layer world))
         Setters.Add ("Persistent", fun property layer world -> (true, World.setLayerPersistent (property.PropertyValue :?> bool) layer world))

@@ -106,8 +106,6 @@ module WorldModuleEntity =
 #if DEBUG
             if not (UMap.containsKey entity.EntityAddress world.EntityStates) then
                 failwith ("Cannot set the state of a non-existent entity '" + scstring entity.EntityAddress + "'")
-            if not (World.qualifyEventContext (atooa entity.EntityAddress) world) then
-                failwith "Cannot set the state of an entity in an unqualifed event context."
 #endif
             let entityStates = UMap.add entity.EntityAddress entityState world.EntityStates
             World.choose { world with EntityStates = entityStates }
@@ -255,6 +253,35 @@ module WorldModuleEntity =
                     else None)
                 false false Property? Imperative value entity world
 
+        static member internal getEntityModelProperty entity world =
+            (World.getEntityState entity world).Model
+
+        static member internal getEntityModel<'a> entity world =
+            (World.getEntityState entity world).Model.DesignerValue :?> 'a
+
+        static member internal setEntityModelProperty (value : DesignerProperty) entity world =
+            World.updateEntityState
+                (fun entityState ->
+                    if value.DesignerValue <> entityState.Model.DesignerValue then
+                        if entityState.Imperative then
+                            entityState.Model.DesignerValue <- value.DesignerValue
+                            Some entityState
+                        else Some { entityState with Model = { entityState.Model with DesignerValue = value.DesignerValue }}
+                    else None)
+                true false Property? Model value.DesignerValue entity world
+
+        static member internal setEntityModel<'a> (value : 'a) entity world =
+            World.updateEntityState
+                (fun entityState ->
+                    let valueObj = value :> obj
+                    if valueObj <> entityState.Model.DesignerValue then
+                        if entityState.Imperative then
+                            entityState.Model.DesignerValue <- valueObj
+                            Some entityState
+                        else Some { entityState with Model = { DesignerType = typeof<'a>; DesignerValue = valueObj }}
+                    else None)
+                true false Property? Model value entity world
+
         static member internal getEntityStaticDataProperty entity world =
             (World.getEntityState entity world).StaticData
 
@@ -264,24 +291,23 @@ module WorldModuleEntity =
         static member internal setEntityStaticDataProperty (value : DesignerProperty) entity world =
             World.updateEntityState
                 (fun entityState ->
-                    if value <> entityState.StaticData then
+                    if value.DesignerValue <> entityState.StaticData.DesignerValue then
                         if entityState.Imperative then
-                            entityState.StaticData <- value
+                            entityState.StaticData.DesignerValue <- value.DesignerValue
                             Some entityState
-                        else Some { entityState with StaticData = value }
+                        else Some { entityState with StaticData = { entityState.StaticData with DesignerValue = value }}
                     else None)
-                false false Property? StaticData value entity world
+                true false Property? StaticData value.DesignerValue entity world
 
         static member internal setEntityStaticData<'a> (value : 'a) entity world =
             World.updateEntityState
                 (fun entityState ->
-                    if box value <> entityState.StaticData.DesignerValue then
+                    let valueObj = value :> obj
+                    if valueObj <> entityState.StaticData.DesignerValue then
                         if entityState.Imperative then
-                            entityState.StaticData.DesignerValue <- value
+                            entityState.StaticData.DesignerValue <- valueObj
                             Some entityState
-                        else
-                            let entityState = { entityState with StaticData = { DesignerType = entityState.StaticData.DesignerType; DesignerValue = value }}
-                            Some entityState
+                        else Some { entityState with StaticData = { DesignerType = entityState.StaticData.DesignerType; DesignerValue = valueObj }}
                     else None)
                 false false Property? StaticData value entity world
 
@@ -485,13 +511,11 @@ module WorldModuleEntity =
                     match entityOpt with
                     | Some entity ->
                         let world = World.setEntityState entityState entity world
+                        let world = facet.Register (entity, world)
                         let world =
-                            World.withEventContext (fun world ->
-                                let world = facet.Register (entity, world)
-                                if WorldModule.isSelected entity world
-                                then facet.UnregisterPhysics (entity, world)
-                                else world)
-                                entity world
+                            if WorldModule.isSelected entity world
+                            then facet.UnregisterPhysics (entity, world)
+                            else world
                         let entityState = World.getEntityState entity world
                         (entityState, world)
                     | None -> (entityState, world)
@@ -541,13 +565,11 @@ module WorldModuleEntity =
                         let oldBoundsMax = World.getEntityStateBoundsMax oldEntityState
                         let world = World.setEntityState entityState entity world
                         let world = World.updateEntityInEntityTree oldOmnipresent oldViewType oldBoundsMax entity oldWorld world
+                        let world = facet.Register (entity, world)
                         let world =
-                            World.withEventContext (fun world ->
-                                let world = facet.Register (entity, world)
-                                if WorldModule.isSelected entity world
-                                then facet.RegisterPhysics (entity, world)
-                                else world)
-                                entity world
+                            if WorldModule.isSelected entity world
+                            then facet.RegisterPhysics (entity, world)
+                            else world
                         Right (World.getEntityState entity world, world)
                     | None -> Right (entityState, world)
                 else let _ = World.choose world in Left ("Facet '" + getTypeName facet + "' is incompatible with entity '" + scstring entityState.Name + "'.")
@@ -739,48 +761,40 @@ module WorldModuleEntity =
             flip3 World.setEntityState entity world
 
         static member internal registerEntity entity world =
-            World.withEventContext (fun world ->
-                let dispatcher = World.getEntityDispatcher entity world : EntityDispatcher
-                let facets = World.getEntityFacets entity world
-                let world = dispatcher.Register (entity, world)
-                let world =
-                    Array.fold (fun world (facet : Facet) ->
-                        let world = facet.Register (entity, world)
-                        if WorldModule.isSelected entity world
-                        then facet.RegisterPhysics (entity, world)
-                        else world)
-                        world facets
-                let world = World.updateEntityPublishFlags entity world
-                let eventTrace = EventTrace.record "World" "registerEntity" EventTrace.empty
-                World.publish () (rtoa<unit> [|"Register"; "Event"|] --> entity) eventTrace entity false world)
-                entity world
+            let dispatcher = World.getEntityDispatcher entity world : EntityDispatcher
+            let facets = World.getEntityFacets entity world
+            let world = dispatcher.Register (entity, world)
+            let world =
+                Array.fold (fun world (facet : Facet) ->
+                    let world = facet.Register (entity, world)
+                    if WorldModule.isSelected entity world
+                    then facet.RegisterPhysics (entity, world)
+                    else world)
+                    world facets
+            let world = World.updateEntityPublishFlags entity world
+            let eventTrace = EventTrace.record "World" "registerEntity" EventTrace.empty
+            World.publish () (rtoa<unit> [|"Register"; "Event"|] --> entity) eventTrace entity false world
 
         static member internal unregisterEntity entity world =
-            World.withEventContext (fun world ->
-                let eventTrace = EventTrace.record "World" "unregisteringEntity" EventTrace.empty
-                let world = World.publish () (rtoa<unit> [|"Unregistering"; "Event"|] --> entity) eventTrace entity false world
-                let dispatcher = World.getEntityDispatcher entity world : EntityDispatcher
-                let facets = World.getEntityFacets entity world
-                let world = dispatcher.Unregister (entity, world)
-                Array.fold (fun world (facet : Facet) ->
-                    let world = facet.Unregister (entity, world)
-                    if WorldModule.isSelected entity world
-                    then facet.UnregisterPhysics (entity, world)
-                    else world)
-                    world facets)
-                entity world
+            let eventTrace = EventTrace.record "World" "unregisteringEntity" EventTrace.empty
+            let world = World.publish () (rtoa<unit> [|"Unregistering"; "Event"|] --> entity) eventTrace entity false world
+            let dispatcher = World.getEntityDispatcher entity world : EntityDispatcher
+            let facets = World.getEntityFacets entity world
+            let world = dispatcher.Unregister (entity, world)
+            Array.fold (fun world (facet : Facet) ->
+                let world = facet.Unregister (entity, world)
+                if WorldModule.isSelected entity world
+                then facet.UnregisterPhysics (entity, world)
+                else world)
+                world facets
 
         static member internal registerEntityPhysics entity world =
-            World.withEventContext (fun world ->
-                let facets = World.getEntityFacets entity world
-                Array.fold (fun world (facet : Facet) -> facet.RegisterPhysics (entity, world)) world facets)
-                entity world
+            let facets = World.getEntityFacets entity world
+            Array.fold (fun world (facet : Facet) -> facet.RegisterPhysics (entity, world)) world facets
 
         static member internal unregisterEntityPhysics entity world =
-            World.withEventContext (fun world ->
-                let facets = World.getEntityFacets entity world
-                Array.fold (fun world (facet : Facet) -> facet.UnregisterPhysics (entity, world)) world facets)
-                entity world
+            let facets = World.getEntityFacets entity world
+            Array.fold (fun world (facet : Facet) -> facet.UnregisterPhysics (entity, world)) world facets
 
         static member internal propagateEntityPhysics entity world =
             let world = World.unregisterEntityPhysics entity world
@@ -1244,6 +1258,7 @@ module WorldModuleEntity =
         Getters.Add ("Depth", fun entity world -> { PropertyType = typeof<single>; PropertyValue = World.getEntityDepth entity world })
         Getters.Add ("ViewType", fun entity world -> { PropertyType = typeof<ViewType>; PropertyValue = World.getEntityViewType entity world })
         Getters.Add ("Omnipresent", fun entity world -> { PropertyType = typeof<bool>; PropertyValue = World.getEntityOmnipresent entity world })
+        Getters.Add ("Model", fun entity world -> let designerProperty = World.getEntityModelProperty entity world in { PropertyType = designerProperty.DesignerType; PropertyValue = designerProperty.DesignerValue })
         Getters.Add ("StaticData", fun entity world -> let designerProperty = World.getEntityStaticDataProperty entity world in { PropertyType = designerProperty.DesignerType; PropertyValue = designerProperty.DesignerValue })
         Getters.Add ("Overflow", fun entity world -> { PropertyType = typeof<Vector2>; PropertyValue = World.getEntityOverflow entity world })
         Getters.Add ("IgnoreLayer", fun entity world -> { PropertyType = typeof<bool>; PropertyValue = World.getEntityIgnoreLayer entity world })
@@ -1273,7 +1288,8 @@ module WorldModuleEntity =
         Setters.Add ("Depth", fun property entity world -> (true, World.setEntityDepth (property.PropertyValue :?> single) entity world))
         Setters.Add ("ViewType", fun property entity world -> (true, World.setEntityViewType (property.PropertyValue :?> ViewType) entity world))
         Setters.Add ("Omnipresent", fun property entity world -> (true, World.setEntityOmnipresent (property.PropertyValue :?> bool) entity world))
-        Setters.Add ("StaticData", fun property entity world -> let designerProperty = World.getEntityStaticDataProperty entity world in (true, World.setEntityStaticDataProperty { designerProperty with DesignerValue = property.PropertyValue } entity world))
+        Setters.Add ("Model", fun property entity world -> (true, World.setEntityModelProperty { DesignerType = property.PropertyType; DesignerValue = property.PropertyValue } entity world))
+        Setters.Add ("StaticData", fun property entity world -> (true, World.setEntityStaticDataProperty { DesignerType = property.PropertyType; DesignerValue = property.PropertyValue } entity world))
         Setters.Add ("Overflow", fun property entity world -> (true, World.setEntityOverflow (property.PropertyValue :?> Vector2) entity world))
         Setters.Add ("Imperative", fun property entity world -> (true, World.setEntityImperative (property.PropertyValue :?> bool) entity world))
         Setters.Add ("PublishChanges", fun property entity world -> (true, World.setEntityPublishChanges (property.PropertyValue :?> bool) entity world))

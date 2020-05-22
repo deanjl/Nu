@@ -177,7 +177,7 @@ module BattleModel =
         model
 
     let empty =
-        { Dirty_ = Gen.idEmpty
+        { Dirty_ = Gen.id
           BattleState_ = BattleReady 0L
           Characters_ = Map.empty
           Inventory_ = { Items = Map.empty; Gold = 0 }

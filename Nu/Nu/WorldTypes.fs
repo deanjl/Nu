@@ -409,8 +409,9 @@ module WorldTypes =
     /// NOTE: The properties here have duplicated representations in WorldModuleGame that exist
     /// for performance that must be kept in sync.
     and [<NoEquality; NoComparison; CLIMutable>] GameState =
-        { Xtension : Xtension
-          Dispatcher : GameDispatcher
+        { Dispatcher : GameDispatcher
+          Xtension : Xtension
+          Model : DesignerProperty
           OmniScreenOpt : Screen option
           SelectedScreenOpt : Screen option
           ScreenTransitionDestinationOpt : Screen option
@@ -424,8 +425,9 @@ module WorldTypes =
         static member make (dispatcher : GameDispatcher) =
             let eyeCenter = Vector2.Zero
             let eyeSize = Vector2 (single Constants.Render.DefaultResolutionX, single Constants.Render.DefaultResolutionY)
-            { Xtension = Xtension.makeSafe ()
-              Dispatcher = dispatcher
+            { Dispatcher = dispatcher
+              Xtension = Xtension.makeSafe ()
+              Model = { DesignerType = typeof<obj>; DesignerValue = obj () }
               OmniScreenOpt = None
               SelectedScreenOpt = None
               ScreenTransitionDestinationOpt = None
@@ -476,6 +478,7 @@ module WorldTypes =
     and [<NoEquality; NoComparison; CLIMutable>] ScreenState =
         { Dispatcher : ScreenDispatcher
           Xtension : Xtension
+          Model : DesignerProperty
           TransitionState : TransitionState
           TransitionTicks : int64
           Incoming : Transition
@@ -491,6 +494,7 @@ module WorldTypes =
             let (id, name) = Gen.idAndNameIf nameOpt
             { Dispatcher = dispatcher
               Xtension = Xtension.makeSafe ()
+              Model = { DesignerType = typeof<obj>; DesignerValue = obj () }
               TransitionState = IdlingState
               TransitionTicks = 0L // TODO: roll this field into Incoming/OutgoingState values
               Incoming = Transition.make Incoming
@@ -542,6 +546,7 @@ module WorldTypes =
     and [<NoEquality; NoComparison; CLIMutable>] LayerState =
         { Dispatcher : LayerDispatcher
           Xtension : Xtension
+          Model : DesignerProperty
           Depth : single
           Visible : bool
           Persistent : bool
@@ -555,6 +560,7 @@ module WorldTypes =
             let (id, name) = Gen.idAndNameIf nameOpt
             { Dispatcher = dispatcher
               Xtension = Xtension.makeSafe ()
+              Model = { DesignerType = typeof<obj>; DesignerValue = obj () }
               Depth = 0.0f
               Visible = true
               Persistent = true
@@ -615,10 +621,11 @@ module WorldTypes =
           mutable Xtension : Xtension
           mutable Transform : Transform
           mutable StaticData : DesignerProperty
-          mutable Overflow : Vector2
+          mutable Model : DesignerProperty
           mutable Flags : int
-          // 2 free cache line bytes here
+          // 4 free cache line bytes here
           // cache line end
+          mutable Overflow : Vector2
           mutable OverlayNameOpt : string option
           mutable FacetNames : string Set
           mutable ScriptFrame : Scripting.DeclarationFrame
@@ -640,8 +647,9 @@ module WorldTypes =
                   ViewType = Relative
                   Omnipresent = false }
               StaticData = { DesignerType = typeof<string>; DesignerValue = "" }
-              Overflow = Vector2.Zero
+              Model = { DesignerType = typeof<obj>; DesignerValue = obj () }
               Flags = 0b0100011000
+              Overflow = Vector2.Zero
               OverlayNameOpt = overlayNameOpt
               FacetNames = Set.empty
               ScriptFrame = Scripting.DeclarationFrame HashIdentity.Structural
@@ -1106,6 +1114,7 @@ module WorldTypes =
                 | ("Vector2", (:? Vector2 as v2)) -> let v2p = { Vector2 = v2 } in v2p :> Scripting.Pluggable |> Scripting.Pluggable |> Some
                 | ("Vector4", (:? Vector4 as v4)) -> let v4p = { Vector4 = v4 } in v4p :> Scripting.Pluggable |> Scripting.Pluggable |> Some
                 | ("Vector2i", (:? Vector2i as v2i)) -> let v2ip = { Vector2i = v2i } in v2ip :> Scripting.Pluggable |> Scripting.Pluggable |> Some
+                | ("Vector4i", (:? Vector4i as v4i)) -> let v4ip = { Vector4i = v4i } in v4ip :> Scripting.Pluggable |> Scripting.Pluggable |> Some
                 | ("Game", (:? Game as game)) -> game.GameAddress |> atos |> Scripting.Keyword |> Some
                 | ("Screen", (:? Screen as screen)) -> screen.ScreenAddress |> atos |> Scripting.Keyword |> Some
                 | ("Layer", (:? Layer as layer)) -> layer.LayerAddress |> atos |> Scripting.Keyword |> Some
@@ -1118,6 +1127,7 @@ module WorldTypes =
                 | ("Vector2", Scripting.Pluggable pluggable) -> let v2 = pluggable :?> Vector2Pluggable in v2.Vector2 :> obj |> Some
                 | ("Vector4", Scripting.Pluggable pluggable) -> let v4 = pluggable :?> Vector4Pluggable in v4.Vector4 :> obj |> Some
                 | ("Vector2i", Scripting.Pluggable pluggable) -> let v2i = pluggable :?> Vector2iPluggable in v2i.Vector2i :> obj |> Some
+                | ("Vector4i", Scripting.Pluggable pluggable) -> let v4i = pluggable :?> Vector4iPluggable in v4i.Vector4i :> obj |> Some
                 | ("Game", Scripting.String str) | ("Game", Scripting.Keyword str) -> str |> stoa |> Game :> obj |> Some
                 | ("Screen", Scripting.String str) | ("Screen", Scripting.Keyword str) -> str |> stoa |> Screen :> obj |> Some
                 | ("Layer", Scripting.String str) | ("Layer", Scripting.Keyword str) -> str |> stoa |> Layer :> obj |> Some

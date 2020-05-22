@@ -14,6 +14,9 @@ module WorldGameModule =
 
         member this.GetDispatcher world = World.getGameDispatcher world
         member this.Dispatcher = lensReadOnly Property? Dispatcher this.GetDispatcher this
+        member this.GetModel<'a> world = World.getGameModel<'a> world
+        member this.SetModel<'a> value world = World.setGameModel<'a> value world
+        member this.Model<'a> () = lens Property? Model this.GetModel<'a> this.SetModel<'a> this
         member this.GetOmniScreenOpt world = World.getOmniScreenOpt world
         member this.SetOmniScreenOpt value world = World.setOmniScreenOpt value world
         member this.OmniScreenOpt = lens Property? OmniScreenOpt this.GetOmniScreenOpt this.SetOmniScreenOpt this
@@ -143,66 +146,50 @@ module WorldGameModule =
 
         static member internal registerGame world =
             let game = Simulants.Game
-            let world =
-                World.withEventContext (fun world ->
-                    let dispatcher = game.GetDispatcher world
-                    let world = dispatcher.Register (game, world)
-                    let eventTrace = EventTrace.record "World" "registerGame" EventTrace.empty
-                    World.publish () (rtoa<unit> [|"Register"; "Event"|]) eventTrace game false world)
-                    game
-                    world
+            let dispatcher = game.GetDispatcher world
+            let world = dispatcher.Register (game, world)
+            let eventTrace = EventTrace.record "World" "registerGame" EventTrace.empty
+            let world = World.publish () (rtoa<unit> [|"Register"; "Event"|]) eventTrace game false world
             World.choose world
 
         static member internal unregisterGame world =
             let game = Simulants.Game
+            let dispatcher = game.GetDispatcher world
+            let eventTrace = EventTrace.record "World" "unregisteringGame" EventTrace.empty
+            let world = World.publish () (rtoa<unit> [|"Unregistering"; "Event"|]) eventTrace game false world
             let world =
-                World.withEventContext (fun world ->
-                    let dispatcher = game.GetDispatcher world
-                    let eventTrace = EventTrace.record "World" "unregisteringGame" EventTrace.empty
-                    let world = World.publish () (rtoa<unit> [|"Unregistering"; "Event"|]) eventTrace game false world
-                    dispatcher.Unregister (game, world))
-                    game
-                    world
+                    dispatcher.Unregister (game, world)
             World.choose world
 
         static member internal updateGame world =
+
+            // update via dispatcher
             let game = Simulants.Game
-            World.withEventContext (fun world ->
+            let dispatcher = game.GetDispatcher world
+            let world = dispatcher.Update (game, world)
 
-                // update via dispatcher
-                let dispatcher = game.GetDispatcher world
-                let world = dispatcher.Update (game, world)
-
-                // publish update event
-                let eventTrace = EventTrace.record "World" "updateGame" EventTrace.empty
-                let world = World.publishPlus () Events.Update eventTrace game false world
-                World.choose world)
-                game
-                world
+            // publish update event
+            let eventTrace = EventTrace.record "World" "updateGame" EventTrace.empty
+            let world = World.publishPlus () Events.Update eventTrace game false world
+            World.choose world
 
         static member internal postUpdateGame world =
-            let game = Simulants.Game
-            World.withEventContext (fun world ->
                 
-                // post-update via dispatcher
-                let dispatcher = game.GetDispatcher world
-                let world = dispatcher.PostUpdate (game, world)
+            // post-update via dispatcher
+            let game = Simulants.Game
+            let dispatcher = game.GetDispatcher world
+            let world = dispatcher.PostUpdate (game, world)
 
-                // publish post-update event
-                let eventTrace = EventTrace.record "World" "postUpdateGame" EventTrace.empty
-                let world = World.publishPlus () Events.PostUpdate eventTrace game false world
-                World.choose world)
-                game
-                world
+            // publish post-update event
+            let eventTrace = EventTrace.record "World" "postUpdateGame" EventTrace.empty
+            let world = World.publishPlus () Events.PostUpdate eventTrace game false world
+            World.choose world
 
         static member internal actualizeGame world =
             let game = Simulants.Game
-            World.withEventContext (fun world ->
-                let dispatcher = game.GetDispatcher world
-                let world = dispatcher.Actualize (game, world)
-                World.choose world)
-                game
-                world
+            let dispatcher = game.GetDispatcher world
+            let world = dispatcher.Actualize (game, world)
+            World.choose world
 
         // Get all the entities in the world.
         [<FunctionBinding "getEntities0">]

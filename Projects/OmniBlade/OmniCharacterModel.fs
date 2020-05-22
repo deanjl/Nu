@@ -280,7 +280,7 @@ module CharacterModel =
     let empty =
         let bounds = v4Bounds v2Zero Constants.Gameplay.CharacterSize
         let animationState = { TimeStart = 0L; AnimationSheet = Assets.FinnAnimationSheet; AnimationCycle = ReadyCycle; Direction = Downward }
-        { Dirty_ = Gen.idEmpty
+        { Dirty_ = Gen.id
           BoundsOriginal_ = bounds
           Bounds_ = bounds
           CharacterIndex_ = AllyIndex 0
