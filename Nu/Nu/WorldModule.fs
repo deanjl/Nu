@@ -107,7 +107,7 @@ module WorldModule =
     let mutable internal unregister : Simulant -> World -> World =
         Unchecked.defaultof<_>
 
-    let mutable internal expandContent : (SplashDescriptor option -> Screen -> Screen -> World -> World) -> Guid option -> SimulantContent -> ContentOrigin -> Simulant -> World -> World =
+    let mutable internal expandContent : (SplashDescriptor option -> Screen -> Screen -> World -> World) -> SimulantContent -> ContentOrigin -> Simulant -> World -> Simulant option * World =
         Unchecked.defaultof<_>
 
     let mutable internal destroy : Simulant -> World -> World =
@@ -584,8 +584,8 @@ module WorldModule =
 
         /// Subscribe to an event using the given subscriptionKey, and be provided with an unsubscription callback.
         static member subscribeSpecial<'a, 'b, 's when 's :> Simulant>
-            compressionArtifact subscriptionKey mapperOpt filterOpt stateOpt callback eventAddress subscriber world =
-            mapSnd World.choose (EventSystem.subscribeSpecial<'a, 'b, 's, World> compressionArtifact subscriptionKey mapperOpt filterOpt stateOpt callback eventAddress subscriber world)
+            compressionId subscriptionKey mapperOpt filterOpt stateOpt callback eventAddress subscriber world =
+            mapSnd World.choose (EventSystem.subscribeSpecial<'a, 'b, 's, World> compressionId subscriptionKey mapperOpt filterOpt stateOpt callback eventAddress subscriber world)
 
         /// Subscribe to an event using the given subscriptionKey, and be provided with an unsubscription callback.
         static member subscribePlus<'a, 'b, 's when 's :> Simulant>
@@ -599,8 +599,8 @@ module WorldModule =
 
         /// Keep active a subscription for the lifetime of a simulant, and be provided with an unsubscription callback.
         static member monitorSpecial<'a, 'b, 's when 's :> Simulant>
-            compressionArtifact mapperOpt filterOpt stateOpt callback eventAddress subscriber world =
-            mapSnd World.choose (EventSystem.monitorSpecial<'a, 'b, 's, World> compressionArtifact mapperOpt filterOpt stateOpt callback eventAddress subscriber world)
+            compressionId mapperOpt filterOpt stateOpt callback eventAddress subscriber world =
+            mapSnd World.choose (EventSystem.monitorSpecial<'a, 'b, 's, World> compressionId mapperOpt filterOpt stateOpt callback eventAddress subscriber world)
 
         /// Keep active a subscription for the lifetime of a simulant, and be provided with an unsubscription callback.
         static member monitorPlus<'a, 'b, 's when 's :> Simulant>

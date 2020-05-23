@@ -1101,17 +1101,13 @@ module WorldBindings =
             let violation = Scripting.Violation (["InvalidBindingInvocation"], "Could not invoke binding 'isKeyboardKeyDown' due to: " + scstring exn, None)
             struct (violation, World.choose oldWorld)
 
-    let expandContent setScreenSplash guidOpt content origin parent world =
+    let expandContent setScreenSplash content origin parent world =
         let oldWorld = world
         try
             let setScreenSplash =
                 match ScriptingSystem.tryExport typeof<FSharpFunc<FSharpOption<SplashDescriptor>, FSharpFunc<Screen, FSharpFunc<Screen, FSharpFunc<World, World>>>>> setScreenSplash world with
                 | Some value -> value :?> FSharpFunc<FSharpOption<SplashDescriptor>, FSharpFunc<Screen, FSharpFunc<Screen, FSharpFunc<World, World>>>>
                 | None -> failwith "Invalid argument type for 'setScreenSplash'; expecting a value convertable to FSharpFunc`2."
-            let guidOpt =
-                match ScriptingSystem.tryExport typeof<FSharpOption<Guid>> guidOpt world with
-                | Some value -> value :?> FSharpOption<Guid>
-                | None -> failwith "Invalid argument type for 'guidOpt'; expecting a value convertable to FSharpOption`1."
             let content =
                 match ScriptingSystem.tryExport typeof<SimulantContent> content world with
                 | Some value -> value :?> SimulantContent
@@ -1130,8 +1126,10 @@ module WorldBindings =
                     struct (World.derive address, world)
                 | struct (Scripting.Violation (_, error, _), _) -> failwith error
                 | struct (_, _) -> failwith "Relation must be either a String or Keyword."
-            let result = World.expandContent setScreenSplash guidOpt content origin parent world
-            struct (Scripting.Unit, result)
+            let result = World.expandContent setScreenSplash content origin parent world
+            let (value, world) = result
+            let value = ScriptingSystem.tryImport typeof<FSharpOption<Simulant>> value world |> Option.get
+            struct (value, world)
         with exn ->
             let violation = Scripting.Violation (["InvalidBindingInvocation"], "Could not invoke binding 'expandContent' due to: " + scstring exn, None)
             struct (violation, World.choose oldWorld)
@@ -3064,7 +3062,7 @@ module WorldBindings =
         match Array.tryFind (function Scripting.Violation _ -> true | _ -> false) evaleds with
         | None ->
             match evaleds with
-            | [|setScreenSplash; guidOpt; content; origin; parent|] -> expandContent setScreenSplash guidOpt content origin parent world
+            | [|setScreenSplash; content; origin; parent|] -> expandContent setScreenSplash content origin parent world
             | _ ->
                 let violation = Scripting.Violation (["InvalidBindingInvocation"], "Incorrect number of arguments for binding '" + fnName + "' at:\n" + SymbolOrigin.tryPrint originOpt, None)
                 struct (violation, world)
@@ -3930,7 +3928,7 @@ module WorldBindings =
              ("getMousePosition", { Fn = evalGetMousePositionBinding; Pars = [||]; DocOpt = None })
              ("getMousePositionF", { Fn = evalGetMousePositionFBinding; Pars = [||]; DocOpt = None })
              ("isKeyboardKeyDown", { Fn = evalIsKeyboardKeyDownBinding; Pars = [|"key"|]; DocOpt = None })
-             ("expandContent", { Fn = evalExpandContentBinding; Pars = [|"setScreenSplash"; "guidOpt"; "content"; "origin"; "parent"|]; DocOpt = None })
+             ("expandContent", { Fn = evalExpandContentBinding; Pars = [|"setScreenSplash"; "content"; "origin"; "parent"|]; DocOpt = None })
              ("destroy", { Fn = evalDestroyBinding; Pars = [|"simulant"|]; DocOpt = None })
              ("getSelected", { Fn = evalGetSelectedBinding; Pars = [|"simulant"|]; DocOpt = None })
              ("tryGetParent", { Fn = evalTryGetParentBinding; Pars = [|"simulant"|]; DocOpt = None })

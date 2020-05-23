@@ -154,7 +154,12 @@ module WorldTypes =
     let [<Literal>] internal UnusedMask =                0b1000000000
 
     /// Represents an unsubscription operation for an event.
-    type Unsubscription = World -> World
+    type Unsubscription =
+        World -> World
+    
+    /// The payload that is passed with the lens as a hack to performance from the Elmish implementation.
+    and internal Payload =
+        int array * Guid * (ChangeData -> obj option -> World -> obj)
 
     /// The data for a change in the world's ambient state.
     and [<StructuralEquality; NoComparison>] AmbientChangeData = 
@@ -1153,7 +1158,7 @@ module WorldTypes =
         default this.MakeOverlayRoutes () = []
 
         /// Make a list of keyed values to hook into the engine.
-        abstract MakeKeyedValues : World -> ((string * obj) list) * World
+        abstract MakeKeyedValues : World -> ((Guid * obj) list) * World
         default this.MakeKeyedValues world = ([], world)
 
         /// A call-back at the beginning of each frame.

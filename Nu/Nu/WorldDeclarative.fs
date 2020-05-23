@@ -3,6 +3,7 @@
 
 namespace Nu
 open System
+open System.Collections
 open Prime
 open Nu
 
@@ -165,6 +166,7 @@ module WorldDeclarative =
     type World with
 
         /// Turn an entity lens into a series of live simulants.
+        /// OPTIMIZATION: lots of optimizations going on in here including inlining and mutation!
         static member expandSimulants
             (lens : Lens<obj, World>)
             (sieve : obj -> obj)
@@ -174,13 +176,13 @@ module WorldDeclarative =
             (origin : ContentOrigin)
             (parent : Simulant)
             world =
-            let mutable previous = Set.empty // TODO: P1: consider if a USet or HashSet would be more efficient now that HashSet has property cloning in its ctor
-            let guid = Gen.id
+            let expansionId = Gen.id
+            let previousSetKey = Gen.id
             let sieve' = fun a ->
                 match lens.PayloadOpt with
                 | Some payload ->
-                    let (index, _, _) = payload :?> (int * Guid * (ChangeData -> obj option -> World -> obj))
-                    let item = a |> Reflection.objToObjSeq |> Seq.item index
+                    let (indices, _, _) = payload :?> Payload
+                    let item = Array.fold (fun current index -> IEnumerable.item index (current :?> IEnumerable)) a indices
                     sieve item
                 | None -> a |> sieve
             let mapper' = fun a (_ : obj option) (_ : World) -> sieve' a.Value
@@ -188,39 +190,69 @@ module WorldDeclarative =
             let lensSeq = lens |> Lens.map sieve |> Lens.mapWorld unfold
             let lenses = Lens.explodeIndexedOpt indexOpt lensSeq
             let subscription = fun _ world ->
-                let current =
-                    lenses |>
-                    Seq.map (fun lens -> (Lens.get lens world, { Lens.dereference lens with Validate = fun world -> Option.isSome (lens.Get world) })) |>
-                    Seq.filter (fst >> Option.isSome) |>
-                    Seq.take (Lens.get lensSeq world |> Seq.length) |>
-                    Seq.map (fun (opt, lens) ->
-                        let (index, _) = Option.get opt
-                        let guid = Gen.idDeterministic index guid
-                        let lens = lens.Map snd
-                        PartialComparable.make guid (index, lens)) |>
-                    Set.ofSeq
+                // NOTE: this is an alternative implementation that I thought would be faster but is not yet seeming to be.
+                // Perhaps it will be faster in that cases where there are large gaps in the indices.
+                //let items = Lens.get lensSeq world
+                //let mutable current = Set.empty
+                //let mutable enr = items.GetEnumerator ()
+                //let mutable i = 0
+                //while enr.MoveNext () do
+                //    let item = enr.Current
+                //    let index = match indexOpt with Some indexer -> indexer item | None -> i
+                //    let expansionIdDet = Gen.idDeterministic index expansionId
+                //    let lensOpt = lenses |> Seq.item index
+                //    let lensItem = { Lens.dereference lensOpt with Validate = fun world -> Option.isSome (lensOpt.Get world) } --> snd
+                //    current <- Set.add (PartialComparable.make expansionIdDet (index, lensItem)) current
+                //    i <- i + 1
+                let items = Lens.get lensSeq world
+                let mutable current = Set.empty
+                let mutable count = Seq.length items
+                let mutable enr = lenses.GetEnumerator ()
+                while count <> 0 && enr.MoveNext () do
+                    let lens' = enr.Current
+                    match lens'.Get world with
+                    | Some (index, _) ->
+                        let guid = Gen.idDeterministic index expansionId
+                        let lens'' = { Lens.dereference lens' with Validate = fun world -> Option.isSome (lens'.Get world) } --> snd
+                        let item = PartialComparable.make guid (index, lens'')
+                        current <- Set.add item current
+                        count <- count - 1
+                    | None -> ()
+                let previous =
+                    match World.tryGetKeyedValue<PartialComparable<Guid, int * Lens<obj, World>> Set> previousSetKey world with
+                    | Some previous -> previous
+                    | None -> Set.empty
                 let added = Set.difference current previous
                 let removed = Set.difference previous current
                 let changed = Set.notEmpty added || Set.notEmpty removed
-                previous <- current
+                let world = World.addKeyedValue previousSetKey current world
                 let world =
                     if changed then
                         let world =
                             Seq.fold (fun world guidAndContent ->
                                 let (guid, (index, lens)) = PartialComparable.unmake guidAndContent
-                                let payloadOpt = (index, Gen.id, mapper') :> obj |> Some
+                                let payloadOpt =
+                                    match lens.PayloadOpt with
+                                    | Some payload ->
+                                        let (indices, _, _) = payload :?> Payload
+                                        (Array.add index indices, Gen.id, mapper') :> obj |> Some
+                                    | None -> ([|index|], Gen.id, mapper') :> obj |> Some
                                 let lens = { lens with PayloadOpt = payloadOpt }
                                 let content = mapper index lens world
-                                match World.tryGetKeyedValue (scstring guid) world with
-                                | None -> WorldModule.expandContent Unchecked.defaultof<_> (Some guid) content origin parent world
+                                match World.tryGetKeyedValue guid world with
+                                | None ->
+                                    let (simulantOpt, world) = WorldModule.expandContent Unchecked.defaultof<_> content origin parent world
+                                    match simulantOpt with
+                                    | Some simulant -> World.addKeyedValue guid simulant world
+                                    | None -> world
                                 | Some _ -> world)
                                 world added
                         let world =
                             Seq.fold (fun world guidAndContent ->
                                 let (guid, _) = PartialComparable.unmake guidAndContent
-                                match World.tryGetKeyedValue (scstring guid) world with
+                                match World.tryGetKeyedValue guid world with
                                 | Some simulant ->
-                                    let world = World.removeKeyedValue (scstring guid) world
+                                    let world = World.removeKeyedValue guid world
                                     WorldModule.destroy simulant world
                                 | None -> failwithumf ())
                                 world removed
