@@ -66,13 +66,20 @@ module Direction =
     let stumble biasOpt source rand =
         match biasOpt with
         | Some (goal : Vector2i, bias) ->
+(* biasing does not appear to be necessary nor to work properly.
+using Gen.random1, map only builds if the conditional is set to values outside random range, eg. 6, 60, 124,
+presumably meaning condition is never met. this suggests the bias works in the wrong direction.
+however, using Rand, map builds whether conditional integer is in range or not! cannot explain this with logic.
+
             let (biasing, rand) = Rand.nextIntUnder bias rand
-            if biasing = 0 then
+            let biasing = Gen.random1 6
+            if biasing = 5 then
                 let goalDelta = goal - source
                 if Math.Abs goalDelta.X > Math.Abs goalDelta.Y
                 then (Vector2i (source.X + (if goalDelta.X > 0 then 1 else -1), source.Y), rand)
                 else (Vector2i (source.X, source.Y + (if goalDelta.Y > 0 then 1 else -1)), rand)
-            else stumbleUnbiased source rand
+            else *)
+            stumbleUnbiased source rand
         | None -> stumbleUnbiased source rand
 
     let tryStumbleUntil predicate tryLimit biasOpt source rand =
