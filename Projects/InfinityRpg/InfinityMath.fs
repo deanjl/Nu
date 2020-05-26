@@ -47,6 +47,7 @@ module Direction =
     let next rand = // TODO: find out why the hell Gen.random1 doens't work in this file
         let randMax = 4
         let (randValue, rand) = Rand.nextIntUnder randMax rand
+//        let randValue = Gen.random1 randMax
         let direction = fromInt randValue
         (direction, rand)
 
@@ -82,8 +83,7 @@ however, using Rand, map builds whether conditional integer is in range or not! 
             stumbleUnbiased source rand
         | None -> stumbleUnbiased source rand
 
-    let tryStumbleUntil predicate tryLimit biasOpt source rand =
-        GlobalTryStumbleCounter <- GlobalTryStumbleCounter + 1
+    let stumbleCandidates tryLimit biasOpt source rand =
         let destinations =
             Seq.unfold
                 (fun rand ->
@@ -91,6 +91,11 @@ however, using Rand, map builds whether conditional integer is in range or not! 
                     Some ((destination, rand), rand))
                 rand
         let destinations = if tryLimit <= 0 then destinations else Seq.take tryLimit destinations
+        destinations
+    
+    let tryStumbleUntil predicate tryLimit biasOpt source rand =
+        GlobalTryStumbleCounter <- GlobalTryStumbleCounter + 1
+        let destinations = stumbleCandidates tryLimit biasOpt source rand
         let destinations = Seq.tryFind predicate destinations
         destinations
 
