@@ -128,7 +128,7 @@ however, using Rand, map builds whether conditional integer is in range or not! 
         let path = seq { yield pathHead; yield! pathTail }
         path
 
-    let tryWanderUntil predicate stumbleLimit stumbleBounds tracking biasOpt tryLimit source rand =
+    let wanderCandidates stumbleLimit stumbleBounds tracking biasOpt tryLimit source rand =
         let paths =
             Seq.unfold
                 (fun (source, rand) ->
@@ -137,6 +137,10 @@ however, using Rand, map builds whether conditional integer is in range or not! 
                     Some (path, state))
                 (source, rand)
         let paths = if tryLimit <= 0 then paths else Seq.take tryLimit paths
+        paths
+    
+    let tryWanderUntil predicate stumbleLimit stumbleBounds tracking biasOpt tryLimit source rand =
+        let paths = wanderCandidates stumbleLimit stumbleBounds tracking biasOpt tryLimit source rand
         let paths = Seq.tryFind predicate paths
         paths
 
@@ -173,12 +177,22 @@ however, using Rand, map builds whether conditional integer is in range or not! 
     let printDiagnostics predicate stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source rand =
         let printPosition (tuple : (Vector2i * _)) =
             let position = fst tuple
-            printfn "  %d, %d" position.X position.Y
+            printfn "    %d, %d" position.X position.Y
         printfn "the following are selective information printed from test invocations of key functions so that their output can be analyzed heuristically, in the context of normal game conditions."
         printfn "stumbleCandidates :"
         stumbleCandidates stumbleLimit biasOpt source rand |> Seq.iter printPosition
         printfn "wander :"
         wander stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source rand |> Seq.iter printPosition
+        printfn "wanderCandidates :"
+        let paths = wanderCandidates stumbleLimit stumbleBounds NoAdjacentTracking biasOpt 1000 source rand
+        printfn "  number of paths :"
+        printfn "    %d" (Seq.length paths)
+        printfn "  first ten path lengths :"
+        paths |> Seq.take 10 |> Seq.iter (fun x -> printfn "%d" (Seq.length x))
+        printfn "wanderUntil :"
+        let path = wanderUntil predicate stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source rand
+        printfn "  path length :"
+        printfn "    %d" (Seq.length path)
         
     
     let wanderToDestination stumbleBounds source destination rand =
