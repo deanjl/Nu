@@ -170,13 +170,25 @@ however, using Rand, map builds whether conditional integer is in range or not! 
         let path = concretizePathOpt maxLength pathOpt rand
         path
 
+    let printDiagnostics predicate stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source rand =
+        let printPosition (tuple : (Vector2i * _)) =
+            let position = fst tuple
+            printfn "  %d, %d" position.X position.Y
+        printfn "the following are selective information printed from test invocations of key functions so that their output can be analyzed heuristically, in the context of normal game conditions."
+        printfn "stumbleCandidates :"
+        stumbleCandidates stumbleLimit biasOpt source rand |> Seq.iter printPosition
+        printfn "wander :"
+        wander stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source rand |> Seq.iter printPosition
+        
+    
     let wanderToDestination stumbleBounds source destination rand =
         let biasOpt = Some (destination, 6)
         let maxPathLength = stumbleBounds.CornerPositive.X * stumbleBounds.CornerPositive.Y / 2 + 1
-        let stumbleLimit = 16
+        let stumbleLimit = 16        
         let predicate = fun path ->
             let path = Seq.tryTake maxPathLength path
             Seq.exists (fun point -> fst point = destination) path
+        printDiagnostics predicate stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source rand
         let path = wanderUntil predicate stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source rand
         let pathDesiredEnd = Seq.findIndex (fun (point, _) -> point = destination) path + 1
         let pathTrimmed = Seq.take pathDesiredEnd path
