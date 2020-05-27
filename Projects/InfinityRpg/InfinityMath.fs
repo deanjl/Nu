@@ -44,10 +44,9 @@ module Direction =
         | 3 -> Leftward
         | _ -> failwith ("Invalid conversion to Direction from int '" + scstring n + "'.")
 
-    let next rand = // TODO: find out why the hell Gen.random1 doens't work in this file
+    let next rand =
         let randMax = 4
         let (randValue, rand) = Rand.nextIntUnder randMax rand
-//        let randValue = Gen.random1 randMax
         let direction = fromInt randValue
         (direction, rand)
 
@@ -67,19 +66,13 @@ module Direction =
     let stumble biasOpt source rand =
         match biasOpt with
         | Some (goal : Vector2i, bias) ->
-(* biasing does not appear to be necessary nor to work properly.
-using Gen.random1, map only builds if the conditional is set to values outside random range, eg. 6, 60, 124,
-presumably meaning condition is never met. this suggests the bias works in the wrong direction.
-however, using Rand, map builds whether conditional integer is in range or not! cannot explain this with logic.
-
             let (biasing, rand) = Rand.nextIntUnder bias rand
-            let biasing = Gen.random1 6
             if biasing = 5 then
                 let goalDelta = goal - source
                 if Math.Abs goalDelta.X > Math.Abs goalDelta.Y
                 then (Vector2i (source.X + (if goalDelta.X > 0 then 1 else -1), source.Y), rand)
                 else (Vector2i (source.X, source.Y + (if goalDelta.Y > 0 then 1 else -1)), rand)
-            else *)
+            else
             stumbleUnbiased source rand
         | None -> stumbleUnbiased source rand
 
@@ -139,15 +132,13 @@ however, using Rand, map builds whether conditional integer is in range or not! 
         let paths = if tryLimit <= 0 then paths else Seq.take tryLimit paths
         paths
     
-    let tryWanderUntil stumbleLimit stumbleBounds tracking biasOpt tryLimit source destination rand =
-        let predicate = fun path ->
-            Seq.exists (fun (point, _) -> point = destination) path
+    let tryWanderUntil predicate stumbleLimit stumbleBounds tracking biasOpt tryLimit source rand =
         let paths = wanderCandidates stumbleLimit stumbleBounds tracking biasOpt tryLimit source rand
         let paths = Seq.tryFind predicate paths
         paths
 
-    let wanderUntil stumbleLimit stumbleBounds tracking biasOpt source destination rand =
-        Option.get (tryWanderUntil stumbleLimit stumbleBounds tracking biasOpt 0 source destination rand)
+    let wanderUntil predicate stumbleLimit stumbleBounds tracking biasOpt source rand =
+        Option.get (tryWanderUntil predicate stumbleLimit stumbleBounds tracking biasOpt 0 source rand)
 
     let concretizePath maxLength abstractPath =
         let path = List.ofSeq (Seq.tryTake maxLength abstractPath)
@@ -160,7 +151,7 @@ however, using Rand, map builds whether conditional integer is in range or not! 
             (Some path, rand)
         | None -> (None, rand)
 
-(*    let wanderAimlessly stumbleBounds source rand =
+    let wanderAimlessly stumbleBounds source rand =
         let minLength = 10
         let maxLength = 15
         let tryLimit = 100
@@ -175,8 +166,9 @@ however, using Rand, map builds whether conditional integer is in range or not! 
         let pathOpt = tryWanderUntil predicate stumbleLimit stumbleBounds BackTracking None tryLimit source rand
         let path = concretizePathOpt maxLength pathOpt rand
         path
-*)
-    let printDiagnostics stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source destination rand =
+
+// TODO: transform this into a proper unit test file
+    let printDiagnostics predicate stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source destination rand =
         let printPosition (tuple : (Vector2i * _)) =
             let position = fst tuple
             printfn "    %d, %d" position.X position.Y
@@ -192,24 +184,22 @@ however, using Rand, map builds whether conditional integer is in range or not! 
         printfn "  first ten path lengths :"
         paths |> Seq.take 10 |> Seq.iter (fun x -> printfn "    %d" (Seq.length x))
         printfn "wanderUntil :"
-        let path = wanderUntil stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source destination rand
+        let path = wanderUntil predicate stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source rand
         printfn "  path length :"
         printfn "    %d" (Seq.length path)
         printfn "  contains destination :"
         printfn "    %b" (Seq.exists (fun (point, _) -> point = destination) path)
         printfn "  returned object :"
-        printfn "    %O" path
-        
+        printfn "    %O" path        
     
     let wanderToDestination stumbleBounds source destination rand =
         let biasOpt = Some (destination, 6)
         let maxPathLength = stumbleBounds.CornerPositive.X * stumbleBounds.CornerPositive.Y / 2 + 1
         let stumbleLimit = 16        
-//        let predicate = fun path ->
-//            let path = Seq.tryTake maxPathLength path
-//            Seq.exists (fun (point, _) -> point = destination) path
-        printDiagnostics stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source destination rand
-        let path = wanderUntil stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source destination rand
+        let predicate = fun path ->
+            let path = Seq.tryTake maxPathLength path
+            Seq.exists (fun (point, _) -> point = destination) path
+        let path = wanderUntil predicate stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source rand
         let pathDesiredEnd = (Seq.findIndex (fun (point, _) -> point = destination) path) + 1
         let pathTrimmed = Seq.take pathDesiredEnd path
         let path = concretizePath maxPathLength pathTrimmed
