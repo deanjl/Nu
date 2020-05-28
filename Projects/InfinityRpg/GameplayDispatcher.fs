@@ -57,15 +57,6 @@ module GameplayDispatcherModule =
             let entities = World.getEntities Simulants.Scene world
             Seq.filter (fun (entity : Entity) -> entity.Is<EnemyDispatcher> world) entities
 
-        static let updateEnemiesBy by world =
-            let enemies = getEnemies world |> Seq.toList
-            let rec recursion (enemies : Entity list) world =
-                if enemies.Length = 0 then world
-                else
-                    let world = by enemies.Head world
-                    recursion enemies.Tail world
-            recursion enemies world
-
         static let makeAttackTurn targetPositionM =
             ActionTurn
                 { ActionTicks = 0L
@@ -429,40 +420,33 @@ module GameplayDispatcherModule =
                 else world
             else world
 
-        static let continueCharacterNavigation (character : Entity) world =
-            let navigating =
-                match character.GetCharacterActivityState world with
-                    | Navigation navigationDescriptor -> navigationDescriptor.LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM
-                    | Action _ -> false
-                    | NoActivity -> false
-            if not navigating then world
-            else
-                let navigationDescriptor =
-                    match character.GetCharacterActivityState world with
-                    | Navigation navigationDescriptor -> navigationDescriptor
-                    | _ -> failwithumf ()
-                updateCharacterByNavigation navigationDescriptor character world
-
-        static let continueCharacterAction (character : Entity) world =
-            if not (character.CharacterActivityState.GetBy (fun state -> state.IsActing) world) then world
-            else
-                let actionDescriptor =
-                    match character.GetCharacterActivityState world with
-                    | Action actionDescriptor -> actionDescriptor
-                    | _ -> failwithumf ()
-                let world = updateCharacterByAction actionDescriptor character world
-                runCharacterReaction actionDescriptor character world
-
-        static let runCharacterNoActivity (character : Entity) world =
-            character.SetCharacterActivityState NoActivity world
-
+        static let updateCharacter (character : Entity) world =
+            match character.GetCharacterActivityState world with
+                | Action actionDescriptor ->
+                    let world = updateCharacterByAction actionDescriptor character world
+                    runCharacterReaction actionDescriptor character world
+                | Navigation navigationDescriptor ->
+                    if navigationDescriptor.LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM then
+                        updateCharacterByNavigation navigationDescriptor character world
+                    else world
+                | NoActivity -> world
+        
+        static let updateEnemies world =
+            let enemies = getEnemies world |> Seq.toList
+            let rec recursion (enemies : Entity list) world =
+                if enemies.Length = 0 then world
+                else
+                    let world = updateCharacter enemies.Head world
+                    recursion enemies.Tail world
+            recursion enemies world
+        
         static let runCharacterActivity newActivity (character : Entity) world =
             match newActivity with
             | Action newActionDescriptor -> character.SetCharacterActivityState (Action newActionDescriptor) world
             | Navigation newNavigationDescriptor ->
                 let newNavigationDescriptor = {newNavigationDescriptor with LastWalkOriginM = newNavigationDescriptor.WalkDescriptor.WalkOriginM}
                 character.SetCharacterActivityState (Navigation newNavigationDescriptor) world
-            | NoActivity -> runCharacterNoActivity character world
+            | NoActivity -> character.SetCharacterActivityState NoActivity world
 
         static let tryRunEnemyActivity world newActivity (enemy : Entity) =
             if newActivity <> NoActivity then
@@ -508,8 +492,7 @@ module GameplayDispatcherModule =
                 | Some newPlayerActivity -> runCharacterActivity newPlayerActivity Simulants.Player world
                 | None -> world
 
-            let world = continueCharacterAction Simulants.Player world
-            let world = continueCharacterNavigation Simulants.Player world
+            let world = updateCharacter Simulants.Player world
             
             // determine (and set) enemy desired turns if applicable
             let world =
@@ -538,8 +521,7 @@ module GameplayDispatcherModule =
                         cancelNavigation Simulants.Player world
                     else runEnemyNavigationActivities newEnemyNavigationActivities enemies world
 
-            let world = updateEnemiesBy continueCharacterAction world
-            let world = updateEnemiesBy continueCharacterNavigation world
+            let world = updateEnemies world
             
             // fin
             world
