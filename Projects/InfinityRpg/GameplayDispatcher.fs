@@ -429,10 +429,6 @@ module GameplayDispatcherModule =
                 else world
             else world
 
-        static let startCharacterNavigation newNavigationDescriptor (character : Entity) world =
-            let newNavigationDescriptor = {newNavigationDescriptor with LastWalkOriginM = newNavigationDescriptor.WalkDescriptor.WalkOriginM}
-            character.SetCharacterActivityState (Navigation newNavigationDescriptor) world                
-
         static let continueCharacterNavigation (character : Entity) world =
             let navigating =
                 match character.GetCharacterActivityState world with
@@ -447,10 +443,6 @@ module GameplayDispatcherModule =
                     | _ -> failwithumf ()
                 updateCharacterByNavigation navigationDescriptor character world
 
-        static let startCharacterAction newActionDescriptor (character : Entity) world =
-            // NOTE: currently just implements attack
-            character.SetCharacterActivityState (Action newActionDescriptor) world
-
         static let continueCharacterAction (character : Entity) world =
             if not (character.CharacterActivityState.GetBy (fun state -> state.IsActing) world) then world
             else
@@ -464,10 +456,12 @@ module GameplayDispatcherModule =
         static let runCharacterNoActivity (character : Entity) world =
             character.SetCharacterActivityState NoActivity world
 
-        static let runCharacterActivity newActivity character world =
+        static let runCharacterActivity newActivity (character : Entity) world =
             match newActivity with
-            | Action newActionDescriptor -> startCharacterAction newActionDescriptor character world
-            | Navigation newNavigationDescriptor -> startCharacterNavigation newNavigationDescriptor character world
+            | Action newActionDescriptor -> character.SetCharacterActivityState (Action newActionDescriptor) world
+            | Navigation newNavigationDescriptor ->
+                let newNavigationDescriptor = {newNavigationDescriptor with LastWalkOriginM = newNavigationDescriptor.WalkDescriptor.WalkOriginM}
+                character.SetCharacterActivityState (Navigation newNavigationDescriptor) world
             | NoActivity -> runCharacterNoActivity character world
 
         static let tryRunEnemyActivity world newActivity (enemy : Entity) =
@@ -486,7 +480,12 @@ module GameplayDispatcherModule =
             let newEnemyActivities = if anyEnemyActionActivity then enemyActionActivities else enemyNavigationActivities
             Seq.fold2 tryRunEnemyActivity world newEnemyActivities enemies
             
-        static let tickTurn playerTurn world =
+        static let tickTurn newPlayerTurnOpt world =
+
+            let playerTurn =
+                match newPlayerTurnOpt with
+                | Some playerTurn -> playerTurn
+                | None -> determinePlayerTurn world
 
             // construct occupation map
             let occupationMap =
@@ -509,6 +508,9 @@ module GameplayDispatcherModule =
                 | Some newPlayerActivity -> runCharacterActivity newPlayerActivity Simulants.Player world
                 | None -> world
 
+            let world = continueCharacterAction Simulants.Player world
+            let world = continueCharacterNavigation Simulants.Player world
+            
             // determine (and set) enemy desired turns if applicable
             let world =
                 match newPlayerActivityOpt with
@@ -536,9 +538,7 @@ module GameplayDispatcherModule =
                         cancelNavigation Simulants.Player world
                     else runEnemyNavigationActivities newEnemyNavigationActivities enemies world
 
-            let world = continueCharacterAction Simulants.Player world
             let world = updateEnemiesBy continueCharacterAction world
-            let world = continueCharacterNavigation Simulants.Player world
             let world = updateEnemiesBy continueCharacterNavigation world
             
             // fin
@@ -548,7 +548,7 @@ module GameplayDispatcherModule =
             if (anyTurnsInProgress world) then world
             else
                 let world = Simulants.HudSaveGame.SetEnabled false world
-                let playerTurn = determinePlayerTurnFromInput playerInput world
+                let playerTurn = Some (determinePlayerTurnFromInput playerInput world)
                 tickTurn playerTurn world
 
         static let tick world =
@@ -557,7 +557,7 @@ module GameplayDispatcherModule =
                 elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Right then handlePlayerInput (DetailInput Rightward) world
                 elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Down then handlePlayerInput (DetailInput Downward) world
                 elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Left then handlePlayerInput (DetailInput Leftward) world
-                elif (anyTurnsInProgress world) then tickTurn (determinePlayerTurn world) world
+                elif (anyTurnsInProgress world) then tickTurn None world
                 elif not (Simulants.HudSaveGame.GetEnabled world) then Simulants.HudSaveGame.SetEnabled true world
                 else world
             world
