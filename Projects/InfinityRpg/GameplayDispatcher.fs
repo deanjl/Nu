@@ -486,7 +486,7 @@ module GameplayDispatcherModule =
             let newEnemyActivities = if anyEnemyActionActivity then enemyActionActivities else enemyNavigationActivities
             Seq.fold2 tryRunEnemyActivity world newEnemyActivities enemies
             
-        static let runPlayerTurn playerTurn world =
+        static let tickTurn playerTurn world =
 
             // construct occupation map
             let occupationMap =
@@ -536,20 +536,20 @@ module GameplayDispatcherModule =
                         cancelNavigation Simulants.Player world
                     else runEnemyNavigationActivities newEnemyNavigationActivities enemies world
 
+            let world = continueCharacterAction Simulants.Player world
+            let world = updateEnemiesBy continueCharacterAction world
+            let world = continueCharacterNavigation Simulants.Player world
+            let world = updateEnemiesBy continueCharacterNavigation world
+            
             // fin
             world
 
-        static let startPlayerTurn playerInput world =
-            let world = Simulants.HudSaveGame.SetEnabled false world
-            let playerTurn = determinePlayerTurnFromInput playerInput world
-            runPlayerTurn playerTurn world
-
-        static let continuePlayerTurn world =
-            let playerTurn = determinePlayerTurn world
-            runPlayerTurn playerTurn world
-
         static let handlePlayerInput playerInput world =
-            if not (anyTurnsInProgress world) then startPlayerTurn playerInput world else world
+            if (anyTurnsInProgress world) then world
+            else
+                let world = Simulants.HudSaveGame.SetEnabled false world
+                let playerTurn = determinePlayerTurnFromInput playerInput world
+                tickTurn playerTurn world
 
         static let tick world =
             let world =
@@ -557,13 +557,9 @@ module GameplayDispatcherModule =
                 elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Right then handlePlayerInput (DetailInput Rightward) world
                 elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Down then handlePlayerInput (DetailInput Downward) world
                 elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Left then handlePlayerInput (DetailInput Leftward) world
-                elif (anyTurnsInProgress world) then continuePlayerTurn world
+                elif (anyTurnsInProgress world) then tickTurn (determinePlayerTurn world) world
                 elif not (Simulants.HudSaveGame.GetEnabled world) then Simulants.HudSaveGame.SetEnabled true world
                 else world
-            let world = continueCharacterAction Simulants.Player world
-            let world = updateEnemiesBy continueCharacterAction world
-            let world = continueCharacterNavigation Simulants.Player world
-            let world = updateEnemiesBy continueCharacterNavigation world
             world
         
         static let runNewGameplay world =
