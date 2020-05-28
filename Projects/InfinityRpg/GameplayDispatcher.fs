@@ -73,7 +73,7 @@ module GameplayDispatcherModule =
                   ActionDataName = Constants.InfinityRpg.AttackName }
 
         static let determinePathEnd rand =
-            let randResult = Gen.random1 (Constants.Layout.FieldUnitSizeM.X - 4) // assumes X and Y are equal
+            let (randResult, rand) = Rand.nextIntUnder (Constants.Layout.FieldUnitSizeM.X - 4) rand // assumes X and Y are equal
             let pathEnd = if randResult % 2 = 0 then Vector2i (randResult + 2, Constants.Layout.FieldUnitSizeM.Y - 2) else Vector2i (Constants.Layout.FieldUnitSizeM.X - 2, randResult + 2)
             (pathEnd, rand)
 
@@ -551,6 +551,21 @@ module GameplayDispatcherModule =
         static let handlePlayerInput playerInput world =
             if not (anyTurnsInProgress world) then startPlayerTurn playerInput world else world
 
+        static let tick world =
+            let world =
+                if not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Up then handlePlayerInput (DetailInput Upward) world
+                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Right then handlePlayerInput (DetailInput Rightward) world
+                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Down then handlePlayerInput (DetailInput Downward) world
+                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Left then handlePlayerInput (DetailInput Leftward) world
+                elif (anyTurnsInProgress world) then continuePlayerTurn world
+                elif not (Simulants.HudSaveGame.GetEnabled world) then Simulants.HudSaveGame.SetEnabled true world
+                else world
+            let world = continueCharacterAction Simulants.Player world
+            let world = updateEnemiesBy continueCharacterAction world
+            let world = continueCharacterNavigation Simulants.Player world
+            let world = updateEnemiesBy continueCharacterNavigation world
+            world
+        
         static let runNewGameplay world =
 
             // generate non-deterministic random numbers
@@ -578,7 +593,7 @@ module GameplayDispatcherModule =
             // make enemies
             __c (createEnemies scene rand world)
 
-        static let runLoadGameplay world =
+        static let runLoadGameplay world = // TODO: fix it
 
             // get and initialize gameplay screen from read
             let world = World.readScreenFromFile Assets.SaveFilePath (Some Simulants.Gameplay.Name) world |> snd
@@ -589,21 +604,6 @@ module GameplayDispatcherModule =
 
             // make field from rand (field is not serialized, but generated deterministically with ContentRandState)
             __c (createField Simulants.Scene rand world)
-
-        static let tick world =
-            let world =
-                if not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Up then handlePlayerInput (DetailInput Upward) world
-                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Right then handlePlayerInput (DetailInput Rightward) world
-                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Down then handlePlayerInput (DetailInput Downward) world
-                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Left then handlePlayerInput (DetailInput Leftward) world
-                elif (anyTurnsInProgress world) then continuePlayerTurn world
-                elif not (Simulants.HudSaveGame.GetEnabled world) then Simulants.HudSaveGame.SetEnabled true world
-                else world
-            let world = continueCharacterAction Simulants.Player world
-            let world = updateEnemiesBy continueCharacterAction world
-            let world = continueCharacterNavigation Simulants.Player world
-            let world = updateEnemiesBy continueCharacterNavigation world
-            world
 
         static member Properties =
             [define Screen.ContentRandState Rand.DefaultSeedState
