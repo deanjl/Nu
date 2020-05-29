@@ -451,8 +451,21 @@ module GameplayDispatcherModule =
                 (Seq.fold2 tryRunEnemyAction world enemyActivities enemies)
             else (Seq.fold2 tryRunEnemyActivity world enemyActivities enemies)
             
-        static let tickNewTurn newPlayerActivity occupationMap world =
+        static let tickNewTurn newPlayerTurn world =
 
+            let occupationMap =
+                let fieldMap = Simulants.Field.GetFieldMapNp world
+                let enemies = getEnemies world
+                let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
+                OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions newPlayerTurn
+            
+            let newPlayerActivity =
+                match newPlayerTurn with
+                | ActionTurn actionDescriptor -> Action actionDescriptor
+                | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
+                | CancelTurn -> NoActivity
+                | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point."
+            
             let world = runCharacterActivity newPlayerActivity Simulants.Player world
 
             // determine (and set) enemy desired turns if applicable
@@ -477,27 +490,11 @@ module GameplayDispatcherModule =
                 | Some playerTurn -> playerTurn
                 | None -> determinePlayerTurnFromNavigationProgress world
 
-            // construct occupation map
-            let occupationMap =
-                let fieldMap = Simulants.Field.GetFieldMapNp world
-                let enemies = getEnemies world
-                let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
-                OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions playerTurn
-
-            // determine player activity
-            let newPlayerActivityOpt =
-                match playerTurn with
-                | ActionTurn actionDescriptor -> Some (Action actionDescriptor)
-                | NavigationTurn navigationDescriptor -> Some (Navigation navigationDescriptor)
-                | CancelTurn -> Some NoActivity
-                | NoTurn -> None
-
             let world =
-                match newPlayerActivityOpt with
-                | Some newPlayerActivity -> tickNewTurn newPlayerActivity occupationMap world
-                | None -> world
+                match playerTurn with
+                | NoTurn -> world
+                | _ -> tickNewTurn playerTurn world
 
-            
             // run enemy activities in accordance with the player's current activity
             let world =
                 let enemies = getEnemies world
