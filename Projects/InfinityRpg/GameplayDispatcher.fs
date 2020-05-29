@@ -451,6 +451,25 @@ module GameplayDispatcherModule =
                 (Seq.fold2 tryRunEnemyAction world enemyActivities enemies)
             else (Seq.fold2 tryRunEnemyActivity world enemyActivities enemies)
             
+        static let tickNewTurn newPlayerActivity occupationMap world =
+
+            let world = runCharacterActivity newPlayerActivity Simulants.Player world
+
+            // determine (and set) enemy desired turns if applicable
+            let world =
+                match newPlayerActivity with
+                | Action _
+                | Navigation _ ->
+                    let rand = Rand.makeFromSeedState (Simulants.Gameplay.GetOngoingRandState world)
+                    let enemies = getEnemies world
+                    let (enemyDesiredTurns, rand) = determineDesiredEnemyTurns occupationMap Simulants.Player enemies rand world
+                    let world = Seq.fold2 (fun world (enemy : Entity) turn -> enemy.SetDesiredTurn turn world) world enemies enemyDesiredTurns
+                    Simulants.Gameplay.SetOngoingRandState (Rand.getState rand) world
+                | NoActivity -> world
+
+            world
+
+        
         static let tickTurn newPlayerTurnOpt world =
 
             let playerTurn =
@@ -473,27 +492,12 @@ module GameplayDispatcherModule =
                 | CancelTurn -> Some NoActivity
                 | NoTurn -> None
 
-            // run player activity
             let world =
                 match newPlayerActivityOpt with
-                | Some newPlayerActivity -> runCharacterActivity newPlayerActivity Simulants.Player world
+                | Some newPlayerActivity -> tickNewTurn newPlayerActivity occupationMap world
                 | None -> world
 
-            let world = updateCharacter Simulants.Player world
             
-            // determine (and set) enemy desired turns if applicable
-            let world =
-                match newPlayerActivityOpt with
-                | Some (Action _)
-                | Some (Navigation _) ->
-                    let rand = Rand.makeFromSeedState (Simulants.Gameplay.GetOngoingRandState world)
-                    let enemies = getEnemies world
-                    let (enemyDesiredTurns, rand) = determineDesiredEnemyTurns occupationMap Simulants.Player enemies rand world
-                    let world = Seq.fold2 (fun world (enemy : Entity) turn -> enemy.SetDesiredTurn turn world) world enemies enemyDesiredTurns
-                    Simulants.Gameplay.SetOngoingRandState (Rand.getState rand) world
-                | Some NoActivity
-                | None -> world
-
             // run enemy activities in accordance with the player's current activity
             let world =
                 let enemies = getEnemies world
@@ -507,6 +511,7 @@ module GameplayDispatcherModule =
                         cancelNavigation Simulants.Player world
                     else runEnemyActivities newEnemyActivities enemies world
 
+            let world = updateCharacter Simulants.Player world
             let world = updateEnemies world
             
             // fin
