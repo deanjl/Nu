@@ -348,7 +348,7 @@ module GameplayDispatcherModule =
                 NoTurn
             | Uncontrolled -> NoTurn
 
-        static let determinePlayerTurn world =
+        static let determinePlayerTurnFromNavigationProgress world =
             match Simulants.Player.GetCharacterActivityState world with
             | Action _ -> NoTurn
             | Navigation navigationDescriptor ->
@@ -364,7 +364,7 @@ module GameplayDispatcherModule =
                 else NoTurn
             | NoActivity -> NoTurn
 
-        static let determineEnemyActionActivities enemies world =
+        static let determineEnemyActivities enemies world =
             List.foldBack
                 (fun (enemy : Entity) precedingEnemyActivities ->
                     let enemyActivity =
@@ -373,28 +373,11 @@ module GameplayDispatcherModule =
                         if noPrecedingEnemyActionActivity && noCurrentEnemyActionActivity then
                             match enemy.GetDesiredTurn world with
                             | ActionTurn actionDescriptor -> Action actionDescriptor
-                            | NavigationTurn _ -> NoActivity
-                            | CancelTurn -> NoActivity
-                            | NoTurn -> NoActivity
-                        else NoActivity
-                    enemyActivity :: precedingEnemyActivities)
-                (List.ofSeq enemies)
-                []
-
-        static let determineEnemyNavigationActivities enemies world =
-            List.foldBack
-                (fun (enemy : Entity) enemyActivities ->
-                    let noCurrentEnemyActionActivity =
-                        Seq.notExists (fun (enemy : Entity) -> (enemy.GetCharacterActivityState world).IsActing) enemies
-                    let enemyActivity =
-                        if noCurrentEnemyActionActivity then
-                            match enemy.GetDesiredTurn world with
-                            | ActionTurn _ -> NoActivity
                             | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
                             | CancelTurn -> NoActivity
                             | NoTurn -> NoActivity
                         else NoActivity
-                    enemyActivity :: enemyActivities)
+                    enemyActivity :: precedingEnemyActivities)
                 (List.ofSeq enemies)
                 []
 
@@ -454,22 +437,26 @@ module GameplayDispatcherModule =
                 runCharacterActivity newActivity enemy world
             else world
 
-        static let runEnemyNavigationActivities enemyNavigationActivities enemies world =
-            if Seq.exists (fun (state : CharacterActivityState) -> state.IsNavigating) enemyNavigationActivities
-            then Seq.fold2 tryRunEnemyActivity world enemyNavigationActivities enemies
-            else world
-
-        static let runEnemyActivities enemyActionActivities enemyNavigationActivities enemies world =
-            let anyEnemyActionActivity = Seq.exists (fun (state : CharacterActivityState) -> state.IsActing) enemyActionActivities
-            let newEnemyActivities = if anyEnemyActionActivity then enemyActionActivities else enemyNavigationActivities
-            Seq.fold2 tryRunEnemyActivity world newEnemyActivities enemies
+        static let tryRunEnemyAction world newActivity (enemy : Entity) =
+            match newActivity with
+            | Action _ ->
+                let world = enemy.SetDesiredTurn NoTurn world
+                runCharacterActivity newActivity enemy world
+            | Navigation _ -> world
+            | NoActivity -> world
+        
+        static let runEnemyActivities enemyActivities enemies world =
+            let anyEnemyActionActivity = Seq.exists (fun (state : CharacterActivityState) -> state.IsActing) enemyActivities
+            if anyEnemyActionActivity then
+                (Seq.fold2 tryRunEnemyAction world enemyActivities enemies)
+            else (Seq.fold2 tryRunEnemyActivity world enemyActivities enemies)
             
         static let tickTurn newPlayerTurnOpt world =
 
             let playerTurn =
                 match newPlayerTurnOpt with
                 | Some playerTurn -> playerTurn
-                | None -> determinePlayerTurn world
+                | None -> determinePlayerTurnFromNavigationProgress world
 
             // construct occupation map
             let occupationMap =
@@ -514,12 +501,11 @@ module GameplayDispatcherModule =
                 | Action _ -> world
                 | Navigation _ 
                 | NoActivity ->
-                    let newEnemyActionActivities = determineEnemyActionActivities enemies world
-                    let newEnemyNavigationActivities = determineEnemyNavigationActivities enemies world
-                    if List.exists (fun (state : CharacterActivityState) -> state.IsActing) newEnemyActionActivities then
-                        let world = runEnemyActivities newEnemyActionActivities newEnemyNavigationActivities enemies world
+                    let newEnemyActivities = determineEnemyActivities enemies world
+                    if List.exists (fun (state : CharacterActivityState) -> state.IsActing) newEnemyActivities then
+                        let world = runEnemyActivities newEnemyActivities enemies world
                         cancelNavigation Simulants.Player world
-                    else runEnemyNavigationActivities newEnemyNavigationActivities enemies world
+                    else runEnemyActivities newEnemyActivities enemies world
 
             let world = updateEnemies world
             
