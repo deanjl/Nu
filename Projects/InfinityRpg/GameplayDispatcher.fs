@@ -198,44 +198,7 @@ module GameplayDispatcherModule =
             let enemies = getEnemies world
             anyTurnsInProgress2 Simulants.Player enemies world
 
-        static let updateCharacterByWalk walkDescriptor (character : Entity) world =
-            let (newPosition, walkState) = walk walkDescriptor (character.GetPosition world)
-            let world = character.SetPosition newPosition world
-            let characterAnimationState = { character.GetCharacterAnimationState world with Direction = walkDescriptor.WalkDirection }
-            let world = character.SetCharacterAnimationState characterAnimationState world
-            (walkState, world)
-
-        static let updateCharacterByWalkState walkState navigationDescriptor (character : Entity) world =
-            match walkState with
-            | WalkFinished ->
-                let lastOrigin = navigationDescriptor.WalkDescriptor.WalkOriginM
-                match navigationDescriptor.NavigationPathOpt with
-                | Some [] -> failwith "NavigationPath should never be empty here."
-                | Some (_ :: []) -> character.SetCharacterActivityState NoActivity world
-                | Some (currentNode :: navigationPath) ->
-                    let walkDirection = vmtod ((List.head navigationPath).PositionM - currentNode.PositionM)
-                    let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = vftovm (character.GetPosition world) }
-                    let navigationDescriptor = { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath; LastWalkOriginM = lastOrigin }
-                    character.SetCharacterActivityState (Navigation navigationDescriptor) world
-                | None -> character.SetCharacterActivityState NoActivity world
-            | WalkContinuing -> world
-
-        static let updateCharacterByNavigation navigationDescriptor character world =
-            let (walkState, world) = updateCharacterByWalk navigationDescriptor.WalkDescriptor character world
-            updateCharacterByWalkState walkState navigationDescriptor character world
-
-        static let updateCharacterByAction actionDescriptor (character : Entity) world =
-            if actionDescriptor.ActionTicks = 0L then
-                world |>
-                    character.SetCharacterAnimationState (getCharacterAnimationStateByActionBegin (World.getTickTime world) (character.GetPosition world) (character.GetCharacterAnimationState world) actionDescriptor) |>
-                    character.SetCharacterActivityState (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks })
-            elif actionDescriptor.ActionTicks > 0L && actionDescriptor.ActionTicks < Constants.InfinityRpg.ActionTicksMax then
-                world |>
-                    character.SetCharacterActivityState (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks })
-            else
-                world |>
-                    character.SetCharacterActivityState NoActivity |>
-                    character.SetCharacterAnimationState (getCharacterAnimationStateByActionEnd (World.getTickTime world) (character.GetCharacterAnimationState world))
+        
 
         static let determineCharacterTurnFromDirection direction occupationMap (character : Entity) opponents world =
             match character.GetCharacterActivityState world with
@@ -381,48 +344,6 @@ module GameplayDispatcherModule =
                 (List.ofSeq enemies)
                 []
 
-        static let runCharacterDeath (character : Entity) world =
-            let world = character.SetCharacterState {character.GetCharacterState world with ControlType = Uncontrolled} world
-            let world = character.SetCharacterActivityState NoActivity world
-            let world = character.SetCharacterAnimationState {character.GetCharacterAnimationState world with AnimationType = CharacterAnimationSlain} world
-            let world = if character.Name = Simulants.Player.Name then World.transitionScreen Simulants.Title world else World.destroyEntity character world
-            world
-            
-        static let runCharacterReaction actionDescriptor (initiator : Entity) world =
-            // TODO: implement animations
-            if actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
-                let reactor =
-                    getCharacterInDirection
-                        (initiator.GetPosition world)
-                        (initiator.GetCharacterAnimationState world).Direction
-                        world
-                let reactorDamage = 4 // NOTE: just hard-coding damage for now
-                let world = reactor.CharacterState.Update (fun state -> { state with HitPoints = state.HitPoints - reactorDamage }) world
-                if reactor.CharacterState.GetBy (fun state -> state.HitPoints <= 0) world then
-                    runCharacterDeath reactor world
-                else world
-            else world
-
-        static let updateCharacter (character : Entity) world =
-            match character.GetCharacterActivityState world with
-                | Action actionDescriptor ->
-                    let world = updateCharacterByAction actionDescriptor character world
-                    runCharacterReaction actionDescriptor character world
-                | Navigation navigationDescriptor ->
-                    if navigationDescriptor.LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM then
-                        updateCharacterByNavigation navigationDescriptor character world
-                    else world
-                | NoActivity -> world
-        
-        static let updateEnemies world =
-            let enemies = getEnemies world |> Seq.toList
-            let rec recursion (enemies : Entity list) world =
-                if enemies.Length = 0 then world
-                else
-                    let world = updateCharacter enemies.Head world
-                    recursion enemies.Tail world
-            recursion enemies world
-        
         static let setCharacterActivity newActivity (character : Entity) world =
             match newActivity with
             | Action newActionDescriptor -> character.SetCharacterActivityState (Action newActionDescriptor) world
@@ -450,7 +371,90 @@ module GameplayDispatcherModule =
             if anyEnemyActionActivity then
                 (Seq.fold2 trySetEnemyAction world enemyActivities enemies)
             else (Seq.fold2 trySetEnemyNavigation world enemyActivities enemies)
+
+        
+        static let updateCharacterByWalk walkDescriptor (character : Entity) world =
+            let (newPosition, walkState) = walk walkDescriptor (character.GetPosition world)
+            let world = character.SetPosition newPosition world
+            let characterAnimationState = { character.GetCharacterAnimationState world with Direction = walkDescriptor.WalkDirection }
+            let world = character.SetCharacterAnimationState characterAnimationState world
+            (walkState, world)
+
+        static let updateCharacterByWalkState walkState navigationDescriptor (character : Entity) world =
+            match walkState with
+            | WalkFinished ->
+                let lastOrigin = navigationDescriptor.WalkDescriptor.WalkOriginM
+                match navigationDescriptor.NavigationPathOpt with
+                | Some [] -> failwith "NavigationPath should never be empty here."
+                | Some (_ :: []) -> character.SetCharacterActivityState NoActivity world
+                | Some (currentNode :: navigationPath) ->
+                    let walkDirection = vmtod ((List.head navigationPath).PositionM - currentNode.PositionM)
+                    let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = vftovm (character.GetPosition world) }
+                    let navigationDescriptor = { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath; LastWalkOriginM = lastOrigin }
+                    character.SetCharacterActivityState (Navigation navigationDescriptor) world
+                | None -> character.SetCharacterActivityState NoActivity world
+            | WalkContinuing -> world
+
+        static let tickNavigation navigationDescriptor character world =
+            let (walkState, world) = updateCharacterByWalk navigationDescriptor.WalkDescriptor character world
+            updateCharacterByWalkState walkState navigationDescriptor character world
+
+        static let tickSlain (character : Entity) world =
+            let world = character.SetCharacterState {character.GetCharacterState world with ControlType = Uncontrolled} world
+            let world = character.SetCharacterActivityState NoActivity world
+            let world = character.SetCharacterAnimationState {character.GetCharacterAnimationState world with AnimationType = CharacterAnimationSlain} world
+            let world = if character.Name = Simulants.Player.Name then World.transitionScreen Simulants.Title world else World.destroyEntity character world
+            world
             
+        static let tickReaction actionDescriptor (initiator : Entity) world =
+            // TODO: implement animations
+            if actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
+                let reactor =
+                    getCharacterInDirection
+                        (initiator.GetPosition world)
+                        (initiator.GetCharacterAnimationState world).Direction
+                        world
+                let reactorDamage = 4 // NOTE: just hard-coding damage for now
+                let world = reactor.CharacterState.Update (fun state -> { state with HitPoints = state.HitPoints - reactorDamage }) world
+                if reactor.CharacterState.GetBy (fun state -> state.HitPoints <= 0) world then
+                    tickSlain reactor world
+                else world
+            else world
+        
+        static let tickAction actionDescriptor (character : Entity) world =
+            let world =
+                if actionDescriptor.ActionTicks = 0L then
+                    world |>
+                        character.SetCharacterAnimationState (getCharacterAnimationStateByActionBegin (World.getTickTime world) (character.GetPosition world) (character.GetCharacterAnimationState world) actionDescriptor) |>
+                        character.SetCharacterActivityState (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks })
+                elif actionDescriptor.ActionTicks > 0L && actionDescriptor.ActionTicks < Constants.InfinityRpg.ActionTicksMax then
+                    world |>
+                        character.SetCharacterActivityState (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks })
+                else
+                    world |>
+                        character.SetCharacterActivityState NoActivity |>
+                        character.SetCharacterAnimationState (getCharacterAnimationStateByActionEnd (World.getTickTime world) (character.GetCharacterAnimationState world))
+            tickReaction actionDescriptor character world
+        
+        static let tickUpdate world =
+            let enemies = getEnemies world |> Seq.toList
+            let characters = Simulants.Player :: enemies
+            let rec recursion (characters : Entity list) world =
+                if characters.Length = 0 then world
+                else
+                    let character = characters.Head
+                    let world =
+                        match character.GetCharacterActivityState world with
+                        | Action actionDescriptor ->
+                            tickAction actionDescriptor character world
+                        | Navigation navigationDescriptor ->
+                            if navigationDescriptor.LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM then
+                                tickNavigation navigationDescriptor character world
+                            else world
+                        | NoActivity -> world
+                    recursion characters.Tail world
+            recursion characters world
+        
         static let tickNewTurn newPlayerTurn world =
 
             let occupationMap =
@@ -507,10 +511,8 @@ module GameplayDispatcherModule =
                         cancelNavigation Simulants.Player world
                     else setEnemyActivities newEnemyActivities enemies world
 
-            let world = updateCharacter Simulants.Player world
-            let world = updateEnemies world
+            let world = tickUpdate world
             
-            // fin
             world
 
         static let handlePlayerInput playerInput world =
