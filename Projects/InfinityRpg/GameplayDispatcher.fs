@@ -423,7 +423,7 @@ module GameplayDispatcherModule =
                     recursion enemies.Tail world
             recursion enemies world
         
-        static let runCharacterActivity newActivity (character : Entity) world =
+        static let setCharacterActivity newActivity (character : Entity) world =
             match newActivity with
             | Action newActionDescriptor -> character.SetCharacterActivityState (Action newActionDescriptor) world
             | Navigation newNavigationDescriptor ->
@@ -431,25 +431,25 @@ module GameplayDispatcherModule =
                 character.SetCharacterActivityState (Navigation newNavigationDescriptor) world
             | NoActivity -> character.SetCharacterActivityState NoActivity world
 
-        static let tryRunEnemyActivity world newActivity (enemy : Entity) =
-            if newActivity <> NoActivity then
+        static let trySetEnemyNavigation world newActivity (enemy : Entity) =
+            match newActivity with
+            | Navigation _ ->
                 let world = enemy.SetDesiredTurn NoTurn world
-                runCharacterActivity newActivity enemy world
-            else world
+                setCharacterActivity newActivity enemy world
+            | _ -> world
 
-        static let tryRunEnemyAction world newActivity (enemy : Entity) =
+        static let trySetEnemyAction world newActivity (enemy : Entity) =
             match newActivity with
             | Action _ ->
                 let world = enemy.SetDesiredTurn NoTurn world
-                runCharacterActivity newActivity enemy world
-            | Navigation _ -> world
-            | NoActivity -> world
+                setCharacterActivity newActivity enemy world
+            | _ -> world
         
-        static let runEnemyActivities enemyActivities enemies world =
+        static let setEnemyActivities enemyActivities enemies world =
             let anyEnemyActionActivity = Seq.exists (fun (state : CharacterActivityState) -> state.IsActing) enemyActivities
             if anyEnemyActionActivity then
-                (Seq.fold2 tryRunEnemyAction world enemyActivities enemies)
-            else (Seq.fold2 tryRunEnemyActivity world enemyActivities enemies)
+                (Seq.fold2 trySetEnemyAction world enemyActivities enemies)
+            else (Seq.fold2 trySetEnemyNavigation world enemyActivities enemies)
             
         static let tickNewTurn newPlayerTurn world =
 
@@ -466,7 +466,7 @@ module GameplayDispatcherModule =
                 | CancelTurn -> NoActivity
                 | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point."
             
-            let world = runCharacterActivity newPlayerActivity Simulants.Player world
+            let world = setCharacterActivity newPlayerActivity Simulants.Player world
 
             // determine (and set) enemy desired turns if applicable
             let world =
@@ -481,7 +481,6 @@ module GameplayDispatcherModule =
                 | NoActivity -> world
 
             world
-
         
         static let tickTurn newPlayerTurnOpt world =
 
@@ -495,7 +494,7 @@ module GameplayDispatcherModule =
                 | NoTurn -> world
                 | _ -> tickNewTurn playerTurn world
 
-            // run enemy activities in accordance with the player's current activity
+            // set enemy activities in accordance with the player's current activity
             let world =
                 let enemies = getEnemies world
                 match Simulants.Player.GetCharacterActivityState world with
@@ -504,9 +503,9 @@ module GameplayDispatcherModule =
                 | NoActivity ->
                     let newEnemyActivities = determineEnemyActivities enemies world
                     if List.exists (fun (state : CharacterActivityState) -> state.IsActing) newEnemyActivities then
-                        let world = runEnemyActivities newEnemyActivities enemies world
+                        let world = setEnemyActivities newEnemyActivities enemies world
                         cancelNavigation Simulants.Player world
-                    else runEnemyActivities newEnemyActivities enemies world
+                    else setEnemyActivities newEnemyActivities enemies world
 
             let world = updateCharacter Simulants.Player world
             let world = updateEnemies world
