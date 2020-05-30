@@ -399,42 +399,41 @@ module GameplayDispatcherModule =
             let (walkState, world) = updateCharacterByWalk navigationDescriptor.WalkDescriptor character world
             updateCharacterByWalkState walkState navigationDescriptor character world
 
-        static let tickSlain (character : Entity) world =
-            let world = character.SetCharacterState {character.GetCharacterState world with ControlType = Uncontrolled} world
-            let world = character.SetCharacterActivityState NoActivity world
-            let world = character.SetCharacterAnimationState {character.GetCharacterAnimationState world with AnimationType = CharacterAnimationSlain} world
-            let world = if character.Name = Simulants.Player.Name then World.transitionScreen Simulants.Title world else World.destroyEntity character world
-            world
-            
         static let tickReaction actionDescriptor (initiator : Entity) world =
-            // TODO: implement animations
-            if actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
-                let reactor =
-                    getCharacterInDirection
-                        (initiator.GetPosition world)
-                        (initiator.GetCharacterAnimationState world).Direction
-                        world
+            let reactor =
+                getCharacterInDirection
+                    (initiator.GetPosition world)
+                    (initiator.GetCharacterAnimationState world).Direction
+                    world
+            if actionDescriptor.ActionTicks = (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
                 let reactorDamage = 4 // NOTE: just hard-coding damage for now
                 let world = reactor.CharacterState.Update (fun state -> { state with HitPoints = state.HitPoints - reactorDamage }) world
                 if reactor.CharacterState.GetBy (fun state -> state.HitPoints <= 0) world then
-                    tickSlain reactor world
+                    reactor.SetCharacterAnimationState {reactor.GetCharacterAnimationState world with AnimationType = CharacterAnimationSlain} world
+                else world
+            elif actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
+                if reactor.CharacterState.GetBy (fun state -> state.HitPoints <= 0) world then
+                    if reactor.Name = Simulants.Player.Name then World.transitionScreen Simulants.Title world else World.destroyEntity reactor world
                 else world
             else world
-        
+
         static let tickAction actionDescriptor (character : Entity) world =
-            let world =
-                if actionDescriptor.ActionTicks = 0L then
-                    world |>
-                        character.SetCharacterAnimationState (getCharacterAnimationStateByActionBegin (World.getTickTime world) (character.GetPosition world) (character.GetCharacterAnimationState world) actionDescriptor) |>
-                        character.SetCharacterActivityState (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks })
-                elif actionDescriptor.ActionTicks > 0L && actionDescriptor.ActionTicks < Constants.InfinityRpg.ActionTicksMax then
-                    world |>
-                        character.SetCharacterActivityState (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks })
-                else
-                    world |>
-                        character.SetCharacterActivityState NoActivity |>
-                        character.SetCharacterAnimationState (getCharacterAnimationStateByActionEnd (World.getTickTime world) (character.GetCharacterAnimationState world))
-            tickReaction actionDescriptor character world
+            if actionDescriptor.ActionTicks = 0L then
+                world |>
+                    character.SetCharacterAnimationState (getCharacterAnimationStateByActionBegin (World.getTickTime world) (character.GetPosition world) (character.GetCharacterAnimationState world) actionDescriptor) |>
+                    character.SetCharacterActivityState (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks })
+            elif actionDescriptor.ActionTicks < (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
+                world |>
+                    character.SetCharacterActivityState (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks })
+            elif actionDescriptor.ActionTicks < Constants.InfinityRpg.ActionTicksMax then
+                world |>
+                    tickReaction actionDescriptor character |>
+                    character.SetCharacterActivityState (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks })
+            else
+                world |>
+                    character.SetCharacterActivityState NoActivity |>
+                    character.SetCharacterAnimationState (getCharacterAnimationStateByActionEnd (World.getTickTime world) (character.GetCharacterAnimationState world)) |>
+                    tickReaction actionDescriptor character
         
         static let tickUpdate world =
             let enemies = getEnemies world |> Seq.toList
