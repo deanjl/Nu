@@ -142,16 +142,17 @@ module WorldTypes =
     let mutable internal handleUserDefinedCallback = Unchecked.defaultof<obj -> obj -> obj -> Handling * obj>
 
     // OPTIMIZATION: Entity flag bit-masks; only for use by internal reflection facilities.
-    let [<Literal>] internal ImperativeMask =            0b0000000001
-    let [<Literal>] internal PublishChangesMask =        0b0000000010
-    let [<Literal>] internal IgnoreLayerMask =           0b0000000100
-    let [<Literal>] internal EnabledMask =               0b0000001000
-    let [<Literal>] internal VisibleMask =               0b0000010000
-    let [<Literal>] internal AlwaysUpdateMask =          0b0000100000
-    let [<Literal>] internal PublishUpdatesMask =        0b0001000000
-    let [<Literal>] internal PublishPostUpdatesMask =    0b0010000000
-    let [<Literal>] internal PersistentMask =            0b0100000000
-    let [<Literal>] internal UnusedMask =                0b1000000000
+    let [<Literal>] internal InvalidatedMask =           0b00000000001
+    let [<Literal>] internal ImperativeMask =            0b00000000010
+    let [<Literal>] internal PublishChangesMask =        0b00000000100
+    let [<Literal>] internal IgnoreLayerMask =           0b00000001000
+    let [<Literal>] internal EnabledMask =               0b00000010000
+    let [<Literal>] internal VisibleMask =               0b00000100000
+    let [<Literal>] internal AlwaysUpdateMask =          0b00001000000
+    let [<Literal>] internal PublishUpdatesMask =        0b00010000000
+    let [<Literal>] internal PublishPostUpdatesMask =    0b00100000000
+    let [<Literal>] internal PersistentMask =            0b01000000000
+    let [<Literal>] internal UnusedMask =                0b10000000000
 
     /// Represents an unsubscription operation for an event.
     type Unsubscription =
@@ -653,7 +654,7 @@ module WorldTypes =
                   Omnipresent = false }
               StaticData = { DesignerType = typeof<string>; DesignerValue = "" }
               Model = { DesignerType = typeof<obj>; DesignerValue = obj () }
-              Flags = 0b0100011000
+              Flags = 0b01000110000
               Overflow = Vector2.Zero
               OverlayNameOpt = overlayNameOpt
               FacetNames = Set.empty
@@ -715,6 +716,7 @@ module WorldTypes =
         member this.Rotation with get () = this.Transform.Rotation and set value = this.Transform.Rotation <- value
         member this.Depth with get () = this.Transform.Depth and set value = this.Transform.Depth <- value
         member this.ViewType with get () = this.Transform.ViewType and set value = this.Transform.ViewType <- value
+        member internal this.Invalidated with get () = this.Flags &&& InvalidatedMask <> 0 and set value = this.Flags <- if value then this.Flags ||| InvalidatedMask else this.Flags &&& ~~~InvalidatedMask
         member this.Omnipresent with get () = this.Transform.Omnipresent and set value = this.Transform.Omnipresent <- value
         member this.Imperative with get () = this.Flags &&& ImperativeMask <> 0 and set value = this.Flags <- if value then this.Flags ||| ImperativeMask else this.Flags &&& ~~~ImperativeMask
         member this.PublishChanges with get () = this.Flags &&& PublishChangesMask <> 0 and set value = this.Flags <- if value then this.Flags ||| PublishChangesMask else this.Flags &&& ~~~PublishChangesMask
@@ -1140,6 +1142,9 @@ module WorldTypes =
                 | ("Simulant", Scripting.String _) | ("Simulant", Scripting.Keyword _) -> None // TODO: P1: see if this should be failwithumf or a violation instead.
                 | (_, _) -> None
 
+        override this.ToString () =
+            ""
+
     /// Provides a way to make user-defined dispatchers, facets, and various other sorts of game-
     /// specific values.
     and NuPlugin () =
@@ -1182,6 +1187,9 @@ module WorldTypes =
 
 /// Represents an unsubscription operation for an event.
 type Unsubscription = WorldTypes.Unsubscription
+
+/// The payload that is passed with the lens as a hack to performance from the Elmish implementation.
+type internal Payload = WorldTypes.Payload
 
 /// The data for a change in the world's ambient state.
 type AmbientChangeData = WorldTypes.AmbientChangeData

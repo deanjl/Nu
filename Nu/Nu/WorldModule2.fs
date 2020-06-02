@@ -707,8 +707,8 @@ module WorldModule2 =
                 let position = -eyeSize * 0.5f // negation for right-handedness
                 let size = eyeSize
                 World.enqueueRenderMessage
-                    (RenderDescriptorsMessage
-                        [|LayerableDescriptor
+                    (RenderDescriptorMessage
+                        (LayerableDescriptor
                             { Depth = Single.MaxValue
                               AssetTag = dissolveImage
                               PositionY = position.Y
@@ -723,7 +723,7 @@ module WorldModule2 =
                                       Image = dissolveImage
                                       Color = color
                                       Glow = Vector4.Zero
-                                      Flip = FlipNone }}|])
+                                      Flip = FlipNone }}))
                     world
             | None -> world
 
@@ -903,8 +903,7 @@ module WorldModule2 =
 
                                                     // update counters and recur
                                                     TotalTimer.Stop ()
-                                                    let world = World.updateTickTime world
-                                                    let world = World.incrementUpdateCount world
+                                                    let world = World.updateTime world
                                                     World.runWithoutCleanUp runWhile preProcess postProcess sdlDeps liveness rendererThreadOpt audioPlayerThreadOpt world
 
                                                 | Exiting -> world

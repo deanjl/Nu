@@ -7,7 +7,7 @@ open Nu.Declarative
 type MetricsEntityDispatcher () =
     inherit EntityDispatcher ()
 
-#if !OPTIMIZE
+#if !OPTIMIZED
     static member Facets =
         [typeof<StaticSpriteFacet>]
 #endif
@@ -17,7 +17,7 @@ type MetricsEntityDispatcher () =
         [define Entity.PublishChanges true]
 #endif
 
-#if OPTIMIZE
+#if OPTIMIZED
     static member Properties =
         [define Entity.Imperative true // makes updates faster by using mutation
          define Entity.Omnipresent true // makes updates faster by not touching the entity tree
@@ -30,7 +30,7 @@ type MetricsEntityDispatcher () =
     override this.Update (entity, world) =
         entity.SetRotation (entity.GetRotation world + 0.03f) world
 
-#if OPTIMIZE
+#if OPTIMIZED
     override this.Actualize (entity, world) =
         let position = entity.GetPosition world
         let image = entity.GetStaticData world
@@ -95,9 +95,9 @@ type ElmishGameDispatcher () =
 
     override this.Content (model, _) =
         [Content.screen "Screen" Vanilla []
-            [Content.layers model id (constant >> id) (fun i ints world ->
+            [Content.layers model id constant (fun i ints world ->
                 Content.layer (scstring i) []
-                    [Content.entities ints id (constant >> id) (fun j int world ->
+                    [Content.entities ints id constant (fun j int world ->
                         Content.label (scstring j)
                             [Entity.Size <== int --> fun int -> v2 (single int) (single int)
                              Entity.Position == v2 (single i * 16.0f - 480.0f) (single j * 16.0f - 272.0f)])])

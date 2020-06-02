@@ -17,7 +17,6 @@ module OmniField =
 
     type [<NoComparison>] FieldCommand =
         | PlaySound of int64 * single * AssetTag<Sound>
-        | Move of Vector2
         | UpdateEye
 
     type Screen with
@@ -73,14 +72,7 @@ module OmniField =
             | None -> None
 
         override this.Channel (_, field) =
-            [field.UpdateEvent =|> fun _ ->
-                let force = v2Zero
-                let force = if KeyboardState.isKeyDown KeyboardKey.Right then v2 Constants.Field.WalkForce 0.0f + force else force
-                let force = if KeyboardState.isKeyDown KeyboardKey.Left then v2 -Constants.Field.WalkForce 0.0f + force else force
-                let force = if KeyboardState.isKeyDown KeyboardKey.Up then v2 0.0f Constants.Field.WalkForce + force else force
-                let force = if KeyboardState.isKeyDown KeyboardKey.Down then v2 0.0f -Constants.Field.WalkForce + force else force
-                cmd (Move force)
-             field.UpdateEvent => msg UpdateDialog
+            [field.UpdateEvent => msg UpdateDialog
              field.PostUpdateEvent => cmd UpdateEye
              Simulants.FieldInteract.ClickEvent => msg Interact
              Simulants.FieldAvatar.AvatarModel.ChangeEvent =|> fun evt -> msg (UpdateAvatar (evt.Data.Value :?> AvatarModel))]
@@ -142,10 +134,15 @@ module OmniField =
                                 let model = FieldModel.updateAdvents (Set.add (Opened chestId)) model
                                 let model = FieldModel.updateDialogOpt (constant (Some { DialogForm = DialogThin; DialogText = ["Found " + ItemType.getName itemType + "!"]; DialogProgress = 0 })) model
                                 withCmd model (PlaySound (0L, Constants.Audio.DefaultSoundVolume, Assets.OpenChestSound))
-                        | _ -> just model
+                        | Door (lockType, doorType) -> just model
+                        | Portal -> just model
+                        | Switch -> just model
+                        | Sensor -> just model
+                        | Npc (npcType, direction, dialog) -> just model
+                        | Shopkeep shopkeepType -> just model
                     | None -> just model
 
-        override this.Command (model, command, _, world) =
+        override this.Command (_, command, _, world) =
 
             match command with
             | UpdateEye ->
@@ -153,19 +150,12 @@ module OmniField =
                 let world = World.setEyeCenter avatarModel.Center world
                 just world
 
-            | Move force ->
-                if Option.isNone model.DialogOpt then
-                    let physicsId = Simulants.FieldAvatar.GetPhysicsId world
-                    let world = World.applyBodyForce force physicsId world
-                    just world
-                else just world
-
             | PlaySound (delay, volume, sound) ->
                 let world = World.schedule (World.playSound volume sound) (World.getTickTime world + delay) world
                 just world
 
         override this.Content (model, _) =
-            
+
             [// main layer
              Content.layer Simulants.FieldScene.Name []
 
@@ -177,15 +167,16 @@ module OmniField =
                         | Some fieldData -> fieldData.FieldTileMap
                         | None -> Assets.DebugFieldTileMap
                      Entity.TileLayerClearance == 10.0f]
-                 
+
                  // avatar
                  Content.entity<AvatarDispatcher> Simulants.FieldAvatar.Name
                     [Entity.Size == Constants.Gameplay.CharacterSize
                      Entity.Position == v2 256.0f 256.0f
                      Entity.Depth == Constants.Field.ForgroundDepth
+                     Entity.Enabled <== model --> fun model -> Option.isNone model.DialogOpt
                      Entity.LinearDamping == Constants.Field.LinearDamping
                      Entity.AvatarModel <== model --> fun model -> model.Avatar]
-                 
+
                  // interact button
                  Content.button Simulants.FieldInteract.Name
                     [Entity.Size == v2Dup 92.0f
@@ -199,7 +190,7 @@ module OmniField =
                         | Some interaction -> interaction
                         | None -> ""
                      Entity.ClickSoundOpt == None]
-                 
+
                  // dialog
                  Content.text Simulants.FieldDialog.Name
                     [Entity.Bounds <== model --> fun model ->
@@ -248,7 +239,8 @@ module OmniField =
                     (fun _ model _ ->
                         let propModel = model.Map (fun (object, group, tileMap, advents) ->
                             let propPosition = v2 (single object.X) (single tileMap.Height * single tileMap.TileHeight - single object.Y) // invert y
-                            let propBounds = v4Bounds propPosition Constants.Gameplay.TileSize
+                            let propSize = v2 (single object.Width) (single object.Height) * 4.0f
+                            let propBounds = v4Bounds propPosition propSize
                             let propDepth =
                                 match group.Properties.TryGetValue Constants.TileMap.DepthPropertyName with
                                 | (true, depthStr) -> Constants.Field.ForgroundDepth + scvaluem depthStr
@@ -257,5 +249,10 @@ module OmniField =
                                 match object.Properties.TryGetValue Constants.TileMap.InfoPropertyName with
                                 | (true, propDataStr) -> scvaluem propDataStr
                                 | (false, _) -> PropData.empty
-                            PropModel.make propBounds propDepth advents propData)
+                            let propState =
+                                match propData with
+                                | Door _ -> DoorState false
+                                | Switch _ -> SwitchState false
+                                | _ -> NilState
+                            PropModel.make propBounds propDepth advents propData propState)
                         Content.entity<PropDispatcher> Gen.name [Entity.PropModel <== propModel])]]
