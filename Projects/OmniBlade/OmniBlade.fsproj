@@ -94,7 +94,6 @@
     <Compile Include="OmniGame.fs" />
     <Compile Include="OmniPlugin.fs" />
     <Compile Include="Program.fs" />
-    <None Include="Interactive.fsx" />
     <None Include="App.config" />
     <Content Include="Packages.config" />
     <Content Include="AssetGraph.nuag">
@@ -106,6 +105,7 @@
     <Content Include="Prelude.nuscript">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
+    <None Include="Interactive.fsx" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="FarseerPhysics">

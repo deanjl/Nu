@@ -26,12 +26,11 @@ module GameplayDispatcherModule =
 
     type Screen with
 
+    (* random number generation is non-deterministic for gameplay behavior and deterministic for map generation. for the field specifically, ContentRandState is necessary for the game saving architecture and functional purity is non-negotiable when relying on lazy evaluation. VERY hard learnt lesson. *)
+        
         member this.GetContentRandState = this.Get Property? ContentRandState
         member this.SetContentRandState = this.Set Property? ContentRandState
         member this.ContentRandState = lens<uint64> Property? ContentRandState this.GetContentRandState this.SetContentRandState this
-        member this.GetOngoingRandState = this.Get Property? OngoingRandState
-        member this.SetOngoingRandState = this.Set Property? OngoingRandState
-        member this.OngoingRandState = lens<uint64> Property? OngoingRandState this.GetOngoingRandState this.SetOngoingRandState this
         member this.GetShallLoadGame = this.Get Property? ShallLoadGame
         member this.SetShallLoadGame = this.Set Property? ShallLoadGame
         member this.ShallLoadGame = lens<bool> Property? ShallLoadGame this.GetShallLoadGame this.SetShallLoadGame this
@@ -116,7 +115,7 @@ module GameplayDispatcherModule =
             (field, rand, world)
 
         static let createEnemies scene rand world =
-            let randResult = Gen.random1 5
+            let (randResult, rand) = Rand.nextIntUnder 5 rand
             let enemyCount = randResult + 1
             List.fold
                 (fun (enemies, rand, world) _ ->
@@ -124,7 +123,7 @@ module GameplayDispatcherModule =
                     let characters = getCharacters world
                     let characterPositions = Seq.map (fun (character : Entity) -> character.GetPosition world) characters
                     let availableCoordinates = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles characterPositions |> Map.filter (fun _ occupied -> occupied = false) |> Map.toKeyList |> List.toArray
-                    let randResult = Gen.random1 availableCoordinates.Length
+                    let (randResult, rand) = Rand.nextIntUnder availableCoordinates.Length rand
                     let enemyCoordinates = availableCoordinates.[randResult]
                     let (enemy, world) = World.createEntity<EnemyDispatcher> None DefaultOverlay scene world
                     let world = enemy.SetPosition (vmtovf enemyCoordinates) world
@@ -236,11 +235,11 @@ module GameplayDispatcherModule =
                     else NoTurn
             else NoTurn
 
-        static let determineDesiredEnemyTurn occupationMap (player : Entity) (enemy : Entity) rand world =
+        static let determineDesiredEnemyTurn occupationMap (player : Entity) (enemy : Entity) world =
             match (enemy.GetCharacterState world).ControlType with
             | PlayerControlled as controlType ->
                 Log.debug ("Invalid ControlType '" + scstring controlType + "' for enemy.")
-                (NoTurn, rand)
+                NoTurn
             | Chaos ->
                 let nextPlayerPosition =
                     match player.GetCharacterActivityState world with
@@ -249,24 +248,24 @@ module GameplayDispatcherModule =
                     | NoActivity -> player.GetPosition world
                 if Math.arePositionsAdjacent (enemy.GetPosition world) nextPlayerPosition then
                     let enemyTurn = makeAttackTurn (vftovm nextPlayerPosition)
-                    (enemyTurn, rand)
+                    enemyTurn
                 else
                     let randResult = Gen.random1 4
                     let direction = Direction.fromInt randResult
                     let enemyTurn = determineCharacterTurnFromDirection direction occupationMap enemy [player] world
-                    (enemyTurn, rand)
-            | Uncontrolled -> (NoTurn, rand)
+                    enemyTurn
+            | Uncontrolled -> NoTurn
 
-        static let determineDesiredEnemyTurns occupationMap player enemies rand world =
-            let (_, enemyTurns, rand) =
+        static let determineDesiredEnemyTurns occupationMap player enemies world =
+            let (_, enemyTurns) =
                 List.foldBack
-                    (fun (enemy : Entity) (occupationMap, enemyTurns, rand) ->
-                        let (enemyTurn, rand) = determineDesiredEnemyTurn occupationMap player enemy rand world
+                    (fun (enemy : Entity) (occupationMap, enemyTurns) ->
+                        let enemyTurn = determineDesiredEnemyTurn occupationMap player enemy world
                         let occupationMap = OccupationMap.transferByDesiredTurn enemyTurn (enemy.GetPosition world) occupationMap
-                        (occupationMap, enemyTurn :: enemyTurns, rand))
+                        (occupationMap, enemyTurn :: enemyTurns))
                     (List.ofSeq enemies)
-                    (occupationMap, [], rand)
-            (enemyTurns, rand)
+                    (occupationMap, [])
+            enemyTurns
 
         static let determinePlayerTurnFromTouch touchPosition world =
             let fieldMap = Simulants.Field.GetFieldMapNp world
@@ -476,11 +475,9 @@ module GameplayDispatcherModule =
                 match newPlayerActivity with
                 | Action _
                 | Navigation _ ->
-                    let rand = Rand.makeFromSeedState (Simulants.Gameplay.GetOngoingRandState world)
                     let enemies = getEnemies world
-                    let (enemyDesiredTurns, rand) = determineDesiredEnemyTurns occupationMap Simulants.Player enemies rand world
-                    let world = Seq.fold2 (fun world (enemy : Entity) turn -> enemy.SetDesiredTurn turn world) world enemies enemyDesiredTurns
-                    Simulants.Gameplay.SetOngoingRandState (Rand.getState rand) world
+                    let enemyDesiredTurns = determineDesiredEnemyTurns occupationMap Simulants.Player enemies world
+                    Seq.fold2 (fun world (enemy : Entity) turn -> enemy.SetDesiredTurn turn world) world enemies enemyDesiredTurns
                 | NoActivity -> world
 
             world
@@ -537,11 +534,9 @@ module GameplayDispatcherModule =
             // generate non-deterministic random numbers
             let sysrandom = System.Random ()
             let contentSeedState = uint64 (sysrandom.Next ())
-            let ongoingSeedState = uint64 (sysrandom.Next ())
 
             // initialize gameplay screen
             let world = Simulants.Gameplay.SetContentRandState contentSeedState world
-            let world = Simulants.Gameplay.SetOngoingRandState ongoingSeedState world
 
             // make scene layer
             let (scene, world) = World.createLayer (Some Simulants.Scene.Name) Simulants.Gameplay world
@@ -573,7 +568,6 @@ module GameplayDispatcherModule =
 
         static member Properties =
             [define Screen.ContentRandState Rand.DefaultSeedState
-             define Screen.OngoingRandState Rand.DefaultSeedState
              define Screen.ShallLoadGame false]
 
         override this.Channel (_, _) =
