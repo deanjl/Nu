@@ -15,7 +15,7 @@ module GameplayDispatcherModule =
         | NoInput
 
     type [<NoEquality; NoComparison>] GameplayCommand =
-        | ToggleHaltButton
+        | ToggleHaltButton // TODO: reimplement once game is properly elmified
         | HandlePlayerInput of PlayerInput
         | SaveGame of Screen
         | QuittingGameplay
