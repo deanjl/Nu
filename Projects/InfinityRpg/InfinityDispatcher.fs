@@ -2,11 +2,15 @@
 open System
 open Prime
 open Nu
+open Nu.Declarative
 open InfinityRpg
 
 [<AutoOpen>]
 module InfinityDispatcherModule =
 
+    type [<StructuralEquality; NoComparison>] InfinityModel =
+        { GameplayModel : GameplayModel}
+    
     type InfinityCommand =
         | PlayTitleSong
         | FadeSong
@@ -15,8 +19,14 @@ module InfinityDispatcherModule =
         | ShowGameplay of bool
         | ExitGame
 
+    type Game with
+
+        member this.GetInfinityModel = this.GetModel<InfinityModel>
+        member this.SetInfinityModel = this.SetModel<InfinityModel>
+        member this.InfinityModel = this.Model<InfinityModel> ()
+    
     type InfinityDispatcher () =
-        inherit GameDispatcher<unit, unit, InfinityCommand> (())
+        inherit GameDispatcher<InfinityModel, unit, InfinityCommand> ({ GameplayModel = GameplayModel.initial })
 
         override this.Register (game, world) =
 
@@ -54,8 +64,9 @@ module InfinityDispatcherModule =
                 | ExitGame -> World.exit world
             just world
 
-        override this.Content (_, _) =
+        override this.Content (model, _) =
             [Content.screen Simulants.Splash.Name (Splash (Constants.InfinityRpg.DissolveDescriptor, Constants.InfinityRpg.SplashData, Simulants.Title)) [] []
              Content.screenFromLayerFile Simulants.Title.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None)) Assets.TitleLayerFilePath
              Content.screenFromLayerFile Simulants.Credits.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None)) Assets.CreditsLayerFilePath
-             Content.screenFromLayerFile<GameplayDispatcher> Simulants.Gameplay.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None)) Assets.HudLayerFilePath]
+             Content.screen<GameplayDispatcher> Simulants.Gameplay.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None)) []
+                 [Content.layerFromFile Simulants.Hud.Name Assets.HudLayerFilePath]]

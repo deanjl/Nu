@@ -12,6 +12,12 @@ module GameplayDispatcherModule =
     type [<StructuralEquality; NoComparison>] GameplayModel =
         { ContentRandState : uint64
           ShallLoadGame : bool }
+
+        static member initial =
+            let sysrandom = System.Random ()
+            let contentSeedState = uint64 (sysrandom.Next ())
+            { ContentRandState = contentSeedState
+              ShallLoadGame = false }
     
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
@@ -40,11 +46,7 @@ module GameplayDispatcherModule =
         member this.GameplayModel = this.Model<GameplayModel> ()
 
     type GameplayDispatcher () =
-        inherit ScreenDispatcher<GameplayModel, unit, GameplayCommand>
-            ( let sysrandom = System.Random ()
-              let contentSeedState = uint64 (sysrandom.Next ())
-              { ContentRandState = contentSeedState
-                ShallLoadGame = false } )
+        inherit ScreenDispatcher<GameplayModel, unit, GameplayCommand> (GameplayModel.initial)
 
         static let getCharacters world =
             let entities = World.getEntities Simulants.Scene world
