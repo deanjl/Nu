@@ -9,6 +9,10 @@ open InfinityRpg
 [<AutoOpen>]
 module GameplayDispatcherModule =
 
+    type [<StructuralEquality; NoComparison>] GameplayModel =
+        { ContentRandState : uint64
+          ShallLoadGame : bool }
+    
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
         | DetailInput of Direction
@@ -28,15 +32,19 @@ module GameplayDispatcherModule =
 
     (* random number generation is non-deterministic for gameplay behavior and deterministic for map generation. for the field specifically, ContentRandState is necessary for the game saving architecture and functional purity is non-negotiable when relying on lazy evaluation. VERY hard learnt lesson. *)
         
-        member this.GetContentRandState = this.Get Property? ContentRandState
-        member this.SetContentRandState = this.Set Property? ContentRandState
-        member this.ContentRandState = lens<uint64> Property? ContentRandState this.GetContentRandState this.SetContentRandState this
         member this.GetShallLoadGame = this.Get Property? ShallLoadGame
         member this.SetShallLoadGame = this.Set Property? ShallLoadGame
         member this.ShallLoadGame = lens<bool> Property? ShallLoadGame this.GetShallLoadGame this.SetShallLoadGame this
+        member this.GetGameplayModel = this.GetModel<GameplayModel>
+        member this.SetGameplayModel = this.SetModel<GameplayModel>
+        member this.GameplayModel = this.Model<GameplayModel> ()
 
     type GameplayDispatcher () =
-        inherit ScreenDispatcher<unit, unit, GameplayCommand> (())
+        inherit ScreenDispatcher<GameplayModel, unit, GameplayCommand>
+            ( let sysrandom = System.Random ()
+              let contentSeedState = uint64 (sysrandom.Next ())
+              { ContentRandState = contentSeedState
+                ShallLoadGame = false } )
 
         static let getCharacters world =
             let entities = World.getEntities Simulants.Scene world
@@ -529,46 +537,8 @@ module GameplayDispatcherModule =
                 else world
             world
         
-        static let runNewGameplay world =
-
-            // generate non-deterministic random numbers
-            let sysrandom = System.Random ()
-            let contentSeedState = uint64 (sysrandom.Next ())
-
-            // initialize gameplay screen
-            let world = Simulants.Gameplay.SetContentRandState contentSeedState world
-
-            // make scene layer
-            let (scene, world) = World.createLayer (Some Simulants.Scene.Name) Simulants.Gameplay world
-
-            // make rand from gameplay
-            let rand = Rand.makeFromSeedState (Simulants.Gameplay.GetContentRandState world)
-
-            // make field
-            let (rand, world) = _bc (createField scene rand world)
-
-            // make player
-            let (player, world) = World.createEntity<PlayerDispatcher> (Some Simulants.Player.Name) DefaultOverlay scene world
-            let world = player.SetDepth Constants.Layout.CharacterDepth world
-
-            // make enemies
-            __c (createEnemies scene rand world)
-
-        static let runLoadGameplay world = // TODO: fix it
-
-            // get and initialize gameplay screen from read
-            let world = World.readScreenFromFile Assets.SaveFilePath (Some Simulants.Gameplay.Name) world |> snd
-            let world = Simulants.Gameplay.SetTransitionState IncomingState world
-
-            // make rand from gameplay
-            let rand = Rand.makeFromSeedState (Simulants.Gameplay.GetContentRandState world)
-
-            // make field from rand (field is not serialized, but generated deterministically with ContentRandState)
-            __c (createField Simulants.Scene rand world)
-
         static member Properties =
-            [define Screen.ContentRandState Rand.DefaultSeedState
-             define Screen.ShallLoadGame false]
+            [define Screen.ShallLoadGame false]
 
         override this.Channel (_, _) =
             [Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
@@ -583,7 +553,7 @@ module GameplayDispatcherModule =
              Simulants.Title.SelectEvent => cmd QuittingGameplay
              Simulants.Gameplay.DeselectEvent => cmd QuitGameplay]
 
-        override this.Command (_, command, _, world) =
+        override this.Command (model, command, _, world) =
             let world =
                 match command with
                 | ToggleHaltButton -> Simulants.HudHalt.SetEnabled (isPlayerNavigatingPath world) world
@@ -594,8 +564,32 @@ module GameplayDispatcherModule =
                 | RunGameplay ->
                     let world =
                         if Simulants.Gameplay.GetShallLoadGame world && File.Exists Assets.SaveFilePath
-                        then runLoadGameplay world
-                        else runNewGameplay world
+                        then // TODO : fix game saving/loading
+                            // get and initialize gameplay screen from read
+                            let world = World.readScreenFromFile Assets.SaveFilePath (Some Simulants.Gameplay.Name) world |> snd
+                            let world = Simulants.Gameplay.SetTransitionState IncomingState world
+
+                            // make rand from gameplay
+                            let rand = Rand.makeFromSeedState model.ContentRandState
+
+                            // make field from rand (field is not serialized, but generated deterministically with ContentRandState)
+                            __c (createField Simulants.Scene rand world)
+                        else
+                            // make scene layer
+                            let (scene, world) = World.createLayer (Some Simulants.Scene.Name) Simulants.Gameplay world
+
+                            // make rand from gameplay
+                            let rand = Rand.makeFromSeedState model.ContentRandState
+
+                            // make field
+                            let (rand, world) = _bc (createField scene rand world)
+
+                            // make player
+                            let (player, world) = World.createEntity<PlayerDispatcher> (Some Simulants.Player.Name) DefaultOverlay scene world
+                            let world = player.SetDepth Constants.Layout.CharacterDepth world
+
+                            // make enemies
+                            __c (createEnemies scene rand world)
                     World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 | Tick -> tick world
                 | Nop -> world
