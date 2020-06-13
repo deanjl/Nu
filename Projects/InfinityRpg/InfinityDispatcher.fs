@@ -11,6 +11,9 @@ module InfinityDispatcherModule =
     type [<StructuralEquality; NoComparison>] InfinityModel =
         { GameplayModel : GameplayModel}
     
+    type InfinityMessage =
+        | SetLoad of bool
+    
     type InfinityCommand =
         | PlayTitleSong
         | FadeSong
@@ -26,7 +29,7 @@ module InfinityDispatcherModule =
         member this.InfinityModel = this.Model<InfinityModel> ()
     
     type InfinityDispatcher () =
-        inherit GameDispatcher<InfinityModel, unit, InfinityCommand> ({ GameplayModel = GameplayModel.initial })
+        inherit GameDispatcher<InfinityModel, InfinityMessage, InfinityCommand> ({ GameplayModel = GameplayModel.initial })
 
         override this.Register (game, world) =
 
@@ -53,6 +56,10 @@ module InfinityDispatcherModule =
              Simulants.Gameplay.OutgoingStartEvent => cmd FadeSong
              Simulants.HudBack.ClickEvent => cmd ShowTitle]
 
+        override this.Message (model, message, _, world) =
+            match message with
+            | SetLoad load -> just model
+        
         override this.Command (_, command, _, world) =
             let world =
                 match command with
@@ -68,5 +75,7 @@ module InfinityDispatcherModule =
             [Content.screen Simulants.Splash.Name (Splash (Constants.InfinityRpg.DissolveDescriptor, Constants.InfinityRpg.SplashData, Simulants.Title)) [] []
              Content.screenFromLayerFile Simulants.Title.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None)) Assets.TitleLayerFilePath
              Content.screenFromLayerFile Simulants.Credits.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None)) Assets.CreditsLayerFilePath
-             Content.screen<GameplayDispatcher> Simulants.Gameplay.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None)) []
+             Content.screen<GameplayDispatcher> Simulants.Gameplay.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None))
+                 [Screen.GameplayModel <== model --> fun model ->
+                     model.GameplayModel]
                  [Content.layerFromFile Simulants.Hud.Name Assets.HudLayerFilePath]]
