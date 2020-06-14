@@ -19,7 +19,7 @@ module InfinityDispatcherModule =
         | FadeSong
         | ShowTitle
         | ShowCredits
-        | ShowGameplay of bool
+        | ShowGameplay
         | ExitGame
 
     type Game with
@@ -49,8 +49,8 @@ module InfinityDispatcherModule =
             [Simulants.Title.IncomingStartEvent => cmd PlayTitleSong
              Simulants.Title.OutgoingStartEvent => cmd FadeSong
              Simulants.TitleCredits.ClickEvent => cmd ShowCredits
-             Simulants.TitleNewGame.ClickEvent => cmd (ShowGameplay false)
-             Simulants.TitleLoadGame.ClickEvent => cmd (ShowGameplay true)
+             Simulants.TitleNewGame.ClickEvent => msg (SetLoad false)
+             Simulants.TitleLoadGame.ClickEvent => msg (SetLoad true)
              Simulants.TitleExit.ClickEvent => cmd ExitGame
              Simulants.CreditsBack.ClickEvent => cmd ShowTitle
              Simulants.Gameplay.OutgoingStartEvent => cmd FadeSong
@@ -58,7 +58,10 @@ module InfinityDispatcherModule =
 
         override this.Message (model, message, _, world) =
             match message with
-            | SetLoad load -> just model
+            | SetLoad load ->
+                let gameplayModel = { model.GameplayModel with ShallLoadGame = load }
+                let model = { model with GameplayModel = gameplayModel }
+                withCmd model ShowGameplay
         
         override this.Command (_, command, _, world) =
             let world =
@@ -67,7 +70,7 @@ module InfinityDispatcherModule =
                 | FadeSong -> World.fadeOutSong Constants.Audio.DefaultFadeOutMs world
                 | ShowTitle -> World.transitionScreen Simulants.Title world
                 | ShowCredits -> World.transitionScreen Simulants.Credits world
-                | ShowGameplay load -> world |> Simulants.Gameplay.SetShallLoadGame load |> World.transitionScreen Simulants.Gameplay
+                | ShowGameplay -> World.transitionScreen Simulants.Gameplay world
                 | ExitGame -> World.exit world
             just world
 

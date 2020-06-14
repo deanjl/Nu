@@ -38,9 +38,6 @@ module GameplayDispatcherModule =
 
     (* random number generation is non-deterministic for gameplay behavior and deterministic for map generation. for the field specifically, ContentRandState is necessary for the game saving architecture and functional purity is non-negotiable when relying on lazy evaluation. VERY hard learnt lesson. *)
         
-        member this.GetShallLoadGame = this.Get Property? ShallLoadGame
-        member this.SetShallLoadGame = this.Set Property? ShallLoadGame
-        member this.ShallLoadGame = lens<bool> Property? ShallLoadGame this.GetShallLoadGame this.SetShallLoadGame this
         member this.GetGameplayModel = this.GetModel<GameplayModel>
         member this.SetGameplayModel = this.SetModel<GameplayModel>
         member this.GameplayModel = this.Model<GameplayModel> ()
@@ -539,9 +536,6 @@ module GameplayDispatcherModule =
                 else world
             world
         
-        static member Properties =
-            [define Screen.ShallLoadGame false]
-
         override this.Channel (_, _) =
             [Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
              Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSelected Simulants.HudFeeler =|> fun evt -> cmd (HandlePlayerInput (TouchInput evt.Data))
@@ -565,7 +559,7 @@ module GameplayDispatcherModule =
                 | QuitGameplay -> World.destroyLayer Simulants.Scene world
                 | RunGameplay ->
                     let world =
-                        if Simulants.Gameplay.GetShallLoadGame world && File.Exists Assets.SaveFilePath
+                        if model.ShallLoadGame && File.Exists Assets.SaveFilePath
                         then // TODO : fix game saving/loading
                             // get and initialize gameplay screen from read
                             let world = World.readScreenFromFile Assets.SaveFilePath (Some Simulants.Gameplay.Name) world |> snd
