@@ -19,41 +19,25 @@ module Nu =
 
     let private tryPropagateByLens (left : World Lens) (right : World Lens) world =
         if right.Validate world then
-            let value =
-                match right.GetWithoutValidation world with
-                | :? DesignerProperty as property -> property.DesignerValue
-                | value -> value
-            let world =
-                if World.getExists left.This world then
-                    match left.GetWithoutValidation world with
-                    | :? DesignerProperty as designerProperty -> (Option.get left.SetOpt) ({ designerProperty with DesignerValue = value } :> obj) world
-                    | _ -> (Option.get left.SetOpt) value world
-                else world
-            (Cascade, world)
+            let value = right.GetWithoutValidation world
+            if World.getExists left.This world
+            then (Cascade, (Option.get left.SetOpt) value world)
+            else (Cascade, world)
         else (Cascade, world)
 
     let private tryPropagateByName simulant leftName (right : World Lens) world =
         let nonPersistent = Reflection.isPropertyNonPersistentByName leftName
         let alwaysPublish = Reflection.isPropertyAlwaysPublishByName leftName
         if right.Validate world then
-            let value =
-                match right.GetWithoutValidation world with
-                | :? DesignerProperty as property -> property.DesignerValue
-                | value -> value
-            let world =
-                match World.tryGetProperty leftName simulant world with
-                | Some property ->
-                    if property.PropertyType = typeof<DesignerProperty> then
-                        let designerProperty = property.PropertyValue :?> DesignerProperty
-                        let property = { PropertyType = typeof<DesignerProperty>; PropertyValue = { designerProperty with DesignerValue = value }}
-                        World.trySetProperty leftName alwaysPublish nonPersistent property simulant world |> snd
-                    else
-                        let property = { property with PropertyValue = value }
-                        World.trySetProperty leftName alwaysPublish nonPersistent property simulant world |> snd
-                | None ->
-                    Log.debug "Property propagation failed. You have used a composed lens on a faux simulant reference, which is not supported."
-                    world
-            (Cascade, world)
+            let value = right.GetWithoutValidation world
+            match World.tryGetProperty leftName simulant world with
+            | Some property ->
+                let property = { property with PropertyValue = value }
+                let world = World.trySetProperty leftName alwaysPublish nonPersistent property simulant world |> snd
+                (Cascade, world)
+            | None ->
+                Log.debug "Property propagation failed. You have used a composed lens on a faux simulant reference, which is not supported."
+                (Cascade, world)
         else (Cascade, world)
 
     let private tryPropagate simulant (left : World Lens) (right : World Lens) world =
@@ -179,8 +163,7 @@ module Nu =
                 let simulant = propertied :?> Simulant
                 let handler = handler :?> World PropertyChangeHandler
                 let (unsubscribe, world) =
-                    World.subscribePlus
-                        Gen.id None None None
+                    World.subscribeWith Gen.id
                         (fun (event : Event<obj, _>) world ->
                             let data = event.Data :?> ChangeData
                             let world = handler data.Value world
@@ -264,16 +247,17 @@ module Nu =
                 struct (evaleds, world)
 
             // init isSelected F# reach-around
-            WorldModule.isSelected <- fun simulant world ->
-                World.isSelected simulant world
+            WorldModule.isSelected <- 
+                World.isSelected
 
+            // init sortSubscriptionByDepth F# reach-around
             WorldModule.sortSubscriptionsByDepth <- fun subscriptions worldObj ->
                 let world = worldObj :?> World
                 EventSystem.sortSubscriptionsBy
                     (fun (simulant : Simulant) _ ->
                         match simulant with
-                        | :? Entity as entity -> { SortDepth = entity.GetDepthLayered world; SortPositionY = 0.0f; SortTarget = entity } :> IComparable
-                        | :? Layer as layer -> { SortDepth = Constants.Engine.LayerSortPriority + layer.GetDepth world; SortPositionY = 0.0f; SortTarget = layer } :> IComparable
+                        | :? Entity as entity -> { SortDepth = entity.GetDepth world; SortPositionY = 0.0f; SortTarget = entity } :> IComparable
+                        | :? Layer as layer -> { SortDepth = Constants.Engine.LayerSortPriority; SortPositionY = 0.0f; SortTarget = layer } :> IComparable
                         | :? Screen as screen -> { SortDepth = Constants.Engine.ScreenSortPriority; SortPositionY = 0.0f; SortTarget = screen } :> IComparable
                         | :? Game | :? GlobalSimulantGeneralized -> { SortDepth = Constants.Engine.GameSortPriority; SortPositionY = 0.0f; SortTarget = Simulants.Game } :> IComparable
                         | _ -> failwithumf ())
@@ -291,7 +275,7 @@ module Nu =
                             for entity in entities do
                                 let entityState = World.getEntityState entity world
                                 let entityMaxBounds = World.getEntityStateBoundsMax entityState
-                                let entityOmnipresent = entityState.Transform.Omnipresent || entityState.Transform.ViewType = Absolute
+                                let entityOmnipresent = entityState.Omnipresent || entityState.Absolute
                                 SpatialTree.addElement entityOmnipresent entityMaxBounds entity entityTree
                             entityTree)
                         (World.getEntityTree world)
@@ -308,7 +292,7 @@ module Nu =
                             for entity in entities do
                                 let entityState = World.getEntityState entity world
                                 let entityMaxBounds = World.getEntityStateBoundsMax entityState
-                                let entityOmnipresent = entityState.Transform.Omnipresent || entityState.Transform.ViewType = Absolute
+                                let entityOmnipresent = entityState.Omnipresent || entityState.Absolute
                                 SpatialTree.removeElement entityOmnipresent entityMaxBounds entity entityTree
                             entityTree)
                         (World.getEntityTree world)
@@ -316,14 +300,22 @@ module Nu =
 
             // init registerScreenPhysics F# reach-around
             WorldModule.registerScreenPhysics <- fun screen world ->
-                let entities = World.getLayers screen world |> Seq.map (flip World.getEntities world) |> Seq.concat |> Seq.toArray
+                let entities =
+                    World.getLayers screen world |>
+                    Seq.map (flip World.getEntities world) |>
+                    Seq.concat |>
+                    Seq.toArray
                 Array.fold (fun world (entity : Entity) ->
                     World.registerEntityPhysics entity world)
                     world entities
 
             // init unregisterScreenPhysics F# reach-around
             WorldModule.unregisterScreenPhysics <- fun screen world ->
-                let entities = World.getLayers screen world |> Seq.map (flip World.getEntities world) |> Seq.concat |> Seq.toArray
+                let entities =
+                    World.getLayers screen world |>
+                    Seq.map (flip World.getEntities world) |>
+                    Seq.concat |>
+                    Seq.toArray
                 Array.fold (fun world (entity : Entity) ->
                     World.unregisterEntityPhysics entity world)
                     world entities
@@ -338,14 +330,14 @@ module Nu =
                         (compressionId, Some mapper)
                     | None -> (Gen.id, None)
                 let (_, world) =
-                    World.monitorSpecial
+                    World.monitorCompressed
                         Gen.id None None None
                         (Right (box (simulant, left, right)))
                         (Events.Register --> right.This.SimulantAddress)
                         right.This
                         world
                 let (_, world) =
-                    World.monitorSpecial
+                    World.monitorCompressed
                         compressionId
                         mapperOpt
                         (Some (fun a a2Opt _ -> match a2Opt with Some a2 -> a <> a2 | None -> true))
@@ -356,7 +348,7 @@ module Nu =
                         world
                 world
 
-            // init remaining reach-arounds
+            // init miscellaneous reach-arounds
             WorldModule.register <- fun simulant world -> World.register simulant world
             WorldModule.unregister <- fun simulant world -> World.unregister simulant world
             WorldModule.expandContent <- fun setScreenSplash content origin parent world -> World.expandContent setScreenSplash content origin parent world
@@ -364,15 +356,15 @@ module Nu =
             WorldModule.trySignalFacet <- fun signalObj facetName simulant world -> World.trySignalFacet signalObj facetName simulant world
             WorldModule.trySignal <- fun signalObj simulant world -> World.trySignal signalObj simulant world
 
-            // init scripting
-            World.initScripting ()
-            WorldBindings.initBindings ()
-
             // init debug view F# reach-arounds
             Debug.World.viewGame <- fun world -> Debug.Game.view (world :?> World)
             Debug.World.viewScreen <- fun screen world -> Debug.Screen.view (screen :?> Screen) (world :?> World)
             Debug.World.viewLayer <- fun layer world -> Debug.Layer.view (layer :?> Layer) (world :?> World)
             Debug.World.viewEntity <- fun entity world -> Debug.Entity.view (entity :?> Entity) (world :?> World)
+
+            // init scripting
+            World.initScripting ()
+            WorldBindings.initBindings ()
 
             // init vsync
             Vsync.Init nuConfig.RunSynchronously
@@ -451,7 +443,7 @@ module WorldModule3 =
                 let globalSimulantGeneralized = { GpgAddress = atoa globalSimulant.GameAddress }
                 EventSystemDelegate.make eventTracerOpt eventFilter globalSimulant globalSimulantGeneralized
 
-            // make the game dispatcher
+            // make the default game dispatcher
             let defaultGameDispatcher = World.makeDefaultGameDispatcher ()
 
             // make the world's dispatchers

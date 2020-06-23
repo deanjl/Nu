@@ -7,29 +7,50 @@ open System.ComponentModel
 open Prime
 open Nu
 
-/// Depicts whether a view is purposed to render in relative or absolute space. For
-/// example, Gui entities are rendered in absolute space since they remain still no matter
-/// where the camera moves, and vice versa for non-Gui entities.
-[<Syntax
-    ("Absolute Relative", "", "", "", "",
-     Constants.PrettyPrinter.DefaultThresholdMin,
-     Constants.PrettyPrinter.SimpleThresholdMax);
-     StructuralEquality; StructuralComparison>]
-type ViewType =
-    | Absolute
-    | Relative
+[<AutoOpen>]
+module internal TransformMasks =
+
+    // OPTIMIZATION: Entity flag bit-masks; only for use by internal reflection facilities.
+    let [<Literal>] OccupiedMask =             0b000000000001
+    let [<Literal>] InvalidatedMask =          0b000000000010
+    let [<Literal>] OmnipresentMask =          0b000000000100
+    let [<Literal>] AbsoluteMask =             0b000000001000
+    let [<Literal>] ImperativeMask =           0b000000010000
+    let [<Literal>] PublishChangesMask =       0b000000100000
+    let [<Literal>] EnabledMask =              0b000001000000
+    let [<Literal>] VisibleMask =              0b000010000000
+    let [<Literal>] AlwaysUpdateMask =         0b000100000000
+    let [<Literal>] PublishUpdatesMask =       0b001000000000
+    let [<Literal>] PublishPostUpdatesMask =   0b010000000000
+    let [<Literal>] PersistentMask =           0b100000000000
 
 /// Carries transformation data specific to an Entity.
-/// NOTE: This type is exactly the size of a 64-bit cache line.
-type [<StructuralEquality; NoComparison>] Transform =
+type [<StructuralEquality; NoComparison; Struct>] Transform =
     { // cache line begin
-      mutable Position : Vector2 // NOTE: will become a Vector3 if Nu gets 3d capabilities
-      mutable Size : Vector2 // NOTE: will become a Vector3 if Nu gets 3d capabilities
-      mutable Rotation : single // NOTE: will become a Vector3 if Nu gets 3d capabilities
-      mutable Depth : single // NOTE: will become part of position if Nu gets 3d capabilities
-      mutable ViewType : ViewType
-      mutable Omnipresent : bool }
-      // cache line end
+      mutable Position : Vector2 // NOTE: will become a Vector3 if Nu gets 3D capabilities
+      mutable Size : Vector2 // NOTE: will become a Vector3 if Nu gets 3D capabilities
+      mutable Rotation : single // NOTE: will become a Vector3 if Nu gets 3D capabilities
+      mutable Depth : single // NOTE: will become part of position if Nu gets 3D capabilities
+      mutable Flags : int }
+      // 4 free cache line bytes
+
+    interface Component with
+        member this.Occupied
+          with get () = this.Flags &&& 0b1 <> 0
+          and set value = this.Flags <- if value then this.Flags ||| 0b1 else this.Flags &&& ~~~0b1
+
+    member internal this.Occupied with get () = this.Flags &&& OccupiedMask <> 0 and set value = this.Flags <- if value then this.Flags ||| OccupiedMask else this.Flags &&& ~~~OccupiedMask
+    member internal this.Invalidated with get () = this.Flags &&& InvalidatedMask <> 0 and set value = this.Flags <- if value then this.Flags ||| InvalidatedMask else this.Flags &&& ~~~InvalidatedMask
+    member this.Omnipresent with get () = this.Flags &&& OmnipresentMask <> 0 and set value = this.Flags <- if value then this.Flags ||| OmnipresentMask else this.Flags &&& ~~~OmnipresentMask
+    member this.Absolute with get () = this.Flags &&& AbsoluteMask <> 0 and set value = this.Flags <- if value then this.Flags ||| AbsoluteMask else this.Flags &&& ~~~AbsoluteMask
+    member this.Imperative with get () = this.Flags &&& ImperativeMask <> 0 and set value = this.Flags <- if value then this.Flags ||| ImperativeMask else this.Flags &&& ~~~ImperativeMask
+    member this.PublishChanges with get () = this.Flags &&& PublishChangesMask <> 0 and set value = this.Flags <- if value then this.Flags ||| PublishChangesMask else this.Flags &&& ~~~PublishChangesMask
+    member this.Enabled with get () = this.Flags &&& EnabledMask <> 0 and set value = this.Flags <- if value then this.Flags ||| EnabledMask else this.Flags &&& ~~~EnabledMask
+    member this.Visible with get () = this.Flags &&& VisibleMask <> 0 and set value = this.Flags <- if value then this.Flags ||| VisibleMask else this.Flags &&& ~~~VisibleMask
+    member this.AlwaysUpdate with get () = this.Flags &&& AlwaysUpdateMask <> 0 and set value = this.Flags <- if value then this.Flags ||| AlwaysUpdateMask else this.Flags &&& ~~~AlwaysUpdateMask
+    member this.PublishUpdates with get () = this.Flags &&& PublishUpdatesMask <> 0 and set value = this.Flags <- if value then this.Flags ||| PublishUpdatesMask else this.Flags &&& ~~~PublishUpdatesMask
+    member this.PublishPostUpdates with get () = this.Flags &&& PublishPostUpdatesMask <> 0 and set value = this.Flags <- if value then this.Flags ||| PublishPostUpdatesMask else this.Flags &&& ~~~PublishPostUpdatesMask
+    member this.Persistent with get () = this.Flags &&& PersistentMask <> 0 and set value = this.Flags <- if value then this.Flags ||| PersistentMask else this.Flags &&& ~~~PersistentMask
 
     /// Assign a transform in-place.
     member this.Assign that =
@@ -37,8 +58,7 @@ type [<StructuralEquality; NoComparison>] Transform =
         this.Size <- that.Size
         this.Rotation <- that.Rotation
         this.Depth <- that.Depth
-        this.ViewType <- that.ViewType
-        this.Omnipresent <- that.Omnipresent
+        this.Flags <- that.Flags
 
 [<AutoOpen>]
 module Vector2 =

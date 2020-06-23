@@ -25,7 +25,9 @@ module DeclarativeOperators2 =
         static member internal actualizeViews views world =
             Seq.fold (fun world view ->
                 match view with
-                | Render descriptor -> World.enqueueRenderMessage (RenderDescriptorMessage descriptor) world
+                | Render (depth, positionY, assetTag, descriptor) ->
+                    let layeredDescriptor = { Depth = depth; PositionY = positionY; AssetTag = assetTag; RenderDescriptor = descriptor }
+                    World.enqueueRenderMessage (LayeredDescriptorMessage layeredDescriptor) world
                 | PlaySound (volume, assetTag) -> World.playSound volume assetTag world
                 | PlaySong (fade, volume, assetTag) -> World.playSong fade volume assetTag world
                 | FadeOutSong fade -> World.fadeOutSong fade world
@@ -58,14 +60,10 @@ module FacetModule =
     and Entity with
     
         member this.GetFacetModel<'model> modelName world =
-            let property = this.Get<DesignerProperty> modelName world
-            property.DesignerValue :?> 'model
+            this.Get<'model> modelName world
 
         member this.SetFacetModel<'model> modelName (value : 'model) world =
-            let model = this.Get<DesignerProperty> modelName world
-            if this.GetImperative world
-            then model.DesignerValue <- value; world
-            else this.Set<DesignerProperty> modelName { DesignerType = typeof<'model>; DesignerValue = value } world
+            this.Set<'model> modelName value world
 
         member this.UpdateFacetModel<'model> modelName updater world =
             this.SetFacetModel<'model> modelName (updater this.GetFacetModel<'model> modelName world) world
@@ -246,13 +244,13 @@ module EffectFacetModule =
         override this.Actualize (entity, world) =
 
             // evaluate effect if visible
-            if entity.GetVisibleLayered world && entity.GetInView world then
+            if entity.GetVisible world && entity.GetInView world then
 
                 // set up effect system to evaluate effect
                 let world = entity.SetEffectTags Map.empty world
                 let effect = entity.GetEffect world
                 let effectTime = entity.GetEffectTime world
-                let effectViewType = entity.GetViewType world
+                let effectAbsolute = entity.GetAbsolute world
                 let effectSlice =
                     { Effects.Position = entity.GetPosition world + Vector2.Multiply (entity.GetSize world, entity.GetEffectOffset world)
                       Effects.Size = entity.GetSize world
@@ -266,7 +264,7 @@ module EffectFacetModule =
                       Effects.Volume = Constants.Audio.DefaultSoundVolume }
                 let effectHistory = entity.GetEffectHistory world
                 let effectEnv = entity.GetEffectDefinitions world
-                let effectSystem = EffectSystem.make effectViewType effectHistory effectTime effectEnv
+                let effectSystem = EffectSystem.make effectAbsolute effectHistory effectTime effectEnv
 
                 // evaluate effect with effect system
                 let (artifacts, _) = EffectSystem.eval effect effectSlice effectSystem
@@ -411,22 +409,25 @@ module TextFacetModule =
 
         override this.Actualize (text, world) =
             let textStr = text.GetText world
-            if text.GetVisibleLayered world && not (String.IsNullOrWhiteSpace textStr) then
+            if text.GetVisible world && not (String.IsNullOrWhiteSpace textStr) then
+                let transform =
+                    { Position = text.GetPosition world + text.GetMargins world
+                      Size = text.GetSize world - text.GetMargins world * 2.0f
+                      Rotation = 0.0f
+                      Depth = text.GetDepth world + 0.5f
+                      Flags = text.GetFlags world }
                 World.enqueueRenderMessage
-                    (RenderDescriptorMessage
-                        (LayerableDescriptor
-                            { Depth = text.GetDepth world + 0.5f
-                              AssetTag = text.GetFont world
-                              PositionY = (text.GetPosition world).Y
-                              LayeredDescriptor =
-                                TextDescriptor
-                                    { Text = textStr
-                                      Position = text.GetPosition world + text.GetMargins world
-                                      Size = text.GetSize world - text.GetMargins world * 2.0f
-                                      ViewType = Absolute
-                                      Font = text.GetFont world
-                                      Color = text.GetTextColor world
-                                      Justification = text.GetJustification world }}))
+                    (LayeredDescriptorMessage
+                        { Depth = transform.Depth
+                          PositionY = transform.Position.Y
+                          AssetTag = text.GetFont world
+                          RenderDescriptor =
+                            TextDescriptor
+                                { Transform = transform
+                                  Text = textStr
+                                  Font = text.GetFont world
+                                  Color = text.GetTextColor world
+                                  Justification = text.GetJustification world }})
                     world
             else world
 
@@ -769,7 +770,7 @@ module TileMapFacetModule =
             if tileMap.GetVisible world then
                 match Metadata.tryGetTileMapMetadata (tileMap.GetTileMapAsset world) (World.getMetadata world) with
                 | Some (_, images, map) ->
-                    let viewType = tileMap.GetViewType world
+                    let absolute = tileMap.GetAbsolute world
                     let layers = List.ofSeq map.Layers
                     let tileSourceSize = Vector2i (map.TileWidth, map.TileHeight)
                     let tileSize = Vector2 (single map.TileWidth, single map.TileHeight)
@@ -786,11 +787,18 @@ module TileMapFacetModule =
                                         | (false, _) -> single i * tileLayerClearance
                                     let depth = tileMap.GetDepth world + depthOffset
                                     let parallaxTranslation =
-                                        match viewType with
-                                        | Absolute -> Vector2.Zero
-                                        | Relative -> tileMap.GetParallax world * depth * -World.getEyeCenter world
+                                        if absolute
+                                        then Vector2.Zero
+                                        else tileMap.GetParallax world * depth * -World.getEyeCenter world
                                     let parallaxPosition = position + parallaxTranslation
                                     let size = Vector2 (tileSize.X * single map.Width, tileSize.Y)
+                                    let rotation = tileMap.GetRotation world
+                                    let transform =
+                                        { Position = parallaxPosition
+                                          Size = size
+                                          Rotation = rotation
+                                          Depth = depth
+                                          Flags = tileMap.GetFlags world }
                                     let image = List.head images // MAGIC_VALUE: I have no idea how to tell which tile set each tile is from...
                                     let tiles =
                                         layer.Tiles |>
@@ -798,25 +806,21 @@ module TileMapFacetModule =
                                         Seq.skip (j * map.Width) |>
                                         Seq.take map.Width |>
                                         Seq.toArray
-                                    if World.isBoundsInView viewType (Math.makeBounds parallaxPosition size) world then
+                                    if World.isBoundsInView absolute (Math.makeBounds parallaxPosition size) world then
                                         World.enqueueRenderMessage
-                                            (RenderDescriptorMessage
-                                                (LayerableDescriptor 
-                                                    { Depth = depth
-                                                      AssetTag = image
-                                                      PositionY = parallaxPosition.Y
-                                                      LayeredDescriptor =
-                                                        TileLayerDescriptor
-                                                            { Position = parallaxPosition
-                                                              Size = size
-                                                              Rotation = tileMap.GetRotation world
-                                                              ViewType = viewType
-                                                              MapSize = Vector2i (map.Width, map.Height)
-                                                              Tiles = tiles
-                                                              TileSourceSize = tileSourceSize
-                                                              TileSize = tileSize
-                                                              TileSet = map.Tilesets.[0] // MAGIC_VALUE: I have no idea how to tell which tile set each tile is from...
-                                                              TileSetImage = image }}))
+                                            (LayeredDescriptorMessage
+                                                { Depth = transform.Depth
+                                                  PositionY = transform.Position.Y
+                                                  AssetTag = image
+                                                  RenderDescriptor =
+                                                    TileLayerDescriptor
+                                                        { Transform = transform
+                                                          MapSize = Vector2i (map.Width, map.Height)
+                                                          Tiles = tiles
+                                                          TileSourceSize = tileSourceSize
+                                                          TileSize = tileSize
+                                                          TileSet = map.Tilesets.[0] // MAGIC_VALUE: I have no idea how to tell which tile set each tile is from...
+                                                          TileSetImage = image }})
                                             world
                                     else world)
                                 world [|0 .. dec map.Height|])
@@ -988,10 +992,10 @@ module NodeFacetModule =
                     Log.trace "Cannot mount a rigid body entity onto another entity. Instead, consider using physics constraints."
                     World.choose oldWorld
                 else
-                    let (unsubscribe, world) = World.monitorPlus None None None handleNodePropertyChange node.Position.ChangeEvent entity world
-                    let (unsubscribe2, world) = World.monitorPlus None None None handleNodePropertyChange node.Depth.ChangeEvent entity world
-                    let (unsubscribe3, world) = World.monitorPlus None None None handleNodePropertyChange node.Visible.ChangeEvent entity world
-                    let (unsubscribe4, world) = World.monitorPlus None None None handleNodePropertyChange node.Enabled.ChangeEvent entity world
+                    let (unsubscribe, world) = World.monitorPlus handleNodePropertyChange node.Position.ChangeEvent entity world
+                    let (unsubscribe2, world) = World.monitorPlus handleNodePropertyChange node.Depth.ChangeEvent entity world
+                    let (unsubscribe3, world) = World.monitorPlus handleNodePropertyChange node.Visible.ChangeEvent entity world
+                    let (unsubscribe4, world) = World.monitorPlus handleNodePropertyChange node.Enabled.ChangeEvent entity world
                     entity.SetNodeUnsubscribe (unsubscribe4 >> unsubscribe3 >> unsubscribe2 >> unsubscribe) world
             | None -> world
 
@@ -1018,10 +1022,10 @@ module NodeFacetModule =
         override this.Register (entity, world) =
             let world = entity.SetNodeUnsubscribe id world // ensure unsubscribe function reference doesn't get copied in Gaia...
             let world = World.monitor handleNodeChange entity.ParentNodeOpt.ChangeEvent entity world
-            let world = World.monitorPlus None None None handleLocalPropertyChange entity.PositionLocal.ChangeEvent entity world |> snd
-            let world = World.monitorPlus None None None handleLocalPropertyChange entity.DepthLocal.ChangeEvent entity world |> snd
-            let world = World.monitorPlus None None None handleLocalPropertyChange entity.VisibleLocal.ChangeEvent entity world |> snd
-            let world = World.monitorPlus None None None handleLocalPropertyChange entity.EnabledLocal.ChangeEvent entity world |> snd
+            let world = World.monitorPlus handleLocalPropertyChange entity.PositionLocal.ChangeEvent entity world |> snd
+            let world = World.monitorPlus handleLocalPropertyChange entity.DepthLocal.ChangeEvent entity world |> snd
+            let world = World.monitorPlus handleLocalPropertyChange entity.VisibleLocal.ChangeEvent entity world |> snd
+            let world = World.monitorPlus handleLocalPropertyChange entity.EnabledLocal.ChangeEvent entity world |> snd
             let world = tryUpdateFromNode entity world
             let world = trySubscribeToNodePropertyChanges entity world
             world
@@ -1049,25 +1053,22 @@ module StaticSpriteFacetModule =
              define Entity.Flip FlipNone]
 
         override this.Actualize (entity, world) =
-            if entity.GetVisibleLayered world && entity.GetInView world then
+            if entity.GetVisible world && entity.GetInView world then
+                let transform = entity.GetTransform world
                 World.enqueueRenderMessage
-                    (RenderDescriptorMessage
-                        (LayerableDescriptor
-                            { Depth = entity.GetDepth world
-                              AssetTag = entity.GetStaticImage world
-                              PositionY = (entity.GetPosition world).Y
-                              LayeredDescriptor =
-                                SpriteDescriptor
-                                    { Position = entity.GetPosition world
-                                      Size = entity.GetSize world
-                                      Rotation = entity.GetRotation world
-                                      Offset = Vector2.Zero
-                                      ViewType = entity.GetViewType world
-                                      InsetOpt = None
-                                      Image = entity.GetStaticImage world
-                                      Color = Vector4.One
-                                      Glow = Vector4.Zero
-                                      Flip = entity.GetFlip world }}))
+                    (LayeredDescriptorMessage
+                        { Depth = transform.Depth
+                          PositionY = transform.Position.Y
+                          AssetTag = entity.GetStaticImage world
+                          RenderDescriptor =
+                            SpriteDescriptor
+                                { Transform = transform
+                                  Offset = Vector2.Zero
+                                  InsetOpt = None
+                                  Image = entity.GetStaticImage world
+                                  Color = Vector4.One
+                                  Glow = Vector4.Zero
+                                  Flip = entity.GetFlip world }})
                     world
             else world
 
@@ -1123,25 +1124,22 @@ module AnimatedSpriteFacetModule =
              define Entity.Flip FlipNone]
 
         override this.Actualize (entity, world) =
-            if entity.GetVisibleLayered world && entity.GetInView world then
+            if entity.GetVisible world && entity.GetInView world then
+                let transform = entity.GetTransform world
                 World.enqueueRenderMessage
-                    (RenderDescriptorMessage
-                        (LayerableDescriptor
-                            { Depth = entity.GetDepth world
-                              AssetTag = entity.GetAnimationSheet world
-                              PositionY = (entity.GetPosition world).Y
-                              LayeredDescriptor =
-                                SpriteDescriptor
-                                    { Position = entity.GetPosition world
-                                      Size = entity.GetSize world
-                                      Rotation = entity.GetRotation world
-                                      Offset = Vector2.Zero
-                                      ViewType = entity.GetViewType world
-                                      InsetOpt = getSpriteInsetOpt entity world
-                                      Image = entity.GetAnimationSheet world
-                                      Color = Vector4.One
-                                      Glow = Vector4.Zero
-                                      Flip = entity.GetFlip world }}))
+                    (LayeredDescriptorMessage
+                        { Depth = transform.Depth
+                          PositionY = transform.Position.Y
+                          AssetTag = entity.GetAnimationSheet world
+                          RenderDescriptor =
+                            SpriteDescriptor
+                                { Transform = transform
+                                  Offset = Vector2.Zero
+                                  InsetOpt = getSpriteInsetOpt entity world
+                                  Image = entity.GetAnimationSheet world
+                                  Color = Vector4.One
+                                  Glow = Vector4.Zero
+                                  Flip = entity.GetFlip world }})
                     world
             else world
 
@@ -1183,7 +1181,8 @@ module EntityDispatcherModule =
 
         override this.Register (entity, world) =
             let world =
-                if getType (entity.GetModel world) = typeof<obj>
+                let property = World.getEntityModelProperty entity world
+                if property.DesignerType = typeof<unit>
                 then entity.SetModel<'model> initial world
                 else world
             let channels = this.Channel (this.Model entity, entity)
@@ -1296,8 +1295,8 @@ module GuiDispatcherModule =
             let gui = evt.Subscriber : Entity
             let data = evt.Data : MouseButtonData
             let handling =
-                if gui.GetSelected world && gui.GetVisibleLayered world then
-                    let mousePositionWorld = World.mouseToWorld (gui.GetViewType world) data.Position world
+                if gui.GetSelected world && gui.GetVisible world then
+                    let mousePositionWorld = World.mouseToWorld (gui.GetAbsolute world) data.Position world
                     if data.Down &&
                        gui.GetSwallowMouseLeft world &&
                        Math.isPointInBounds mousePositionWorld (gui.GetBounds world) then
@@ -1310,15 +1309,16 @@ module GuiDispatcherModule =
             [typeof<NodeFacet>]
 
         static member Properties =
-            [define Entity.PublishChanges true
-             define Entity.ViewType Absolute
+            [define Entity.Omnipresent true
+             define Entity.Absolute true
+             define Entity.PublishChanges true
              define Entity.AlwaysUpdate true
              define Entity.DisabledColor (Vector4 0.75f)
              define Entity.SwallowMouseLeft true]
 
         override this.Register (gui, world) =
-            let world = World.monitorPlus None None None handleMouseLeft Events.MouseLeftDown gui world |> snd
-            let world = World.monitorPlus None None None handleMouseLeft Events.MouseLeftUp gui world |> snd
+            let world = World.monitor handleMouseLeft Events.MouseLeftDown gui world
+            let world = World.monitor handleMouseLeft Events.MouseLeftUp gui world
             world
 
     type [<AbstractClass>] GuiDispatcher<'model, 'message, 'command> (model) =
@@ -1328,8 +1328,8 @@ module GuiDispatcherModule =
             let gui = evt.Subscriber : Entity
             let data = evt.Data : MouseButtonData
             let handling =
-                if gui.GetSelected world && gui.GetVisibleLayered world then
-                    let mousePositionWorld = World.mouseToWorld (gui.GetViewType world) data.Position world
+                if gui.GetSelected world && gui.GetVisible world then
+                    let mousePositionWorld = World.mouseToWorld (gui.GetAbsolute world) data.Position world
                     if data.Down &&
                        gui.GetSwallowMouseLeft world &&
                        Math.isPointInBounds mousePositionWorld (gui.GetBounds world) then
@@ -1342,16 +1342,16 @@ module GuiDispatcherModule =
             [typeof<NodeFacet>]
 
         static member Properties =
-            [define Entity.PublishChanges true
-             define Entity.ViewType Absolute
+            [define Entity.Absolute true
+             define Entity.PublishChanges true
              define Entity.AlwaysUpdate true
              define Entity.DisabledColor (Vector4 0.75f)
              define Entity.SwallowMouseLeft true]
 
         override this.Register (gui, world) =
             let world = base.Register (gui, world)
-            let world = World.monitorPlus None None None handleMouseLeft Events.MouseLeftDown gui world |> snd
-            let world = World.monitorPlus None None None handleMouseLeft Events.MouseLeftUp gui world |> snd
+            let world = World.monitor handleMouseLeft Events.MouseLeftDown gui world
+            let world = World.monitor handleMouseLeft Events.MouseLeftUp gui world
             world
 
 [<AutoOpen>]
@@ -1385,8 +1385,8 @@ module ButtonDispatcherModule =
             let button = evt.Subscriber : Entity
             let data = evt.Data : MouseButtonData
             if button.GetSelected world then
-                let mousePositionWorld = World.mouseToWorld (button.GetViewType world) data.Position world
-                if  button.GetVisibleLayered world &&
+                let mousePositionWorld = World.mouseToWorld (button.GetAbsolute world) data.Position world
+                if  button.GetVisible world &&
                     Math.isPointInBounds mousePositionWorld (button.GetBounds world) then
                     if button.GetEnabled world then
                         let world = button.SetDown true world
@@ -1403,8 +1403,8 @@ module ButtonDispatcherModule =
             if button.GetSelected world then
                 let wasDown = button.GetDown world
                 let world = button.SetDown false world
-                let mousePositionWorld = World.mouseToWorld (button.GetViewType world) data.Position world
-                if  button.GetVisibleLayered world &&
+                let mousePositionWorld = World.mouseToWorld (button.GetAbsolute world) data.Position world
+                if  button.GetVisible world &&
                     Math.isPointInBounds mousePositionWorld (button.GetBounds world) then
                     if button.GetEnabled world && wasDown then
                         let eventTrace = EventTrace.record4 "ButtonDispatcher" "handleMouseLeftUp" "Up" EventTrace.empty
@@ -1433,31 +1433,28 @@ module ButtonDispatcherModule =
              define Entity.ClickSoundVolume Constants.Audio.DefaultSoundVolume]
 
         override this.Register (button, world) =
-            let world = World.monitorPlus None None None handleMouseLeftDown Events.MouseLeftDown button world |> snd
-            let world = World.monitorPlus None None None handleMouseLeftUp Events.MouseLeftUp button world |> snd
+            let world = World.monitor handleMouseLeftDown Events.MouseLeftDown button world
+            let world = World.monitor handleMouseLeftUp Events.MouseLeftUp button world
             world
 
         override this.Actualize (button, world) =
-            if button.GetVisibleLayered world then
+            if button.GetVisible world then
+                let transform = button.GetTransform world
                 let image = if button.GetDown world then button.GetDownImage world else button.GetUpImage world
                 World.enqueueRenderMessage
-                    (RenderDescriptorMessage
-                        (LayerableDescriptor
-                            { Depth = button.GetDepth world
-                              AssetTag = image
-                              PositionY = (button.GetPosition world).Y
-                              LayeredDescriptor =
-                                SpriteDescriptor
-                                    { Position = button.GetPosition world
-                                      Size = button.GetSize world
-                                      Rotation = 0.0f
-                                      Offset = Vector2.Zero
-                                      ViewType = Absolute
-                                      InsetOpt = None
-                                      Image = image
-                                      Color = if button.GetEnabled world then Vector4.One else button.GetDisabledColor world
-                                      Glow = Vector4.Zero
-                                      Flip = FlipNone }}))
+                    (LayeredDescriptorMessage
+                        { Depth = transform.Depth
+                          PositionY = transform.Position.Y
+                          AssetTag = image
+                          RenderDescriptor =
+                            SpriteDescriptor
+                                { Transform = transform
+                                  Offset = Vector2.Zero
+                                  InsetOpt = None
+                                  Image = image
+                                  Color = if button.GetEnabled world then Vector4.One else button.GetDisabledColor world
+                                  Glow = Vector4.Zero
+                                  Flip = FlipNone }})
                     world
             else world
 
@@ -1484,25 +1481,22 @@ module LabelDispatcherModule =
              define Entity.LabelImage (AssetTag.make<Image> Assets.DefaultPackageName "Image3")]
 
         override this.Actualize (label, world) =
-            if label.GetVisibleLayered world then
+            if label.GetVisible world then
+                let transform = label.GetTransform world
                 World.enqueueRenderMessage
-                    (RenderDescriptorMessage
-                        (LayerableDescriptor
-                            { Depth = label.GetDepth world
-                              AssetTag = label.GetLabelImage world
-                              PositionY = (label.GetPosition world).Y
-                              LayeredDescriptor =
-                                SpriteDescriptor
-                                    { Position = label.GetPosition world
-                                      Size = label.GetSize world
-                                      Rotation = 0.0f
-                                      Offset = Vector2.Zero
-                                      ViewType = Absolute
-                                      InsetOpt = None
-                                      Image = label.GetLabelImage world
-                                      Color = if label.GetEnabled world then Vector4.One else label.GetDisabledColor world
-                                      Glow = Vector4.Zero
-                                      Flip = FlipNone }}))
+                    (LayeredDescriptorMessage
+                        { Depth = transform.Depth
+                          PositionY = transform.Position.Y
+                          AssetTag = label.GetLabelImage world
+                          RenderDescriptor =
+                            SpriteDescriptor
+                                { Transform = transform
+                                  Offset = Vector2.Zero
+                                  InsetOpt = None
+                                  Image = label.GetLabelImage world
+                                  Color = if label.GetEnabled world then Vector4.One else label.GetDisabledColor world
+                                  Glow = Vector4.Zero
+                                  Flip = FlipNone }})
                     world
             else world
 
@@ -1532,25 +1526,22 @@ module TextDispatcherModule =
              define Entity.BackgroundImage (AssetTag.make<Image> Assets.DefaultPackageName "Image3")]
 
         override this.Actualize (text, world) =
-            if text.GetVisibleLayered world then
+            if text.GetVisible world then
+                let transform = text.GetTransform world
                 World.enqueueRenderMessage
-                    (RenderDescriptorMessage
-                        (LayerableDescriptor
-                            { Depth = text.GetDepth world
-                              AssetTag = text.GetBackgroundImage world
-                              PositionY = (text.GetPosition world).Y
-                              LayeredDescriptor =
-                                SpriteDescriptor
-                                    { Position = text.GetPosition world
-                                      Size = text.GetSize world
-                                      Rotation = 0.0f
-                                      Offset = Vector2.Zero
-                                      ViewType = Absolute
-                                      InsetOpt = None
-                                      Image = text.GetBackgroundImage world
-                                      Color = if text.GetEnabled world then Vector4.One else text.GetDisabledColor world
-                                      Glow = Vector4.Zero
-                                      Flip = FlipNone }}))
+                    (LayeredDescriptorMessage
+                        { Depth = transform.Depth
+                          PositionY = transform.Position.Y
+                          AssetTag = text.GetBackgroundImage world
+                          RenderDescriptor =
+                            SpriteDescriptor
+                                { Transform = transform
+                                  Offset = Vector2.Zero
+                                  InsetOpt = None
+                                  Image = text.GetBackgroundImage world
+                                  Color = if text.GetEnabled world then Vector4.One else text.GetDisabledColor world
+                                  Glow = Vector4.Zero
+                                  Flip = FlipNone }})
                     world
             else world
 
@@ -1591,8 +1582,8 @@ module ToggleDispatcherModule =
             let toggle = evt.Subscriber : Entity
             let data = evt.Data : MouseButtonData
             if toggle.GetSelected world then
-                let mousePositionWorld = World.mouseToWorld (toggle.GetViewType world) data.Position world
-                if  toggle.GetVisibleLayered world &&
+                let mousePositionWorld = World.mouseToWorld (toggle.GetAbsolute world) data.Position world
+                if  toggle.GetVisible world &&
                     Math.isPointInBounds mousePositionWorld (toggle.GetBounds world) then
                     if toggle.GetEnabled world then
                         let world = toggle.SetPressed true world
@@ -1607,8 +1598,8 @@ module ToggleDispatcherModule =
             if toggle.GetSelected world then
                 let wasPressed = toggle.GetPressed world
                 let world = toggle.SetPressed false world
-                let mousePositionWorld = World.mouseToWorld (toggle.GetViewType world) data.Position world
-                if  toggle.GetVisibleLayered world &&
+                let mousePositionWorld = World.mouseToWorld (toggle.GetAbsolute world) data.Position world
+                if  toggle.GetVisible world &&
                     Math.isPointInBounds mousePositionWorld (toggle.GetBounds world) then
                     if toggle.GetEnabled world && wasPressed then
                         let world = toggle.SetOpen (not (toggle.GetOpen world)) world
@@ -1640,34 +1631,31 @@ module ToggleDispatcherModule =
              define Entity.ToggleSoundVolume Constants.Audio.DefaultSoundVolume]
 
         override this.Register (toggle, world) =
-            let world = World.monitorPlus None None None handleMouseLeftDown Events.MouseLeftDown toggle world |> snd
-            let world = World.monitorPlus None None None handleMouseLeftUp Events.MouseLeftUp toggle world |> snd
+            let world = World.monitor handleMouseLeftDown Events.MouseLeftDown toggle world
+            let world = World.monitor handleMouseLeftUp Events.MouseLeftUp toggle world
             world
 
         override this.Actualize (toggle, world) =
-            if toggle.GetVisibleLayered world then
+            if toggle.GetVisible world then
+                let transform = toggle.GetTransform world
                 let image =
                     if toggle.GetOpen world && not (toggle.GetPressed world)
                     then toggle.GetOpenImage world
                     else toggle.GetClosedImage world
                 World.enqueueRenderMessage
-                    (RenderDescriptorMessage
-                        (LayerableDescriptor
-                            { Depth = toggle.GetDepth world
-                              AssetTag = image
-                              PositionY = (toggle.GetPosition world).Y
-                              LayeredDescriptor =
-                                SpriteDescriptor
-                                    { Position = toggle.GetPosition world
-                                      Size = toggle.GetSize world
-                                      Rotation = 0.0f
-                                      Offset = Vector2.Zero
-                                      ViewType = Absolute
-                                      InsetOpt = None
-                                      Image = image
-                                      Color = if toggle.GetEnabled world then Vector4.One else toggle.GetDisabledColor world
-                                      Glow = Vector4.Zero
-                                      Flip = FlipNone }}))
+                    (LayeredDescriptorMessage
+                        { Depth = transform.Depth
+                          PositionY = transform.Position.Y
+                          AssetTag = image
+                          RenderDescriptor =
+                            SpriteDescriptor
+                                { Transform = transform
+                                  Offset = Vector2.Zero
+                                  InsetOpt = None
+                                  Image = image
+                                  Color = if toggle.GetEnabled world then Vector4.One else toggle.GetDisabledColor world
+                                  Glow = Vector4.Zero
+                                  Flip = FlipNone }})
                     world
             else world
 
@@ -1734,8 +1722,8 @@ module FeelerDispatcherModule =
             let feeler = evt.Subscriber : Entity
             let data = evt.Data : MouseButtonData
             if feeler.GetSelected world then
-                let mousePositionWorld = World.mouseToWorld (feeler.GetViewType world) data.Position world
-                if  feeler.GetVisibleLayered world &&
+                let mousePositionWorld = World.mouseToWorld (feeler.GetAbsolute world) data.Position world
+                if  feeler.GetVisible world &&
                     Math.isPointInBounds mousePositionWorld (feeler.GetBounds world) then
                     if feeler.GetEnabled world then
                         let world = feeler.SetTouched true world
@@ -1749,7 +1737,7 @@ module FeelerDispatcherModule =
         let handleMouseLeftUp evt world =
             let feeler = evt.Subscriber : Entity
             let data = evt.Data : MouseButtonData
-            if feeler.GetSelected world && feeler.GetVisibleLayered world then
+            if feeler.GetSelected world && feeler.GetVisible world then
                 if feeler.GetEnabled world then
                     let world = feeler.SetTouched false world
                     let eventTrace = EventTrace.record "FeelerDispatcher" "handleMouseLeftDown" EventTrace.empty
@@ -1764,8 +1752,8 @@ module FeelerDispatcherModule =
              define Entity.Touched false]
 
         override this.Register (feeler, world) =
-            let world = World.monitorPlus None None None handleMouseLeftDown Events.MouseLeftDown feeler world |> snd
-            let world = World.monitorPlus None None None handleMouseLeftUp Events.MouseLeftUp feeler world |> snd
+            let world = World.monitor handleMouseLeftDown Events.MouseLeftDown feeler world
+            let world = World.monitor handleMouseLeftUp Events.MouseLeftUp feeler world
             world
 
         override this.GetQuickSize (_, _) =
@@ -1809,38 +1797,42 @@ module FillBarDispatcherModule =
              define Entity.BorderImage (AssetTag.make<Image> Assets.DefaultPackageName "Image11")]
 
         override this.Actualize (fillBar, world) =
-            if fillBar.GetVisibleLayered world then
+            if fillBar.GetVisible world then
+                let borderSpriteTransform =
+                    { Position = fillBar.GetPosition world
+                      Size = fillBar.GetSize world
+                      Rotation = 0.0f
+                      Depth = fillBar.GetDepth world + 0.5f
+                      Flags = fillBar.GetFlags world }
                 let (fillBarSpritePosition, fillBarSpriteSize) = getFillBarSpriteDims fillBar world
+                let fillBarSpriteTransform =
+                    { Position = fillBarSpritePosition
+                      Size = fillBarSpriteSize
+                      Rotation = 0.0f
+                      Depth = fillBar.GetDepth world
+                      Flags = fillBar.GetFlags world }
                 let fillBarColor = if fillBar.GetEnabled world then Vector4.One else fillBar.GetDisabledColor world
                 World.enqueueRenderMessage
-                    (RenderDescriptorsMessage
-                        [|LayerableDescriptor
-                            { Depth = fillBar.GetDepth world + 0.5f
-                              AssetTag = fillBar.GetBorderImage world
-                              PositionY = (fillBar.GetPosition world).Y
-                              LayeredDescriptor =
+                    (LayeredDescriptorsMessage
+                        [|{ Depth = borderSpriteTransform.Depth
+                            PositionY = borderSpriteTransform.Position.Y
+                            AssetTag = fillBar.GetBorderImage world
+                            RenderDescriptor =
                                 SpriteDescriptor
-                                    { Position = fillBar.GetPosition world
-                                      Size = fillBar.GetSize world
-                                      Rotation = 0.0f
+                                    { Transform = borderSpriteTransform
                                       Offset = Vector2.Zero
-                                      ViewType = Absolute
                                       InsetOpt = None
                                       Image = fillBar.GetBorderImage world
                                       Color = fillBarColor
                                       Glow = Vector4.Zero
                                       Flip = FlipNone }}
-                          LayerableDescriptor
-                            { Depth = fillBar.GetDepth world
-                              AssetTag = fillBar.GetFillImage world
-                              PositionY = (fillBar.GetPosition world).Y
-                              LayeredDescriptor =
+                          { Depth = fillBarSpriteTransform.Depth
+                            PositionY = fillBarSpriteTransform.Position.Y
+                            AssetTag = fillBar.GetFillImage world
+                            RenderDescriptor =
                                 SpriteDescriptor
-                                    { Position = fillBarSpritePosition
-                                      Size = fillBarSpriteSize
-                                      Rotation = 0.0f
+                                    { Transform = fillBarSpriteTransform
                                       Offset = Vector2.Zero
-                                      ViewType = Absolute
                                       InsetOpt = None
                                       Image = fillBar.GetFillImage world
                                       Color = fillBarColor
@@ -1935,7 +1927,7 @@ module CharacterDispatcherModule =
             else world
 
         override this.Actualize (entity, world) =
-            if entity.GetVisibleLayered world && entity.GetInView world then
+            if entity.GetVisible world && entity.GetInView world then
                 let time = World.getTickTime world
                 let physicsId = entity.GetPhysicsId world
                 let facingLeft = entity.GetCharacterFacingLeft world
@@ -1943,6 +1935,7 @@ module CharacterDispatcherModule =
                 let celSize = entity.GetCelSize world
                 let celRun = entity.GetCelRun world
                 let animationDelay = entity.GetAnimationDelay world
+                let transform = entity.GetTransform world
                 let (insetOpt, image) =
                     if not (World.isBodyOnGround physicsId world) then
                         let image = entity.GetCharacterJumpImage world
@@ -1954,23 +1947,19 @@ module CharacterDispatcherModule =
                         let image = entity.GetCharacterWalkSheet world
                         (Some (computeWalkCelInset celSize celRun animationDelay time), image)
                 World.enqueueRenderMessage
-                    (RenderDescriptorMessage
-                        (LayerableDescriptor
-                            { Depth = entity.GetDepth world
-                              AssetTag = image
-                              PositionY = (entity.GetPosition world).Y
-                              LayeredDescriptor =
-                                SpriteDescriptor
-                                    { Position = entity.GetPosition world
-                                      Size = entity.GetSize world
-                                      Rotation = entity.GetRotation world
-                                      Offset = v2Zero
-                                      ViewType = entity.GetViewType world
-                                      InsetOpt = insetOpt
-                                      Image = image
-                                      Color = Vector4.One
-                                      Glow = Vector4.Zero
-                                      Flip = if facingLeft then FlipH else FlipNone }}))
+                    (LayeredDescriptorMessage
+                        { Depth = transform.Depth
+                          PositionY = transform.Position.Y
+                          AssetTag = image
+                          RenderDescriptor =
+                            SpriteDescriptor
+                                { Transform = transform
+                                  Offset = v2Zero
+                                  InsetOpt = insetOpt
+                                  Image = image
+                                  Color = Vector4.One
+                                  Glow = Vector4.Zero
+                                  Flip = if facingLeft then FlipH else FlipNone }})
                     world
             else world
 
@@ -2027,7 +2016,8 @@ module LayerDispatcherModule =
 
         override this.Register (layer, world) =
             let world =
-                if getType (layer.GetModel world) = typeof<obj>
+                let property = World.getLayerModelProperty layer world
+                if property.DesignerType = typeof<unit>
                 then layer.SetModel<'model> initial world
                 else world
             let channels = this.Channel (this.Model layer, layer)
@@ -2119,7 +2109,8 @@ module ScreenDispatcherModule =
 
         override this.Register (screen, world) =
             let world =
-                if getType (screen.GetModel world) = typeof<obj>
+                let property = World.getScreenModelProperty screen world
+                if property.DesignerType = typeof<unit>
                 then screen.SetModel<'model> initial world
                 else world
             let channels = this.Channel (this.Model screen, screen)

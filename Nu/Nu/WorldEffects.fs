@@ -192,7 +192,7 @@ module EffectSystem =
     /// An abstract data type for executing effects.
     type [<StructuralEquality; NoComparison>] EffectSystem =
         private
-            { ViewType : ViewType
+            { Absolute : bool
               Views : View List
               History : Slice seq
               ProgressOffset : single
@@ -487,24 +487,23 @@ module EffectSystem =
         // build sprite views
         let effectSystem =
             if slice.Enabled then
+                let mutable transform =
+                    { Position = slice.Position
+                      Size = slice.Size
+                      Rotation = slice.Rotation
+                      Depth = slice.Depth
+                      Flags = 0 }
+                transform.Absolute <- effectSystem.Absolute
                 let spriteView =
-                    Render
-                        (LayerableDescriptor
-                            { Depth = slice.Depth
-                              AssetTag = image
-                              PositionY = slice.Position.Y
-                              LayeredDescriptor =
-                                SpriteDescriptor 
-                                    { Position = slice.Position
-                                      Size = slice.Size
-                                      Rotation = slice.Rotation
-                                      Offset = slice.Offset
-                                      ViewType = effectSystem.ViewType
-                                      InsetOpt = slice.InsetOpt
-                                      Image = AssetTag.specialize<Image> image
-                                      Color = slice.Color
-                                      Glow = Vector4.Zero
-                                      Flip = FlipNone }})
+                    Render (transform.Depth, transform.Position.Y, image,
+                        SpriteDescriptor 
+                            { Transform = transform
+                              Offset = slice.Offset
+                              InsetOpt = slice.InsetOpt
+                              Image = AssetTag.specialize<Image> image
+                              Color = slice.Color
+                              Glow = Vector4.Zero
+                              Flip = FlipNone })
                 addView spriteView effectSystem
             else effectSystem
 
@@ -532,24 +531,23 @@ module EffectSystem =
             let effectSystem =
                 if  slice.Enabled &&
                     not (playback = Once && cel >= celCount) then
+                    let mutable transform =
+                        { Position = slice.Position
+                          Size = slice.Size
+                          Rotation = slice.Rotation
+                          Depth = slice.Depth
+                          Flags = 0 }
+                    transform.Absolute <- effectSystem.Absolute
                     let animatedSpriteView =
-                        Render
-                            (LayerableDescriptor
-                                { Depth = slice.Depth
-                                  AssetTag = image
-                                  PositionY = slice.Position.Y
-                                  LayeredDescriptor =
-                                  SpriteDescriptor 
-                                    { Position = slice.Position
-                                      Size = slice.Size
-                                      Rotation = slice.Rotation
-                                      Offset = slice.Offset
-                                      InsetOpt = Some inset
-                                      Image = AssetTag.specialize<Image> image
-                                      ViewType = effectSystem.ViewType
-                                      Color = slice.Color
-                                      Glow = slice.Glow
-                                      Flip = FlipNone }})
+                        Render (transform.Depth, transform.Position.Y, image,
+                            SpriteDescriptor
+                               { Transform = transform
+                                 Offset = slice.Offset
+                                 InsetOpt = Some inset
+                                 Image = AssetTag.specialize<Image> image
+                                 Color = slice.Color
+                                 Glow = slice.Glow
+                                 Flip = FlipNone })
                     addView animatedSpriteView effectSystem
                 else effectSystem
 
@@ -570,21 +568,21 @@ module EffectSystem =
         // build sprite views
         let effectSystem =
             if slice.Enabled then
+                let mutable transform =
+                    { Position = slice.Position - slice.Size * 0.5f
+                      Size = slice.Size
+                      Rotation = slice.Rotation
+                      Depth = slice.Depth
+                      Flags = 0 }
+                transform.Absolute <- effectSystem.Absolute
                 let spriteView =
-                    Render
-                        (LayerableDescriptor
-                            { Depth = slice.Depth
-                              AssetTag = font
-                              PositionY = slice.Position.Y
-                              LayeredDescriptor =
-                                TextDescriptor 
-                                    { Position = slice.Position - slice.Size * 0.5f
-                                      Size = slice.Size
-                                      ViewType = effectSystem.ViewType
-                                      Text = text
-                                      Font = AssetTag.specialize<Font> font
-                                      Color = slice.Color
-                                      Justification = Justified (JustifyCenter, JustifyMiddle) }})
+                    Render (transform.Depth, transform.Position.Y, font,
+                        TextDescriptor 
+                            { Transform = transform
+                              Text = text
+                              Font = AssetTag.specialize<Font> font
+                              Color = slice.Color
+                              Justification = Justified (JustifyCenter, JustifyMiddle) })
                 addView spriteView effectSystem
             else effectSystem
 
@@ -757,8 +755,8 @@ module EffectSystem =
               Content = Contents (Shift 0.0f, effects |> List.map (fun effect -> effect.Content) |> Array.ofList) }
         effectCombined
 
-    let make viewType history effectTime globalEnv = 
-        { ViewType = viewType
+    let make absolute history effectTime globalEnv = 
+        { Absolute = absolute
           Views = List<View> ()
           History = history
           ProgressOffset = 0.0f

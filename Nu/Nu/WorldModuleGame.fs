@@ -21,10 +21,7 @@ module WorldModuleGame =
         static member private publishGameChange propertyName (propertyValue : obj) world =
             let game = Game ()
             let world =
-                let changeData =
-                    match propertyValue with
-                    | :? DesignerProperty as dp -> { Name = propertyName; Value = dp.DesignerValue }
-                    | _ -> { Name = propertyName; Value = propertyValue }
+                let changeData = { Name = propertyName; Value = propertyValue }
                 let changeEventAddress = rtoa<ChangeData> [|"Change"; propertyName; "Event"|]
                 let eventTrace = EventTrace.record "World" "publishGameChange" EventTrace.empty
                 World.publishPlus changeData changeEventAddress eventTrace game false world
@@ -235,15 +232,15 @@ module WorldModuleGame =
 
         /// Get the bounds of the eye's sight.
         [<FunctionBinding>]
-        static member getViewBounds viewType world =
-            match viewType with
-            | Relative -> World.getViewBoundsRelative world
-            | Absolute -> World.getViewBoundsAbsolute world
+        static member getViewBounds absolute world =
+            if absolute
+            then World.getViewBoundsAbsolute world
+            else World.getViewBoundsRelative world
 
         /// Check that the given bounds is within the eye's sight.
         [<FunctionBinding>]
-        static member isBoundsInView viewType (bounds : Vector4) world =
-            let viewBounds = World.getViewBounds viewType world
+        static member isBoundsInView absolute (bounds : Vector4) world =
+            let viewBounds = World.getViewBounds absolute world
             Math.isBoundsIntersectingBounds bounds viewBounds
 
         /// Transform the given mouse position to screen space.
@@ -258,19 +255,19 @@ module WorldModuleGame =
 
         /// Transform the given mouse position to world space.
         [<FunctionBinding>]
-        static member mouseToWorld viewType mousePosition world =
+        static member mouseToWorld absolute mousePosition world =
             let positionScreen = World.mouseToScreen mousePosition world
             let view =
-                match viewType with
-                | Relative -> World.getViewRelative world
-                | Absolute -> World.getViewAbsolute world
+                if absolute
+                then World.getViewAbsolute world
+                else World.getViewRelative world
             let positionWorld = positionScreen * view
             positionWorld
 
         /// Transform the given mouse position to entity space.
         [<FunctionBinding>]
-        static member mouseToEntity viewType entityPosition mousePosition world =
-            let mousePositionWorld = World.mouseToWorld viewType mousePosition world
+        static member mouseToEntity absolute entityPosition mousePosition world =
+            let mousePositionWorld = World.mouseToWorld absolute mousePosition world
             entityPosition - mousePositionWorld
 
         /// Fetch an asset with the given tag and convert it to a value of type 'a.

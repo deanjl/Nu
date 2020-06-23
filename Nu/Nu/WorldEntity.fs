@@ -43,14 +43,14 @@ module WorldEntityModule =
         member this.GetDepth world = World.getEntityDepth this world
         member this.SetDepth value world = World.setEntityDepth value this world
         member this.Depth = lens Property? Depth this.GetDepth this.SetDepth this
-        member this.GetDepthLayered world = World.getEntityDepth this world + if not (World.getEntityIgnoreLayer this world) then World.getLayerDepth this.Parent world else 0.0f
-        member this.DepthLayered = lensReadOnly Property? DepthLayered this.GetDepthLayered this
-        member this.GetViewType world = World.getEntityViewType this world
-        member this.SetViewType value world = World.setEntityViewType value this world
-        member this.ViewType = lens Property? ViewType this.GetViewType this.SetViewType this
+        member this.GetFlags world = World.getEntityFlags this world
+        member this.Flags = lensReadOnly Property? Flags this.GetFlags this
         member this.GetOmnipresent world = World.getEntityOmnipresent this world
         member this.SetOmnipresent value world = World.setEntityOmnipresent value this world
         member this.Omnipresent = lens Property? Omnipresent this.GetOmnipresent this.SetOmnipresent this
+        member this.GetAbsolute world = World.getEntityAbsolute this world
+        member this.SetAbsolute value world = World.setEntityAbsolute value this world
+        member this.Absolute = lens Property? Absolute this.GetAbsolute this.SetAbsolute this
         member this.GetOverflow world = World.getEntityOverflow this world
         member this.SetOverflow value world = World.setEntityOverflow value this world
         member this.Overflow = lens Property? Overflow this.GetOverflow this.SetOverflow this
@@ -60,17 +60,12 @@ module WorldEntityModule =
         member this.GetPublishChanges world = World.getEntityPublishChanges this world
         member this.SetPublishChanges value world = World.setEntityPublishChanges value this world
         member this.PublishChanges = lens Property? PublishChanges this.GetPublishChanges this.SetPublishChanges this
-        member this.GetIgnoreLayer world = World.getEntityIgnoreLayer this world
-        member this.SetIgnoreLayer value world = World.setEntityIgnoreLayer value this world
-        member this.IgnoreLayer = lens Property? IgnoreLayer this.GetIgnoreLayer this.SetIgnoreLayer this
         member this.GetEnabled world = World.getEntityEnabled this world
         member this.SetEnabled value world = World.setEntityEnabled value this world
         member this.Enabled = lens Property? Enabled this.GetEnabled this.SetEnabled this
         member this.GetVisible world = World.getEntityVisible this world
         member this.SetVisible value world = World.setEntityVisible value this world
         member this.Visible = lens Property? Visible this.GetVisible this.SetVisible this
-        member this.GetVisibleLayered world = World.getEntityVisible this world && if not (World.getEntityIgnoreLayer this world) then World.getLayerVisible this.Parent world else true
-        member this.VisibleLayered = lensReadOnly Property? VisibleLayered this.GetVisibleLayered this
         member this.GetAlwaysUpdate world = World.getEntityAlwaysUpdate this world
         member this.SetAlwaysUpdate value world = World.setEntityAlwaysUpdate value this world
         member this.AlwaysUpdate = lens Property? AlwaysUpdate this.GetAlwaysUpdate this.SetAlwaysUpdate this
@@ -167,7 +162,7 @@ module WorldEntityModule =
         member this.GetInView world =
             if not (this.GetOmnipresent world) then
                 World.isBoundsInView
-                    (this.GetViewType world)
+                    (this.GetAbsolute world)
                     (this.GetBoundsOverflow world)
                     world
              else true
@@ -301,7 +296,7 @@ module WorldEntityModule =
             let entitiesSorted = World.sortEntities entities world
             Array.tryFind
                 (fun (entity : Entity) ->
-                    let positionWorld = World.mouseToWorld (entity.GetViewType world) position world
+                    let positionWorld = World.mouseToWorld (entity.GetAbsolute world) position world
                     let picked = Math.isPointInBounds positionWorld (entity.GetBounds world)
                     picked)
                 entitiesSorted

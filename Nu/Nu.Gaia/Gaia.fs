@@ -284,7 +284,7 @@ module Gaia =
         match form.entityPropertyGrid.SelectedObject with
         | :? EntityTypeDescriptorSource as entityTds ->
             let entity = entityTds.DescribedEntity
-            let mousePositionWorld = World.mouseToWorld (entity.GetViewType world) mousePosition world
+            let mousePositionWorld = World.mouseToWorld (entity.GetAbsolute world) mousePosition world
             if Math.isPointInBounds mousePositionWorld (entity.GetBounds world)
             then (Some entity, world)
             else tryMousePickInner form mousePosition world
@@ -333,7 +333,7 @@ module Gaia =
                 let world = if entity.GetImperative world then World.divergeEntity entity world else world
                 let world =
                     updateEditorState (fun editorState ->
-                        let mousePositionWorld = World.mouseToWorld (entity.GetViewType world) mousePosition world
+                        let mousePositionWorld = World.mouseToWorld (entity.GetAbsolute world) mousePosition world
                         let entityPosition =
                             if entity.Has<NodeFacet> world && entity.ParentNodeExists world
                             then entity.GetPositionLocal world
@@ -371,9 +371,9 @@ module Gaia =
         | DragCameraNone -> (Resolve, world)
 
     let private monitorEntityEvents (layer : Layer) form world =
-        let world = World.monitorPlus None None None (handleNuChangeParentNodeOpt form) (Events.Change Property? ParentNodeOpt --> layer --> Events.Wildcard) layer world |> snd
-        let world = World.monitorPlus None None None (handleNuEntityRegister form) (Events.Register --> layer --> Events.Wildcard) layer world |> snd
-        let world = World.monitorPlus None None None (handleNuEntityUnregistering form) (Events.Unregistering --> layer --> Events.Wildcard) layer world |> snd
+        let world = World.monitor (handleNuChangeParentNodeOpt form) (Events.Change Property? ParentNodeOpt --> layer --> Events.Wildcard) layer world
+        let world = World.monitor (handleNuEntityRegister form) (Events.Register --> layer --> Events.Wildcard) layer world
+        let world = World.monitor (handleNuEntityUnregistering form) (Events.Unregistering --> layer --> Events.Wildcard) layer world
         world
 
     let private trySaveSelectedLayer filePath world =
@@ -621,11 +621,7 @@ module Gaia =
                 match selectedGridItem.GridItemType with
                 | GridItemType.Property when form.propertyNameLabel.Text = selectedGridItem.Label ->
                     let propertyDescriptor = selectedGridItem.PropertyDescriptor :?> EntityPropertyDescriptor
-                    let designTypeOpt =
-                        match propertyDescriptor.GetValue entityTds with
-                        | :? DesignerProperty as dp -> Some dp.DesignerType
-                        | _ -> None
-                    let typeConverter = SymbolicConverter (false, designTypeOpt, propertyDescriptor.PropertyType)
+                    let typeConverter = SymbolicConverter (false, None, propertyDescriptor.PropertyType)
                     try form.propertyValueTextBox.EndUndoAction ()
                         let strEscaped = form.propertyValueTextBox.Text.TrimEnd ()
                         let strUnescaped = String.unescape strEscaped
@@ -854,15 +850,14 @@ module Gaia =
                 let mousePosition = World.getMousePositionF world
                 let entityPosition =
                     if atMouse
-                    then World.mouseToWorld (entity.GetViewType world) mousePosition world
-                    else World.mouseToWorld (entity.GetViewType world) (World.getEyeSize world * 0.5f) world
+                    then World.mouseToWorld (entity.GetAbsolute world) mousePosition world
+                    else World.mouseToWorld (entity.GetAbsolute world) (World.getEyeSize world * 0.5f) world
                 let entityTransform =
                     { Position = entityPosition
                       Size = entity.GetQuickSize world
                       Rotation = entity.GetRotation world
                       Depth = getCreationDepth form
-                      ViewType = entity.GetViewType world
-                      Omnipresent = entity.GetOmnipresent world }
+                      Flags = entity.GetFlags world }
                 let world = entity.SetTransformSnapped positionSnap rotationSnap entityTransform world
                 let world = entity.PropagatePhysics world
                 selectEntity entity form world
@@ -1340,7 +1335,7 @@ module Gaia =
                 if entity.Exists world then
                     let (positionSnap, _) = getSnaps form
                     let mousePosition = World.getMousePositionF world
-                    let mousePositionWorld = World.mouseToWorld (entity.GetViewType world) mousePosition world
+                    let mousePositionWorld = World.mouseToWorld (entity.GetAbsolute world) mousePosition world
                     let entityPosition = (pickOffset - mousePositionWorldOrig) + (mousePositionWorld - mousePositionWorldOrig)
                     let entityPositionSnapped = Math.snap2F positionSnap entityPosition
                     let world =
@@ -1424,11 +1419,11 @@ module Gaia =
                               SelectedLayer = defaultLayer
                               FilePaths = Map.empty }
                         let world = World.addKeyedValue Globals.EditorGuid editorState world
-                        let world = World.subscribePlus Gen.id None None None (handleNuMouseRightDown form) Events.MouseRightDown Simulants.Game world |> snd
-                        let world = World.subscribePlus Gen.id None None None (handleNuEntityDragBegin form) Events.MouseLeftDown Simulants.Game world |> snd
-                        let world = World.subscribePlus Gen.id None None None (handleNuEntityDragEnd form) Events.MouseLeftUp Simulants.Game world |> snd
-                        let world = World.subscribePlus Gen.id None None None (handleNuCameraDragBegin form) Events.MouseCenterDown Simulants.Game world |> snd
-                        let world = World.subscribePlus Gen.id None None None (handleNuCameraDragEnd form) Events.MouseCenterUp Simulants.Game world |> snd
+                        let world = World.subscribe (handleNuMouseRightDown form) Events.MouseRightDown Simulants.Game world
+                        let world = World.subscribe (handleNuEntityDragBegin form) Events.MouseLeftDown Simulants.Game world
+                        let world = World.subscribe (handleNuEntityDragEnd form) Events.MouseLeftUp Simulants.Game world
+                        let world = World.subscribe (handleNuCameraDragBegin form) Events.MouseCenterDown Simulants.Game world
+                        let world = World.subscribe (handleNuCameraDragEnd form) Events.MouseCenterUp Simulants.Game world
                         (defaultLayer, world)
                     | Some _ -> (defaultLayer, world) // NOTE: conclude world is already attached
                 | [] -> failwith ("Cannot attach Gaia to a world with no layers inside the '" + scstring Simulants.DefaultScreen + "' screen.")

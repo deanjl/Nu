@@ -47,11 +47,8 @@ type [<StructuralEquality; StructuralComparison>] Flip =
 
 /// Describes how to render a sprite to the rendering system.
 type [<StructuralEquality; NoComparison>] SpriteDescriptor =
-    { Position : Vector2
-      Size : Vector2
-      Rotation : single
+    { Transform : Transform
       Offset : Vector2
-      ViewType : ViewType
       InsetOpt : Vector4 option
       Image : Image AssetTag
       Color : Vector4
@@ -60,10 +57,7 @@ type [<StructuralEquality; NoComparison>] SpriteDescriptor =
 
 /// Describes how to render a tile map to the rendering system.
 type [<StructuralEquality; NoComparison>] TileLayerDescriptor =
-    { Position : Vector2
-      Size : Vector2
-      Rotation : single
-      ViewType : ViewType
+    { Transform : Transform
       MapSize : Vector2i
       Tiles : TmxLayerTile array
       TileSourceSize : Vector2i
@@ -73,40 +67,35 @@ type [<StructuralEquality; NoComparison>] TileLayerDescriptor =
 
 /// Describes how to render text to the rendering system.
 type [<StructuralEquality; NoComparison>] TextDescriptor =
-    { Position : Vector2
-      Size : Vector2
-      ViewType : ViewType
+    { Transform : Transform
       Text : string
       Font : Font AssetTag
       Color : Vector4
       Justification : Justification }
 
-/// Describes how to render a layered 'thing' to the rendering system.
-type [<StructuralEquality; NoComparison>] LayeredDescriptor =
+/// Describes how to render something to the rendering system.
+type [<StructuralEquality; NoComparison>] RenderDescriptor =
     | SpriteDescriptor of SpriteDescriptor : SpriteDescriptor
     | SpritesDescriptor of SpriteDescriptors : SpriteDescriptor array
     | TileLayerDescriptor of TileLayerDescriptor : TileLayerDescriptor
     | TextDescriptor of TextDescriptor : TextDescriptor
 
-/// Describes how to render a layerable 'thing' to the rendering system.
-type [<StructuralEquality; NoComparison>] LayerableDescriptor =
+/// Describes how to render a layered thing to the rendering system.
+type [<StructuralEquality; NoComparison>] LayeredDescriptor =
     { Depth : single
-      AssetTag : AssetTag
       PositionY : single
-      LayeredDescriptor : LayeredDescriptor }
-
-/// Describes how to render something to the rendering system.
-type [<StructuralEquality; NoComparison>] RenderDescriptor =
-    | LayerableDescriptor of LayerableDescriptor
+      AssetTag : AssetTag
+      RenderDescriptor : RenderDescriptor }
 
 /// A message to the rendering system.
 type [<StructuralEquality; NoComparison>] RenderMessage =
-    | RenderDescriptorMessage of RenderDescriptor
-    | RenderDescriptorsMessage of RenderDescriptor array
+    | LayeredDescriptorMessage of LayeredDescriptor
+    | LayeredDescriptorsMessage of LayeredDescriptor array
     | HintRenderPackageUseMessage of string
     | HintRenderPackageDisuseMessage of string
     | ReloadRenderAssetsMessage
     //| ScreenFlashMessage of ...
+    //| ScreenShakeMessage of ...
 
 /// An asset that is used for rendering.
 type [<StructuralEquality; NoComparison>] RenderAsset =
@@ -147,16 +136,16 @@ type [<ReferenceEquality; NoComparison>] SdlRenderer =
         { RenderContext : nativeint
           RenderPackages : RenderAsset Packages
           mutable RenderMessages : RenderMessage List
-          RenderDescriptors : RenderDescriptor List }
+          LayeredDescriptors : LayeredDescriptor List }
 
-    static member private sortDescriptors (LayerableDescriptor left) (LayerableDescriptor right) =
+    static member private sortDescriptors (left : LayeredDescriptor) (right : LayeredDescriptor) =
         let depthCompare = left.Depth.CompareTo right.Depth
         if depthCompare <> 0 then depthCompare else
         let positionYCompare = -(left.PositionY.CompareTo right.PositionY)
         if positionYCompare <> 0 then positionYCompare else
-        let packageCompare = strCmp left.AssetTag.PackageName right.AssetTag.PackageName
-        if packageCompare <> 0 then packageCompare else
-        strCmp left.AssetTag.AssetName right.AssetTag.AssetName
+        let assetNameCompare = strCmp left.AssetTag.AssetName right.AssetTag.AssetName
+        if assetNameCompare <> 0 then assetNameCompare else
+        strCmp left.AssetTag.PackageName right.AssetTag.PackageName
 
     static member private freeRenderAsset renderAsset =
         match renderAsset with
@@ -234,8 +223,8 @@ type [<ReferenceEquality; NoComparison>] SdlRenderer =
 
     static member private handleRenderMessage renderMessage renderer =
         match renderMessage with
-        | RenderDescriptorMessage renderDescriptor -> renderer.RenderDescriptors.Add renderDescriptor
-        | RenderDescriptorsMessage renderDescriptors -> renderer.RenderDescriptors.AddRange renderDescriptors
+        | LayeredDescriptorMessage descriptor -> renderer.LayeredDescriptors.Add descriptor
+        | LayeredDescriptorsMessage descriptors -> renderer.LayeredDescriptors.AddRange descriptors
         | HintRenderPackageUseMessage hintPackageUse -> SdlRenderer.handleHintRenderPackageUse hintPackageUse renderer
         | HintRenderPackageDisuseMessage hintPackageDisuse -> SdlRenderer.handleHintRenderPackageDisuse hintPackageDisuse renderer
         | ReloadRenderAssetsMessage -> SdlRenderer.handleReloadRenderAssets renderer
@@ -249,23 +238,24 @@ type [<ReferenceEquality; NoComparison>] SdlRenderer =
         (viewRelative : Matrix3)
         (_ : Vector2)
         (eyeSize : Vector2)
-        (sprite : SpriteDescriptor)
+        (descriptor : SpriteDescriptor)
         renderer =
-        let view = match sprite.ViewType with Absolute -> viewAbsolute | Relative -> viewRelative
-        let position = sprite.Position - Vector2.Multiply (sprite.Offset, sprite.Size)
+        let mutable transform = descriptor.Transform
+        let view = if transform.Absolute then viewAbsolute else viewRelative
+        let position = transform.Position - Vector2.Multiply (descriptor.Offset, transform.Size)
         let positionView = position * view
-        let sizeView = sprite.Size * view.ExtractScaleMatrix ()
-        let color = sprite.Color
-        let glow = sprite.Glow
-        let image = AssetTag.generalize sprite.Image
-        let flip = Flip.toSdlFlip sprite.Flip
+        let sizeView = transform.Size * view.ExtractScaleMatrix ()
+        let color = descriptor.Color
+        let glow = descriptor.Glow
+        let image = AssetTag.generalize descriptor.Image
+        let flip = Flip.toSdlFlip descriptor.Flip
         match SdlRenderer.tryLoadRenderAsset image renderer with
         | Some renderAsset ->
             match renderAsset with
             | TextureAsset texture ->
                 let (_, _, _, textureSizeX, textureSizeY) = SDL.SDL_QueryTexture texture
                 let mutable sourceRect = SDL.SDL_Rect ()
-                match sprite.InsetOpt with
+                match descriptor.InsetOpt with
                 | Some inset ->
                     sourceRect.x <- int inset.X
                     sourceRect.y <- int inset.Y
@@ -281,7 +271,7 @@ type [<ReferenceEquality; NoComparison>] SdlRenderer =
                 destRect.y <- int (-positionView.Y + eyeSize.Y * 0.5f - sizeView.Y) // negation for right-handedness
                 destRect.w <- int sizeView.X
                 destRect.h <- int sizeView.Y
-                let rotation = double -sprite.Rotation * Constants.Math.RadiansToDegrees // negation for right-handedness
+                let rotation = double -transform.Rotation * Constants.Math.RadiansToDegrees // negation for right-handedness
                 let mutable rotationCenter = SDL.SDL_Point ()
                 rotationCenter.x <- int (sizeView.X * 0.5f)
                 rotationCenter.y <- int (sizeView.Y * 0.5f)
@@ -310,10 +300,11 @@ type [<ReferenceEquality; NoComparison>] SdlRenderer =
         (eyeSize : Vector2)
         (descriptor : TileLayerDescriptor)
         renderer =
-        let view = match descriptor.ViewType with Absolute -> viewAbsolute | Relative -> viewRelative
-        let positionView = descriptor.Position * view
-        let sizeView = descriptor.Size * view.ExtractScaleMatrix ()
-        let tileRotation = descriptor.Rotation
+        let mutable transform = descriptor.Transform
+        let view = if transform.Absolute then viewAbsolute else viewRelative
+        let positionView = transform.Position * view
+        let sizeView = transform.Size * view.ExtractScaleMatrix ()
+        let tileRotation = transform.Rotation
         let mapSize = descriptor.MapSize
         let tiles = descriptor.Tiles
         let tileSourceSize = descriptor.TileSourceSize
@@ -376,9 +367,10 @@ type [<ReferenceEquality; NoComparison>] SdlRenderer =
         (eyeSize : Vector2)
         (descriptor : TextDescriptor)
         renderer =
-        let view = match descriptor.ViewType with Absolute -> viewAbsolute | Relative -> viewRelative
-        let positionView = descriptor.Position * view
-        let sizeView = descriptor.Size * view.ExtractScaleMatrix ()
+        let mutable transform = descriptor.Transform
+        let view = if transform.Absolute then viewAbsolute else viewRelative
+        let positionView = transform.Position * view
+        let sizeView = transform.Size * view.ExtractScaleMatrix ()
         let text = String.textualize descriptor.Text
         let color = descriptor.Color
         let font = AssetTag.generalize descriptor.Font
@@ -436,20 +428,20 @@ type [<ReferenceEquality; NoComparison>] SdlRenderer =
             | _ -> Log.debug "Cannot render text with a non-font asset."
         | _ -> Log.info ("TextDescriptor failed due to unloadable assets for '" + scstring font + "'.")
 
-    static member private renderLayerableDescriptor
+    static member private renderDescriptor
         (viewAbsolute : Matrix3)
         (viewRelative : Matrix3)
         (eyeCenter : Vector2)
         (eyeSize : Vector2)
-        layerableDescriptor
+        descriptor
         renderer =
-        match layerableDescriptor with
+        match descriptor with
         | SpriteDescriptor sprite -> SdlRenderer.renderSprite viewAbsolute viewRelative eyeCenter eyeSize sprite renderer
         | SpritesDescriptor sprites -> SdlRenderer.renderSprites viewAbsolute viewRelative eyeCenter eyeSize sprites renderer
         | TileLayerDescriptor descriptor -> SdlRenderer.renderTileLayerDescriptor viewAbsolute viewRelative eyeCenter eyeSize descriptor renderer
         | TextDescriptor descriptor -> SdlRenderer.renderTextDescriptor viewAbsolute viewRelative eyeCenter eyeSize descriptor renderer
 
-    static member private renderDescriptors eyeCenter eyeSize (renderDescriptors : RenderDescriptor List) renderer =
+    static member private renderLayeredDescriptors eyeCenter eyeSize (descriptors : LayeredDescriptor List) renderer =
         let renderContext = renderer.RenderContext
         let targetResult = SDL.SDL_SetRenderTarget (renderContext, IntPtr.Zero)
         match targetResult with
@@ -457,10 +449,9 @@ type [<ReferenceEquality; NoComparison>] SdlRenderer =
             SDL.SDL_SetRenderDrawBlendMode (renderContext, SDL.SDL_BlendMode.SDL_BLENDMODE_ADD) |> ignore
             let viewAbsolute = (Math.getViewAbsoluteI eyeCenter eyeSize).InvertedView ()
             let viewRelative = (Math.getViewRelativeI eyeCenter eyeSize).InvertedView ()
-            renderDescriptors.Sort SdlRenderer.sortDescriptors
-            for renderDescriptor in renderDescriptors do
-                let layeredDescriptor = match renderDescriptor with LayerableDescriptor layerableDescriptor -> layerableDescriptor.LayeredDescriptor
-                SdlRenderer.renderLayerableDescriptor viewAbsolute viewRelative eyeCenter eyeSize layeredDescriptor renderer
+            descriptors.Sort SdlRenderer.sortDescriptors
+            for descriptor in descriptors do
+                SdlRenderer.renderDescriptor viewAbsolute viewRelative eyeCenter eyeSize descriptor.RenderDescriptor renderer
         | _ ->
             Log.trace ("Render error - could not set render target to display buffer due to '" + SDL.SDL_GetError () + ".")
 
@@ -470,7 +461,7 @@ type [<ReferenceEquality; NoComparison>] SdlRenderer =
             { RenderContext = renderContext
               RenderPackages = dictPlus []
               RenderMessages = List ()
-              RenderDescriptors = List<RenderDescriptor> () }
+              LayeredDescriptors = List () }
         renderer
 
     interface Renderer with
@@ -488,8 +479,8 @@ type [<ReferenceEquality; NoComparison>] SdlRenderer =
 
         member renderer.Render eyeCenter eyeSize renderMessages =
             SdlRenderer.handleRenderMessages renderMessages renderer
-            SdlRenderer.renderDescriptors eyeCenter eyeSize renderer.RenderDescriptors renderer
-            renderer.RenderDescriptors.Clear ()
+            SdlRenderer.renderLayeredDescriptors eyeCenter eyeSize renderer.LayeredDescriptors renderer
+            renderer.LayeredDescriptors.Clear ()
 
         member renderer.CleanUp () =
             let renderAssetPackages = renderer.RenderPackages |> Seq.map (fun entry -> entry.Value)
