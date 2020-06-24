@@ -16,3 +16,8 @@ module PlayerDispatcherModule =
 
         static member Properties =
             [define Entity.CharacterState { CharacterState.empty with HitPoints = 30; ControlType = PlayerControlled }]
+
+        override this.Register (entity, world) =
+            let world = base.Register (entity, world)
+            let characterState = { CharacterState.empty with HitPoints = 30; ControlType = PlayerControlled }
+            entity.SetCharacterModel { CharacterModel.initial with CharacterState = characterState } world

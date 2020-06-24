@@ -16,6 +16,11 @@ module CharacterDispatcherModule =
             { CharacterActivityState = NoActivity
               CharacterState = CharacterState.empty }
     
+    type Entity with
+        member this.GetCharacterModel = this.GetModel<CharacterModel>
+        member this.SetCharacterModel = this.SetModel<CharacterModel>
+        member this.CharacterModel = this.Model<CharacterModel> ()
+    
     type CharacterDispatcher () =
         inherit EntityDispatcher<CharacterModel, unit, unit> (CharacterModel.initial)
 
