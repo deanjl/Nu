@@ -243,7 +243,7 @@ module GameplayDispatcherModule =
             else NoTurn
 
         static let determineDesiredEnemyTurn occupationMap (player : Entity) (enemy : Entity) world =
-            match (enemy.GetCharacterState world).ControlType with
+            match (enemy.GetCharacterModel world).CharacterState.ControlType with
             | PlayerControlled as controlType ->
                 Log.debug ("Invalid ControlType '" + scstring controlType + "' for enemy.")
                 NoTurn
@@ -306,7 +306,7 @@ module GameplayDispatcherModule =
             else NoTurn
 
         static let determinePlayerTurnFromInput playerInput world =
-            match (Simulants.Player.GetCharacterState world).ControlType with
+            match (Simulants.Player.GetCharacterModel world).CharacterState.ControlType with
             | PlayerControlled ->
                 match playerInput with
                 | TouchInput touchPosition -> determinePlayerTurnFromTouch touchPosition world
@@ -413,12 +413,14 @@ module GameplayDispatcherModule =
                     world
             if actionDescriptor.ActionTicks = (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
                 let reactorDamage = 4 // NOTE: just hard-coding damage for now
-                let world = reactor.CharacterState.Update (fun state -> { state with HitPoints = state.HitPoints - reactorDamage }) world
-                if reactor.CharacterState.GetBy (fun state -> state.HitPoints <= 0) world then
+                let reactorModel = reactor.GetCharacterModel world
+                let reactorState = reactorModel.CharacterState
+                let world = reactor.SetCharacterModel { reactorModel with CharacterState = { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } } world
+                if (reactor.GetCharacterModel world).CharacterState.HitPoints <= 0 then
                     reactor.SetCharacterAnimationState {reactor.GetCharacterAnimationState world with AnimationType = CharacterAnimationSlain} world
                 else world
             elif actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
-                if reactor.CharacterState.GetBy (fun state -> state.HitPoints <= 0) world then
+                if (reactor.GetCharacterModel world).CharacterState.HitPoints <= 0 then
                     if reactor.Name = Simulants.Player.Name then World.transitionScreen Simulants.Title world else World.destroyEntity reactor world
                 else world
             else world
@@ -537,7 +539,7 @@ module GameplayDispatcherModule =
             world
         
         override this.Channel (_, _) =
-            [Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
+            [//Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
              Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSelected Simulants.HudFeeler =|> fun evt -> cmd (HandlePlayerInput (TouchInput evt.Data))
              Stream.make Simulants.HudDetailUp.DownEvent |> Stream.isSelected Simulants.HudDetailUp => cmd (HandlePlayerInput (DetailInput Upward))
              Stream.make Simulants.HudDetailRight.DownEvent |> Stream.isSelected Simulants.HudDetailRight => cmd (HandlePlayerInput (DetailInput Rightward))

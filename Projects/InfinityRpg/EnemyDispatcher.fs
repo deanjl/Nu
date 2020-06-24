@@ -18,8 +18,7 @@ module EnemyDispatcherModule =
         inherit CharacterDispatcher ()
 
         static member Properties =
-            [define Entity.CharacterState { CharacterState.empty with HitPoints = 10; ControlType = Chaos }
-             define Entity.DesiredTurn NoTurn]
+            [define Entity.DesiredTurn NoTurn]
 
         override this.Register (entity, world) =
             let world = base.Register (entity, world)

@@ -25,8 +25,7 @@ module CharacterDispatcherModule =
         inherit EntityDispatcher<CharacterModel, unit, unit> (CharacterModel.initial)
 
         static member Facets =
-            [typeof<CharacterStateFacet>
-             typeof<CharacterAnimationFacet>]
+            [typeof<CharacterAnimationFacet>]
 
         static member Properties =
             [define Entity.PublishChanges true

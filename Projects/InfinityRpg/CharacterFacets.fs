@@ -6,25 +6,6 @@ open Nu.Declarative
 open InfinityRpg
 
 [<AutoOpen>]
-module CharacterStateFacetModule =
-
-    type Entity with
-    
-        member this.GetCharacterActivityState = this.Get Property? CharacterActivityState
-        member this.SetCharacterActivityState = this.Set Property? CharacterActivityState
-        member this.CharacterActivityState = lens<CharacterActivityState> Property? CharacterActivityState this.GetCharacterActivityState this.SetCharacterActivityState this
-        member this.GetCharacterState = this.Get Property? CharacterState
-        member this.SetCharacterState = this.Set Property? CharacterState
-        member this.CharacterState = lens<CharacterState> Property? CharacterState this.GetCharacterState this.SetCharacterState this
-
-    type CharacterStateFacet () =
-        inherit Facet ()
-
-        static member Properties =
-            [define Entity.CharacterActivityState NoActivity
-             define Entity.CharacterState CharacterState.empty]
-
-[<AutoOpen>]
 module CharacterAnimationFacetModule =
 
     type Entity with
