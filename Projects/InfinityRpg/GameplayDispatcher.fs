@@ -279,7 +279,7 @@ module GameplayDispatcherModule =
             let enemies = getEnemies world
             let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
             if not (anyTurnsInProgress2 Simulants.Player enemies world) then
-                let touchPositionW = World.mouseToWorld Relative touchPosition world
+                let touchPositionW = World.mouseToWorld false touchPosition world
                 let occupationMapWithAdjacentEnemies =
                     OccupationMap.makeFromFieldTilesAndAdjacentCharacters
                         (vftovm (Simulants.Player.GetPosition world))

@@ -95,24 +95,26 @@ module CharacterAnimationFacetModule =
 
         override this.Actualize (entity, world) =
             if entity.GetInView world then
+                let transform =
+                    { Position = entity.GetPosition world
+                      Size = entity.GetSize world
+                      Rotation = entity.GetRotation world
+                      Depth = entity.GetDepth world 
+                      Flags = entity.GetFlags world }
                 World.enqueueRenderMessage
-                    (RenderDescriptorsMessage
-                        [|LayerableDescriptor
-                            { Depth = entity.GetDepth world
-                              AssetTag = entity.GetCharacterAnimationSheet world
-                              PositionY = (entity.GetPosition world).Y
-                              LayeredDescriptor =
-                                SpriteDescriptor
-                                    { Position = entity.GetPosition world
-                                      Size = entity.GetSize world
-                                      Rotation = entity.GetRotation world
-                                      Offset = Vector2.Zero
-                                      ViewType = entity.GetViewType world
-                                      InsetOpt = getSpriteInsetOpt entity world
-                                      Image = entity.GetCharacterAnimationSheet world
-                                      Color = Vector4.One
-                                      Glow = Vector4.Zero
-                                      Flip = FlipNone }}|])
+                    (LayeredDescriptorMessage
+                        { Depth = entity.GetDepth world
+                          AssetTag = entity.GetCharacterAnimationSheet world
+                          PositionY = (entity.GetPosition world).Y
+                          RenderDescriptor =
+                            SpriteDescriptor
+                                { Transform = transform
+                                  Offset = Vector2.Zero
+                                  InsetOpt = getSpriteInsetOpt entity world
+                                  Image = entity.GetCharacterAnimationSheet world
+                                  Color = Vector4.One
+                                  Glow = Vector4.Zero
+                                  Flip = FlipNone }})
                     world
             else world
 

@@ -53,8 +53,8 @@ module FieldDispatcherModule =
 
         override this.Actualize (field, world) =
 
-            let viewType =
-                field.GetViewType world
+            let absolute =
+                field.GetAbsolute world
 
             let bounds =
                 Math.makeBoundsOverflow
@@ -62,10 +62,10 @@ module FieldDispatcherModule =
                     (Vector2.Multiply (Constants.Layout.TileSize, Constants.Layout.TileSheetSize))
                     (field.GetOverflow world)
 
-            if World.isBoundsInView viewType bounds world then
+            if World.isBoundsInView absolute bounds world then
                 let fieldMap = field.GetFieldMapNp world
                 let image = fieldMap.FieldTileSheet
-                let mInViewBounds = World.getViewBounds viewType world |> viewBoundsToMapUnits
+                let mInViewBounds = World.getViewBounds absolute world |> viewBoundsToMapUnits
                 let tiles = fieldMap.FieldTiles
                 let sprites =
                     Map.foldBack
@@ -73,12 +73,15 @@ module FieldDispatcherModule =
                             if tilePositionInView tilePositionM mInViewBounds then
                                 let tilePosition = vmtovf tilePositionM // NOTE: field position assumed at origin
                                 let tileInsetOpt = getTileInsetOpt tile.TileSheetPositionM
-                                let sprite =
+                                let tileTransform =
                                     { Position = tilePosition
                                       Size = Constants.Layout.TileSize
                                       Rotation = 0.0f // NOTE: rotation assumed zero
+                                      Depth = field.GetDepth world
+                                      Flags = field.GetFlags world }
+                                let sprite =
+                                    { Transform = tileTransform
                                       Offset = Vector2.Zero
-                                      ViewType = Relative // NOTE: ViewType assumed relative
                                       InsetOpt = tileInsetOpt
                                       Image = image
                                       Color = Vector4.One
@@ -90,12 +93,11 @@ module FieldDispatcherModule =
                     Array.ofList
 
                 World.enqueueRenderMessage
-                    (RenderDescriptorsMessage
-                        [|LayerableDescriptor
-                            { Depth = field.GetDepth world
-                              AssetTag = image
-                              PositionY = (field.GetPosition world).Y
-                              LayeredDescriptor = SpritesDescriptor sprites }|])
+                    (LayeredDescriptorMessage
+                        { Depth = field.GetDepth world
+                          AssetTag = image
+                          PositionY = (field.GetPosition world).Y
+                          RenderDescriptor = SpritesDescriptor sprites })
 
                     world
             else world
