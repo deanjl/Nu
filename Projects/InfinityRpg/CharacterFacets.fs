@@ -6,28 +6,6 @@ open Nu.Declarative
 open InfinityRpg
 
 [<AutoOpen>]
-module CharacterAnimationFacetModule =
-
-    type Entity with
-    
-        member this.GetCharacterAnimationState = this.Get Property? CharacterAnimationState
-        member this.SetCharacterAnimationState = this.Set Property? CharacterAnimationState
-        member this.CharacterAnimationState = lens<CharacterAnimationState> Property? CharacterAnimationState this.GetCharacterAnimationState this.SetCharacterAnimationState this
-        member this.GetCharacterAnimationSheet = this.Get Property? CharacterAnimationSheet
-        member this.SetCharacterAnimationSheet = this.Set Property? CharacterAnimationSheet
-        member this.CharacterAnimationSheet = lens<Image AssetTag> Property? CharacterAnimationSheet this.GetCharacterAnimationSheet this.SetCharacterAnimationSheet this
-
-    type CharacterAnimationFacet () =
-        inherit Facet ()
-        
-        static member Properties =
-            [define Entity.CharacterAnimationState
-                    { StartTime = 0L
-                      AnimationType = CharacterAnimationFacing
-                      Direction = Upward }
-             define Entity.CharacterAnimationSheet Assets.PlayerImage]
-
-[<AutoOpen>]
 module CharacterCameraFacetModule =
 
     type CharacterCameraFacet () =

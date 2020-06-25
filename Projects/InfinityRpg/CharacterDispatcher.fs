@@ -33,7 +33,7 @@ module CharacterDispatcherModule =
         inherit EntityDispatcher<CharacterModel, unit, unit> (CharacterModel.initial)
 
         static let getSpriteInsetOpt (entity : Entity) world =
-            let animationState = entity.GetCharacterAnimationState world
+            let animationState = (entity.GetCharacterModel world).CharacterAnimationState
             let animationFrames =
                 match animationState.AnimationType with
                 | CharacterAnimationFacing -> 2
@@ -78,9 +78,6 @@ module CharacterDispatcherModule =
                      spriteOffset.X + Constants.Layout.TileSize.X,
                      spriteOffset.Y + Constants.Layout.TileSize.Y)
             Some spriteInset
-
-        static member Facets =
-            [typeof<CharacterAnimationFacet>]
 
         static member Properties =
             [define Entity.PublishChanges true
