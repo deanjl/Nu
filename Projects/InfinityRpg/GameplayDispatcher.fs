@@ -135,7 +135,7 @@ module GameplayDispatcherModule =
                     let (enemy, world) = World.createEntity<EnemyDispatcher> None DefaultOverlay scene world
                     let world = enemy.SetPosition (vmtovf enemyCoordinates) world
                     let world = enemy.SetDepth Constants.Layout.CharacterDepth world
-                    let world = enemy.SetCharacterAnimationSheet Assets.GoopyImage world
+                    let world = enemy.SetCharacterAnimationSheet Assets.GoopyImage world |> enemy.SetCharacterModel { (enemy.GetCharacterModel world) with CharacterAnimationSheet = Assets.GoopyImage }
                     (enemy :: enemies, rand, world))
                 ([], rand, world)
                 [0 .. enemyCount - 1]
@@ -383,7 +383,7 @@ module GameplayDispatcherModule =
             let (newPosition, walkState) = walk walkDescriptor (character.GetPosition world)
             let world = character.SetPosition newPosition world
             let characterAnimationState = { character.GetCharacterAnimationState world with Direction = walkDescriptor.WalkDirection }
-            let world = character.SetCharacterAnimationState characterAnimationState world
+            let world = character.SetCharacterAnimationState characterAnimationState world |> character.SetCharacterModel { (character.GetCharacterModel world) with CharacterAnimationState = characterAnimationState }
             (walkState, world)
 
         static let updateCharacterByWalkState walkState navigationDescriptor (character : Entity) world =
@@ -417,7 +417,8 @@ module GameplayDispatcherModule =
                 let reactorState = reactorModel.CharacterState
                 let world = reactor.SetCharacterModel { reactorModel with CharacterState = { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } } world
                 if (reactor.GetCharacterModel world).CharacterState.HitPoints <= 0 then
-                    reactor.SetCharacterAnimationState {reactor.GetCharacterAnimationState world with AnimationType = CharacterAnimationSlain} world
+                    let characterAnimationState = (reactor.GetCharacterModel world).CharacterAnimationState
+                    reactor.SetCharacterAnimationState {reactor.GetCharacterAnimationState world with AnimationType = CharacterAnimationSlain} world |> reactor.SetCharacterModel { (reactor.GetCharacterModel world) with CharacterAnimationState = { characterAnimationState with AnimationType = CharacterAnimationSlain } }
                 else world
             elif actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
                 if (reactor.GetCharacterModel world).CharacterState.HitPoints <= 0 then
@@ -426,9 +427,10 @@ module GameplayDispatcherModule =
             else world
 
         static let tickAction actionDescriptor (character : Entity) world =
+            let characterAnimationState = character.GetCharacterAnimationState world
             if actionDescriptor.ActionTicks = 0L then
                 world |>
-                    character.SetCharacterAnimationState (getCharacterAnimationStateByActionBegin (World.getTickTime world) (character.GetPosition world) (character.GetCharacterAnimationState world) actionDescriptor) |>
+                    character.SetCharacterAnimationState (getCharacterAnimationStateByActionBegin (World.getTickTime world) (character.GetPosition world) characterAnimationState actionDescriptor) |> character.SetCharacterModel { (character.GetCharacterModel world) with CharacterAnimationState = (getCharacterAnimationStateByActionBegin (World.getTickTime world) (character.GetPosition world) characterAnimationState actionDescriptor) } |>
                     character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks }) }
             elif actionDescriptor.ActionTicks < (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
                 world |>
@@ -440,7 +442,7 @@ module GameplayDispatcherModule =
             else
                 world |>
                     character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = NoActivity } |>
-                    character.SetCharacterAnimationState (getCharacterAnimationStateByActionEnd (World.getTickTime world) (character.GetCharacterAnimationState world)) |>
+                    character.SetCharacterAnimationState (getCharacterAnimationStateByActionEnd (World.getTickTime world) characterAnimationState) |> // character.SetCharacterModel { character.GetCharacterModel world with CharacterAnimationState = (getCharacterAnimationStateByActionEnd (World.getTickTime world) characterAnimationState ) } |>
                     tickReaction actionDescriptor character
         
         static let tickUpdate world =
