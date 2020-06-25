@@ -197,14 +197,12 @@ module GameplayDispatcherModule =
         static let anyTurnsInProgress2 (player : Entity) enemies world =
             (player.GetCharacterModel world).CharacterActivityState <> NoActivity ||
             Seq.exists
-                (fun (enemy : Entity) -> enemy.GetDesiredTurn world <> NoTurn || (enemy.GetCharacterModel world).CharacterActivityState <> NoActivity)
+                (fun (enemy : Entity) -> (enemy.GetCharacterModel world).DesiredTurnOpt <> Some NoTurn || (enemy.GetCharacterModel world).CharacterActivityState <> NoActivity)
                 enemies
 
         static let anyTurnsInProgress world =
             let enemies = getEnemies world
             anyTurnsInProgress2 Simulants.Player enemies world
-
-        
 
         static let determineCharacterTurnFromDirection direction occupationMap (character : Entity) opponents world =
             match (character.GetCharacterModel world).CharacterActivityState with
@@ -340,7 +338,7 @@ module GameplayDispatcherModule =
                         let noPrecedingEnemyActionActivity = Seq.notExists (fun (state : CharacterActivityState) -> state.IsActing) precedingEnemyActivities
                         let noCurrentEnemyActionActivity = Seq.notExists (fun (enemy : Entity) -> (enemy.GetCharacterModel world).CharacterActivityState.IsActing) enemies
                         if noPrecedingEnemyActionActivity && noCurrentEnemyActionActivity then
-                            match enemy.GetDesiredTurn world with
+                            match Option.get (enemy.GetCharacterModel world).DesiredTurnOpt with
                             | ActionTurn actionDescriptor -> Action actionDescriptor
                             | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
                             | CancelTurn -> NoActivity
@@ -361,14 +359,14 @@ module GameplayDispatcherModule =
         static let trySetEnemyNavigation world newActivity (enemy : Entity) =
             match newActivity with
             | Navigation _ ->
-                let world = enemy.SetDesiredTurn NoTurn world
+                let world = enemy.SetCharacterModel { enemy.GetCharacterModel world with DesiredTurnOpt = Some NoTurn } world
                 setCharacterActivity newActivity enemy world
             | _ -> world
 
         static let trySetEnemyAction world newActivity (enemy : Entity) =
             match newActivity with
             | Action _ ->
-                let world = enemy.SetDesiredTurn NoTurn world
+                let world = enemy.SetCharacterModel { enemy.GetCharacterModel world with DesiredTurnOpt = Some NoTurn } world
                 setCharacterActivity newActivity enemy world
             | _ -> world
         
@@ -487,7 +485,7 @@ module GameplayDispatcherModule =
                 | Navigation _ ->
                     let enemies = getEnemies world
                     let enemyDesiredTurns = determineDesiredEnemyTurns occupationMap Simulants.Player enemies world
-                    Seq.fold2 (fun world (enemy : Entity) turn -> enemy.SetDesiredTurn turn world) world enemies enemyDesiredTurns
+                    Seq.fold2 (fun world (enemy : Entity) turn -> enemy.SetCharacterModel { enemy.GetCharacterModel world with DesiredTurnOpt = Some turn } world) world enemies enemyDesiredTurns
                 | NoActivity -> world
 
             world

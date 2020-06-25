@@ -12,7 +12,8 @@ module CharacterDispatcherModule =
         { CharacterActivityState : CharacterActivityState
           CharacterState : CharacterState
           CharacterAnimationState : CharacterAnimationState
-          CharacterAnimationSheet : Image AssetTag }
+          CharacterAnimationSheet : Image AssetTag
+          DesiredTurnOpt : Turn option }
 
         static member initial =
             let characterAnimationState =
@@ -22,7 +23,8 @@ module CharacterDispatcherModule =
             { CharacterActivityState = NoActivity
               CharacterState = CharacterState.empty
               CharacterAnimationState = characterAnimationState
-              CharacterAnimationSheet = Assets.PlayerImage }
+              CharacterAnimationSheet = Assets.PlayerImage
+              DesiredTurnOpt = None }
     
     type Entity with
         member this.GetCharacterModel = this.GetModel<CharacterModel>
