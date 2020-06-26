@@ -104,7 +104,7 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\Nu\Nu.AStar\Nu.AStar.csproj">
-      <Name>AStar</Name>
+      <Name>Nu.AStar</Name>
       <Project>{61667008-ee77-43b4-8825-0231d241cca6}</Project>
       <Private>True</Private>
     </ProjectReference>
