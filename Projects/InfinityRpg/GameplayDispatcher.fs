@@ -560,33 +560,22 @@ module GameplayDispatcherModule =
                 | QuitGameplay -> World.destroyLayer Simulants.Scene world
                 | RunGameplay ->
                     let world =
-                        if model.ShallLoadGame && File.Exists Assets.SaveFilePath
-                        then // TODO : fix game saving/loading
-                            // get and initialize gameplay screen from read
-                            let world = World.readScreenFromFile Assets.SaveFilePath (Some Simulants.Gameplay.Name) world |> snd
-                            let world = Simulants.Gameplay.SetTransitionState IncomingState world
+                        // TODO : reimplement and fix game loading
+                        // make scene layer
+                        let (scene, world) = World.createLayer (Some Simulants.Scene.Name) Simulants.Gameplay world
 
-                            // make rand from gameplay
-                            let rand = Rand.makeFromSeedState model.ContentRandState
+                        // make rand from gameplay
+                        let rand = Rand.makeFromSeedState model.ContentRandState
 
-                            // make field from rand (field is not serialized, but generated deterministically with ContentRandState)
-                            __c (createField Simulants.Scene rand world)
-                        else
-                            // make scene layer
-                            let (scene, world) = World.createLayer (Some Simulants.Scene.Name) Simulants.Gameplay world
+                        // make field
+                        let (rand, world) = _bc (createField scene rand world)
 
-                            // make rand from gameplay
-                            let rand = Rand.makeFromSeedState model.ContentRandState
+                        // make player
+                        let (player, world) = World.createEntity<PlayerDispatcher> (Some Simulants.Player.Name) DefaultOverlay scene world
+                        let world = player.SetDepth Constants.Layout.CharacterDepth world
 
-                            // make field
-                            let (rand, world) = _bc (createField scene rand world)
-
-                            // make player
-                            let (player, world) = World.createEntity<PlayerDispatcher> (Some Simulants.Player.Name) DefaultOverlay scene world
-                            let world = player.SetDepth Constants.Layout.CharacterDepth world
-
-                            // make enemies
-                            __c (createEnemies scene rand world)
+                        // make enemies
+                        __c (createEnemies scene rand world)
                     World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 | Tick -> tick world
                 | Nop -> world
