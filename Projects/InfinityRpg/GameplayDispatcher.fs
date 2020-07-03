@@ -96,7 +96,7 @@ module GameplayDispatcherModule =
             let (fieldMap, rand) = FieldMap.make Assets.FieldTileSheetImage offsetM Constants.Layout.FieldUnitSizeM pathEdgesM rand
             (fieldMap.FieldTiles, rand)
 
-        static let createField scene rand world =
+        static let createField rand =
             let extentions = 0
             let fieldUnitTuples =
                 List.fold
@@ -115,30 +115,29 @@ module GameplayDispatcherModule =
                 { FieldSizeM = Constants.Layout.FieldUnitSizeM + Vector2i.Multiply (offsetCount, Constants.Layout.FieldUnitSizeM)
                   FieldTiles = fieldTiles
                   FieldTileSheet = Assets.FieldTileSheetImage }
-            let (field, world) = World.createEntity<FieldDispatcher> (Some Simulants.Field.Name) DefaultOverlay scene world
-            let world = field.SetFieldMapNp fieldMap world
-            let world = field.SetSize (field.GetQuickSize world) world
-            let world = field.SetPersistent false world
-            (field, rand, world)
+            (fieldMap, rand)
 
-        static let createEnemies scene rand world =
+        static let createEnemies rand world =
             let (randResult, rand) = Rand.nextIntUnder 5 rand
             let enemyCount = randResult + 1
-            List.fold
-                (fun (enemies, rand, world) _ ->
-                    let fieldMap = Simulants.Field.GetFieldMapNp world
-                    let characters = getCharacters world
-                    let characterPositions = Seq.map (fun (character : Entity) -> character.GetPosition world) characters
-                    let availableCoordinates = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles characterPositions |> Map.filter (fun _ occupied -> occupied = false) |> Map.toKeyList |> List.toArray
-                    let (randResult, rand) = Rand.nextIntUnder availableCoordinates.Length rand
-                    let enemyCoordinates = availableCoordinates.[randResult]
-                    let (enemy, world) = World.createEntity<EnemyDispatcher> None DefaultOverlay scene world
-                    let world = enemy.SetPosition (vmtovf enemyCoordinates) world
-                    let world = enemy.SetDepth Constants.Layout.CharacterDepth world
-                    let world = enemy.SetCharacterModel { (enemy.GetCharacterModel world) with CharacterAnimationSheet = Assets.GoopyImage } world
-                    (enemy :: enemies, rand, world))
-                ([], rand, world)
-                [0 .. enemyCount - 1]
+            let enemies =
+                List.fold
+                    (fun (enemies, rand, world) _ ->
+                        let fieldMap = Simulants.Field.GetFieldMapNp world
+                        let availableCoordinates = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles enemies |> Map.filter (fun _ occupied -> occupied = false) |> Map.toKeyList |> List.toArray
+                        let (randResult, rand) = Rand.nextIntUnder availableCoordinates.Length rand
+                        let enemyCoordinates = vmtovf availableCoordinates.[randResult]
+                        let (enemy, world) = World.createEntity<EnemyDispatcher> None DefaultOverlay Simulants.Scene world
+                        let world = enemy.SetPosition enemyCoordinates world
+                        let world = enemy.SetDepth Constants.Layout.CharacterDepth world
+                        let world = enemy.SetCharacterModel { (enemy.GetCharacterModel world) with CharacterAnimationSheet = Assets.GoopyImage } world
+                        (enemyCoordinates :: enemies, rand, world))
+                    ([], rand, world)
+                    [0 .. enemyCount - 1]
+            let world = __c enemies
+            let enemies = a__ enemies
+                
+            world
 
         static let walk3 positive current destination =
             let walkSpeed = if positive then Constants.Layout.CharacterWalkSpeed else -Constants.Layout.CharacterWalkSpeed
@@ -561,22 +560,30 @@ module GameplayDispatcherModule =
                 | RunGameplay ->
                     let world =
                         // TODO : reimplement and fix game loading
-                        // make scene layer
-                        let (scene, world) = World.createLayer (Some Simulants.Scene.Name) Simulants.Gameplay world
-
+                        // TODO : arrange so new game can be started more than once!
+                        
                         // make rand from gameplay
                         let rand = Rand.makeFromSeedState model.ContentRandState
 
                         // make field
-                        let (rand, world) = _bc (createField scene rand world)
+                        let (fieldMap, rand) = createField rand
 
-                        // make player
-                        let (player, world) = World.createEntity<PlayerDispatcher> (Some Simulants.Player.Name) DefaultOverlay scene world
-                        let world = player.SetDepth Constants.Layout.CharacterDepth world
+                        let (field, world) = World.createEntity<FieldDispatcher> (Some Simulants.Field.Name) DefaultOverlay Simulants.Scene world
+                        let world = field.SetFieldMapNp fieldMap world
+                        let world = field.SetSize (field.GetQuickSize world) world
+                        let world = field.SetPersistent false world
 
                         // make enemies
-                        __c (createEnemies scene rand world)
+                        createEnemies rand world
                     World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 | Tick -> tick world
                 | Nop -> world
             just world
+
+        override this.Content (model, screen) =
+            
+            [Content.layer Simulants.Scene.Name []
+                
+                [Content.entity<PlayerDispatcher> Simulants.Player.Name
+                    [Entity.Depth == Constants.Layout.CharacterDepth]]]
+            
