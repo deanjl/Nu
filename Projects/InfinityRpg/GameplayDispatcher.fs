@@ -11,13 +11,15 @@ module GameplayDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] GameplayModel =
         { ContentRandState : uint64
-          ShallLoadGame : bool }
+          ShallLoadGame : bool
+          Enemies : Map<int, CharacterModel> }
 
         static member initial =
             let sysrandom = System.Random ()
             let contentSeedState = uint64 (sysrandom.Next ())
             { ContentRandState = contentSeedState
-              ShallLoadGame = false }
+              ShallLoadGame = false
+              Enemies = Map.empty }
     
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
@@ -117,26 +119,32 @@ module GameplayDispatcherModule =
                   FieldTileSheet = Assets.FieldTileSheetImage }
             (fieldMap, rand)
 
-        static let createEnemies rand world =
+        static let createEnemies rand world = // no, not atrocious coding, just transitional; will be cleaned up very soon
             let (randResult, rand) = Rand.nextIntUnder 5 rand
             let enemyCount = randResult + 1
             let enemies =
                 List.fold
-                    (fun (enemies, rand, world) _ ->
+                    (fun (models, coords, rand, world) index ->
                         let fieldMap = Simulants.Field.GetFieldMapNp world
-                        let availableCoordinates = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles enemies |> Map.filter (fun _ occupied -> occupied = false) |> Map.toKeyList |> List.toArray
+                        let availableCoordinates = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles coords |> Map.filter (fun _ occupied -> occupied = false) |> Map.toKeyList |> List.toArray
                         let (randResult, rand) = Rand.nextIntUnder availableCoordinates.Length rand
                         let enemyCoordinates = vmtovf availableCoordinates.[randResult]
                         let (enemy, world) = World.createEntity<EnemyDispatcher> None DefaultOverlay Simulants.Scene world
                         let world = enemy.SetPosition enemyCoordinates world
                         let world = enemy.SetDepth Constants.Layout.CharacterDepth world
                         let world = enemy.SetCharacterModel { (enemy.GetCharacterModel world) with CharacterAnimationSheet = Assets.GoopyImage } world
-                        (enemyCoordinates :: enemies, rand, world))
-                    ([], rand, world)
+                        let model = 
+                            { Position = enemyCoordinates
+                              CharacterActivityState = NoActivity
+                              CharacterState = { CharacterState.empty with HitPoints = 10; ControlType = Chaos }
+                              CharacterAnimationState = { StartTime = 0L; AnimationType = CharacterAnimationFacing; Direction = Upward }
+                              CharacterAnimationSheet = Assets.GoopyImage
+                              DesiredTurnOpt = Some NoTurn }
+                        (Map.add index model models, enemyCoordinates :: coords, rand, world))
+                    (Map.empty, [], rand, world)
                     [0 .. enemyCount - 1]
-            let world = __c enemies
-            let enemies = a__ enemies
-                
+            let models, coords, rand, world = enemies
+                            
             world
 
         static let walk3 positive current destination =
