@@ -9,7 +9,8 @@ open InfinityRpg
 module CharacterDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] CharacterModel =
-        { CharacterActivityState : CharacterActivityState
+        { OriginalPosition : Vector2
+          CharacterActivityState : CharacterActivityState
           CharacterState : CharacterState
           CharacterAnimationState : CharacterAnimationState
           CharacterAnimationSheet : Image AssetTag
@@ -20,7 +21,8 @@ module CharacterDispatcherModule =
                 { StartTime = 0L
                   AnimationType = CharacterAnimationFacing
                   Direction = Upward }
-            { CharacterActivityState = NoActivity
+            { OriginalPosition = Vector2.Zero
+              CharacterActivityState = NoActivity
               CharacterState = CharacterState.empty
               CharacterAnimationState = characterAnimationState
               CharacterAnimationSheet = Assets.PlayerImage
@@ -84,6 +86,10 @@ module CharacterDispatcherModule =
         static member Properties =
             [define Entity.PublishChanges true
              define Entity.Omnipresent true]
+
+        override this.Register (entity, world) =
+            let world = base.Register (entity, world)
+            entity.SetPosition (entity.GetCharacterModel world).OriginalPosition world
         
         override this.Actualize (entity, world) =
             if entity.GetInView world then
