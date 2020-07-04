@@ -11,7 +11,7 @@ type FieldTile =
     { TileSheetPositionM : Vector2i
       TileType : FieldTileType }
 
-type [<NoEquality; NoComparison>] FieldMap =
+type FieldMap =
     { FieldSizeM : Vector2i
       FieldTiles : Map<Vector2i, FieldTile>
       FieldTileSheet : Image AssetTag }

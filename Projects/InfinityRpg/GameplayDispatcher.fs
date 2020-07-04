@@ -12,6 +12,7 @@ module GameplayDispatcherModule =
     type [<StructuralEquality; NoComparison>] GameplayModel =
         { ContentRandState : uint64
           ShallLoadGame : bool
+          FieldMapOpt : FieldMap option
           Enemies : Map<int, CharacterModel> }
 
         static member initial =
@@ -19,6 +20,7 @@ module GameplayDispatcherModule =
             let contentSeedState = uint64 (sysrandom.Next ())
             { ContentRandState = contentSeedState
               ShallLoadGame = false
+              FieldMapOpt = None
               Enemies = Map.empty }
     
     type [<StructuralEquality; NoComparison>] PlayerInput =
@@ -117,17 +119,17 @@ module GameplayDispatcherModule =
                 { FieldSizeM = Constants.Layout.FieldUnitSizeM + Vector2i.Multiply (offsetCount, Constants.Layout.FieldUnitSizeM)
                   FieldTiles = fieldTiles
                   FieldTileSheet = Assets.FieldTileSheetImage }
-            (fieldMap, rand)
+            fieldMap
 
-        static let createEnemies rand world = // no, not atrocious coding, just transitional; will be cleaned up very soon
-            let (randResult, rand) = Rand.nextIntUnder 5 rand
+        static let createEnemies world = // no, not atrocious coding, just transitional; will be cleaned up very soon
+            let randResult = Gen.random1 5
             let enemyCount = randResult + 1
             let enemies =
                 List.fold
-                    (fun (models, coords, rand, world) index ->
+                    (fun (models, coords, world) index ->
                         let fieldMap = Simulants.Field.GetFieldMapNp world
                         let availableCoordinates = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles coords |> Map.filter (fun _ occupied -> occupied = false) |> Map.toKeyList |> List.toArray
-                        let (randResult, rand) = Rand.nextIntUnder availableCoordinates.Length rand
+                        let randResult = Gen.random1 availableCoordinates.Length
                         let enemyCoordinates = vmtovf availableCoordinates.[randResult]
                         let (enemy, world) = World.createEntity<EnemyDispatcher> None DefaultOverlay Simulants.Scene world
                         let world = enemy.SetPosition enemyCoordinates world
@@ -140,10 +142,10 @@ module GameplayDispatcherModule =
                               CharacterAnimationState = { StartTime = 0L; AnimationType = CharacterAnimationFacing; Direction = Upward }
                               CharacterAnimationSheet = Assets.GoopyImage
                               DesiredTurnOpt = Some NoTurn }
-                        (Map.add index model models, enemyCoordinates :: coords, rand, world))
-                    (Map.empty, [], rand, world)
+                        (Map.add index model models, enemyCoordinates :: coords, world))
+                    (Map.empty, [], world)
                     [0 .. enemyCount - 1]
-            let models, coords, rand, world = enemies
+            let models, coords, world = enemies
                             
             world
 
@@ -557,7 +559,7 @@ module GameplayDispatcherModule =
              Simulants.Title.SelectEvent => cmd QuittingGameplay
              Simulants.Gameplay.DeselectEvent => cmd QuitGameplay]
 
-        override this.Command (model, command, _, world) =
+        override this.Command (model, command, screen, world) =
             let world =
                 match command with
                 | ToggleHaltButton -> Simulants.HudHalt.SetEnabled (isPlayerNavigatingPath world) world
@@ -574,7 +576,9 @@ module GameplayDispatcherModule =
                         let rand = Rand.makeFromSeedState model.ContentRandState
 
                         // make field
-                        let (fieldMap, rand) = createField rand
+                        let fieldMap = createField rand
+
+                        screen.SetGameplayModel { model with FieldMapOpt = Some fieldMap } world
 
                         let (field, world) = World.createEntity<FieldDispatcher> (Some Simulants.Field.Name) DefaultOverlay Simulants.Scene world
                         let world = field.SetFieldMapNp fieldMap world
@@ -582,7 +586,7 @@ module GameplayDispatcherModule =
                         let world = field.SetPersistent false world
 
                         // make enemies
-                        createEnemies rand world
+                        createEnemies world
                     World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 | Tick -> tick world
                 | Nop -> world
@@ -591,6 +595,8 @@ module GameplayDispatcherModule =
         override this.Content (model, screen) =
             
             [Content.layer Simulants.Scene.Name []
+                
+            //    [Content.entity<FieldDispatcher> Simulants.Field.Name]
                 
                 [Content.entity<PlayerDispatcher> Simulants.Player.Name
                     [Entity.Depth == Constants.Layout.CharacterDepth]]]
