@@ -577,7 +577,7 @@ module GameplayDispatcherModule =
                         // make field
                         let fieldMap = createField rand
 
-                        screen.SetGameplayModel { model with FieldMapOpt = Some fieldMap } world
+                        let world = screen.SetGameplayModel { model with FieldMapOpt = Some fieldMap } world
 
                         let (field, world) = World.createEntity<FieldDispatcher> (Some Simulants.Field.Name) DefaultOverlay Simulants.Scene world
                         let world = field.SetFieldModel { FieldMapNp = fieldMap } world
