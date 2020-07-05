@@ -579,11 +579,6 @@ module GameplayDispatcherModule =
 
                         let world = screen.SetGameplayModel { model with FieldMapOpt = Some fieldMap } world
 
-                        let (field, world) = World.createEntity<FieldDispatcher> (Some Simulants.Field.Name) DefaultOverlay Simulants.Scene world
-                        let world = field.SetFieldModel { FieldMapNp = fieldMap } world
-                        let world = field.SetSize (field.GetQuickSize world) world
-                        let world = field.SetPersistent false world
-
                         // make enemies
                         createEnemies fieldMap world
                     World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
@@ -595,8 +590,13 @@ module GameplayDispatcherModule =
             
             [Content.layer Simulants.Scene.Name []
                 
-            //    [Content.entity<FieldDispatcher> Simulants.Field.Name]
-                
-                [Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
+                [Content.entityOpt model (fun model -> model.FieldMapOpt) (fun _ fieldMap world ->
+                    let fieldMap = fieldMap.Get world
+                    Content.entity<FieldDispatcher> Simulants.Field.Name
+                        [Entity.FieldModel == { FieldMapNp = fieldMap }
+                         Entity.Size == vmtovf fieldMap.FieldSizeM
+                         Entity.Persistent == false])
+
+                 Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
                     [Entity.Depth == Constants.Layout.CharacterDepth]]]
             
