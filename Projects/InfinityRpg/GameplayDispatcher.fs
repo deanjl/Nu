@@ -121,13 +121,12 @@ module GameplayDispatcherModule =
                   FieldTileSheet = Assets.FieldTileSheetImage }
             fieldMap
 
-        static let createEnemies world = // no, not atrocious coding, just transitional; will be cleaned up very soon
+        static let createEnemies fieldMap world = // no, not atrocious coding, just transitional; will be cleaned up very soon
             let randResult = Gen.random1 5
             let enemyCount = randResult + 1
             let enemies =
                 List.fold
                     (fun (models, coords, world) index ->
-                        let fieldMap = Simulants.Field.GetFieldMapNp world
                         let availableCoordinates = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles coords |> Map.filter (fun _ occupied -> occupied = false) |> Map.toKeyList |> List.toArray
                         let randResult = Gen.random1 availableCoordinates.Length
                         let enemyCoordinates = vmtovf availableCoordinates.[randResult]
@@ -282,7 +281,7 @@ module GameplayDispatcherModule =
             enemyTurns
 
         static let determinePlayerTurnFromTouch touchPosition world =
-            let fieldMap = Simulants.Field.GetFieldMapNp world
+            let fieldMap = (Simulants.Field.GetFieldModel world).FieldMapNp
             let enemies = getEnemies world
             let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
             if not (anyTurnsInProgress2 Simulants.Player enemies world) then
@@ -304,7 +303,7 @@ module GameplayDispatcherModule =
             else NoTurn
 
         static let determinePlayerTurnFromDetailNavigation direction world =
-            let fieldMap = Simulants.Field.GetFieldMapNp world
+            let fieldMap = (Simulants.Field.GetFieldModel world).FieldMapNp
             let enemies = getEnemies world
             let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
             if not (anyTurnsInProgress2 Simulants.Player enemies world) then
@@ -330,7 +329,7 @@ module GameplayDispatcherModule =
             | Navigation navigationDescriptor ->
                 let walkDescriptor = navigationDescriptor.WalkDescriptor
                 if Simulants.Player.GetPosition world = vmtovf walkDescriptor.WalkOriginM then
-                    let fieldMap = Simulants.Field.GetFieldMapNp world
+                    let fieldMap = (Simulants.Field.GetFieldModel world).FieldMapNp
                     let enemies = getEnemies world
                     let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
                     let occupationMapWithEnemies = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles enemyPositions
@@ -473,7 +472,7 @@ module GameplayDispatcherModule =
         static let tickNewTurn newPlayerTurn world =
 
             let occupationMap =
-                let fieldMap = Simulants.Field.GetFieldMapNp world
+                let fieldMap = (Simulants.Field.GetFieldModel world).FieldMapNp
                 let enemies = getEnemies world
                 let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
                 OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions newPlayerTurn
@@ -581,12 +580,12 @@ module GameplayDispatcherModule =
                         screen.SetGameplayModel { model with FieldMapOpt = Some fieldMap } world
 
                         let (field, world) = World.createEntity<FieldDispatcher> (Some Simulants.Field.Name) DefaultOverlay Simulants.Scene world
-                        let world = field.SetFieldMapNp fieldMap world
+                        let world = field.SetFieldModel { FieldMapNp = fieldMap } world
                         let world = field.SetSize (field.GetQuickSize world) world
                         let world = field.SetPersistent false world
 
                         // make enemies
-                        createEnemies world
+                        createEnemies fieldMap world
                     World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 | Tick -> tick world
                 | Nop -> world
@@ -598,6 +597,6 @@ module GameplayDispatcherModule =
                 
             //    [Content.entity<FieldDispatcher> Simulants.Field.Name]
                 
-                [Content.entity<PlayerDispatcher> Simulants.Player.Name
+                [Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
                     [Entity.Depth == Constants.Layout.CharacterDepth]]]
             
