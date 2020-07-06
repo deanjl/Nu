@@ -603,7 +603,7 @@ module GameplayDispatcherModule =
                  Content.entitiesIndexedBy model
                      (fun model -> model.Enemies |> Map.toValueList) constant
                      (fun model -> Option.get model.EnemyIndexOpt)
-                     (fun index model _ -> Content.entity<CharacterDispatcher> ("Enemy+" + scstring index) [Entity.CharacterModel <== model; Entity.Depth == Constants.Layout.CharacterDepth]))
+                     (fun index model _ -> Content.entity<CharacterDispatcher> ("Enemy+" + scstring index) [Entity.CharacterModel <== model; Entity.Depth == Constants.Layout.CharacterDepth])
 *)
                  
                  Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
