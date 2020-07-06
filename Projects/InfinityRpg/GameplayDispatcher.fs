@@ -124,18 +124,14 @@ module GameplayDispatcherModule =
         static let createEnemies fieldMap world = // no, not atrocious coding, just transitional; will be cleaned up very soon
             let randResult = Gen.random1 5
             let enemyCount = randResult + 1
-            let enemies =
+            let (models, _, world) =
                 List.fold
                     (fun (models, coords, world) index ->
                         let availableCoordinates = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles coords |> Map.filter (fun _ occupied -> occupied = false) |> Map.toKeyList |> List.toArray
                         let randResult = Gen.random1 availableCoordinates.Length
                         let enemyCoordinates = vmtovf availableCoordinates.[randResult]
-                        let (enemy, world) = World.createEntity<EnemyDispatcher> None DefaultOverlay Simulants.Scene world
-                        let world = enemy.SetPosition enemyCoordinates world
-                        let world = enemy.SetDepth Constants.Layout.CharacterDepth world
-                        let world = enemy.SetCharacterModel { (enemy.GetCharacterModel world) with CharacterAnimationSheet = Assets.GoopyImage } world
-                        let model = 
-                            { Position = enemyCoordinates
+                        let model =
+                            { InitialPosition = enemyCoordinates
                               EnemyIndexOpt = Some index
                               CharacterActivityState = NoActivity
                               CharacterState = { CharacterState.empty with HitPoints = 10; ControlType = Chaos }
@@ -145,8 +141,6 @@ module GameplayDispatcherModule =
                         (Map.add index model models, enemyCoordinates :: coords, world))
                     (Map.empty, [], world)
                     [0 .. enemyCount - 1]
-            let models, coords, world = enemies
-                            
             (models, world)
 
         static let walk3 positive current destination =
@@ -590,22 +584,24 @@ module GameplayDispatcherModule =
             just world
 
         override this.Content (model, screen) =
-            
+
             [Content.layer Simulants.Scene.Name []
-                
+
                 [Content.entityOpt model (fun model -> model.FieldMapOpt) (fun _ fieldMap world ->
                     let fieldMap = fieldMap.Get world
                     Content.entity<FieldDispatcher> Simulants.Field.Name
                         [Entity.FieldModel == { FieldMapNp = fieldMap }
                          Entity.Size == vmtovf fieldMap.FieldSizeM
                          Entity.Persistent == false])
-(*
+
                  Content.entitiesIndexedBy model
                      (fun model -> model.Enemies |> Map.toValueList) constant
                      (fun model -> Option.get model.EnemyIndexOpt)
-                     (fun index model _ -> Content.entity<CharacterDispatcher> ("Enemy+" + scstring index) [Entity.CharacterModel <== model; Entity.Depth == Constants.Layout.CharacterDepth])
-*)
-                 
+                     (fun index model world ->
+                        let initialPosition = (model.Get world).InitialPosition
+                        Content.entity<CharacterDispatcher> ("Enemy+" + scstring index)
+                            [Entity.Position == initialPosition
+                             Entity.CharacterModel <== model])
+
                  Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
                     [Entity.Depth == Constants.Layout.CharacterDepth]]]
-            

@@ -9,7 +9,7 @@ open InfinityRpg
 module CharacterDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] CharacterModel =
-        { Position : Vector2
+        { InitialPosition : Vector2
           EnemyIndexOpt : int option
           CharacterActivityState : CharacterActivityState
           CharacterState : CharacterState
@@ -22,7 +22,7 @@ module CharacterDispatcherModule =
                 { StartTime = 0L
                   AnimationType = CharacterAnimationFacing
                   Direction = Upward }
-            { Position = Vector2.Zero
+            { InitialPosition = Vector2.Zero
               EnemyIndexOpt = None
               CharacterActivityState = NoActivity
               CharacterState = CharacterState.empty
@@ -86,13 +86,10 @@ module CharacterDispatcherModule =
             Some spriteInset
 
         static member Properties =
-            [define Entity.PublishChanges true
+            [define Entity.Depth Constants.Layout.CharacterDepth
+             define Entity.PublishChanges true
              define Entity.Omnipresent true]
 
-        override this.Register (entity, world) =
-            let world = base.Register (entity, world)
-            entity.SetPosition (entity.GetCharacterModel world).Position world
-        
         override this.Actualize (entity, world) =
             if entity.GetInView world then
                 let transform =
