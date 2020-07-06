@@ -121,12 +121,12 @@ module GameplayDispatcherModule =
                   FieldTileSheet = Assets.FieldTileSheetImage }
             fieldMap
 
-        static let createEnemies fieldMap world = // no, not atrocious coding, just transitional; will be cleaned up very soon
+        static let createEnemies fieldMap =
             let randResult = Gen.random1 5
             let enemyCount = randResult + 1
-            let (models, _, world) =
+            let (models, _) =
                 List.fold
-                    (fun (models, coords, world) index ->
+                    (fun (models, coords) index ->
                         let availableCoordinates = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles coords |> Map.filter (fun _ occupied -> occupied = false) |> Map.toKeyList |> List.toArray
                         let randResult = Gen.random1 availableCoordinates.Length
                         let enemyCoordinates = vmtovf availableCoordinates.[randResult]
@@ -138,10 +138,10 @@ module GameplayDispatcherModule =
                               CharacterAnimationState = { StartTime = 0L; AnimationType = CharacterAnimationFacing; Direction = Upward }
                               CharacterAnimationSheet = Assets.GoopyImage
                               DesiredTurnOpt = Some NoTurn }
-                        (Map.add index model models, enemyCoordinates :: coords, world))
-                    (Map.empty, [], world)
+                        (Map.add index model models, enemyCoordinates :: coords))
+                    (Map.empty, [])
                     [0 .. enemyCount - 1]
-            (models, world)
+            models
 
         static let walk3 positive current destination =
             let walkSpeed = if positive then Constants.Layout.CharacterWalkSpeed else -Constants.Layout.CharacterWalkSpeed
@@ -573,11 +573,10 @@ module GameplayDispatcherModule =
                         let fieldMap = createField rand
 
                         // make enemies
-                        let (enemies, world) = createEnemies fieldMap world
+                        let enemies = createEnemies fieldMap
 
-                        let world = screen.SetGameplayModel { model with FieldMapOpt = Some fieldMap; Enemies = enemies } world
-
-                        world
+                        screen.SetGameplayModel { model with FieldMapOpt = Some fieldMap; Enemies = enemies } world
+                        
                     World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 | Tick -> tick world
                 | Nop -> world
