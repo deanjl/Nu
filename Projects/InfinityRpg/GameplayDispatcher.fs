@@ -599,7 +599,7 @@ module GameplayDispatcherModule =
                      (fun model -> Option.get model.EnemyIndexOpt)
                      (fun index model world ->
                         let initialPosition = (model.Get world).InitialPosition
-                        Content.entity<CharacterDispatcher> ("Enemy+" + scstring index)
+                        Content.entity<EnemyDispatcher> ("Enemy+" + scstring index)
                             [Entity.Position == initialPosition
                              Entity.CharacterModel <== model])
 
