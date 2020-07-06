@@ -10,6 +10,7 @@ module CharacterDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] CharacterModel =
         { Position : Vector2
+          EnemyIndexOpt : int option
           CharacterActivityState : CharacterActivityState
           CharacterState : CharacterState
           CharacterAnimationState : CharacterAnimationState
@@ -22,6 +23,7 @@ module CharacterDispatcherModule =
                   AnimationType = CharacterAnimationFacing
                   Direction = Upward }
             { Position = Vector2.Zero
+              EnemyIndexOpt = None
               CharacterActivityState = NoActivity
               CharacterState = CharacterState.empty
               CharacterAnimationState = characterAnimationState

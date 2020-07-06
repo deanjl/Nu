@@ -136,6 +136,7 @@ module GameplayDispatcherModule =
                         let world = enemy.SetCharacterModel { (enemy.GetCharacterModel world) with CharacterAnimationSheet = Assets.GoopyImage } world
                         let model = 
                             { Position = enemyCoordinates
+                              EnemyIndexOpt = Some index
                               CharacterActivityState = NoActivity
                               CharacterState = { CharacterState.empty with HitPoints = 10; ControlType = Chaos }
                               CharacterAnimationState = { StartTime = 0L; AnimationType = CharacterAnimationFacing; Direction = Upward }
@@ -146,7 +147,7 @@ module GameplayDispatcherModule =
                     [0 .. enemyCount - 1]
             let models, coords, world = enemies
                             
-            world
+            (models, world)
 
         static let walk3 positive current destination =
             let walkSpeed = if positive then Constants.Layout.CharacterWalkSpeed else -Constants.Layout.CharacterWalkSpeed
@@ -577,10 +578,12 @@ module GameplayDispatcherModule =
                         // make field
                         let fieldMap = createField rand
 
-                        let world = screen.SetGameplayModel { model with FieldMapOpt = Some fieldMap } world
-
                         // make enemies
-                        createEnemies fieldMap world
+                        let (enemies, world) = createEnemies fieldMap world
+
+                        let world = screen.SetGameplayModel { model with FieldMapOpt = Some fieldMap; Enemies = enemies } world
+
+                        world
                     World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 | Tick -> tick world
                 | Nop -> world
@@ -596,7 +599,13 @@ module GameplayDispatcherModule =
                         [Entity.FieldModel == { FieldMapNp = fieldMap }
                          Entity.Size == vmtovf fieldMap.FieldSizeM
                          Entity.Persistent == false])
-
+(*
+                 Content.entitiesIndexedBy model
+                     (fun model -> model.Enemies |> Map.toValueList) constant
+                     (fun model -> Option.get model.EnemyIndexOpt)
+                     (fun index model _ -> Content.entity<CharacterDispatcher> ("Enemy+" + scstring index) [Entity.CharacterModel <== model; Entity.Depth == Constants.Layout.CharacterDepth]))
+*)
+                 
                  Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
                     [Entity.Depth == Constants.Layout.CharacterDepth]]]
             
