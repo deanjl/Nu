@@ -13,7 +13,8 @@ module GameplayDispatcherModule =
         { ContentRandState : uint64
           ShallLoadGame : bool
           FieldMapOpt : FieldMap option
-          Enemies : Map<int, CharacterModel> }
+          Enemies : Map<int, CharacterModel>
+          Player : CharacterModel }
 
         static member initial =
             let sysrandom = System.Random ()
@@ -21,7 +22,8 @@ module GameplayDispatcherModule =
             { ContentRandState = contentSeedState
               ShallLoadGame = false
               FieldMapOpt = None
-              Enemies = Map.empty }
+              Enemies = Map.empty
+              Player = CharacterModel.initial }
     
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
@@ -575,7 +577,16 @@ module GameplayDispatcherModule =
                         // make enemies
                         let enemies = createEnemies fieldMap
 
-                        screen.SetGameplayModel { model with FieldMapOpt = Some fieldMap; Enemies = enemies } world
+                        let player =
+                            { InitialPosition = Vector2.Zero
+                              EnemyIndexOpt = None
+                              CharacterActivityState = NoActivity
+                              CharacterState = { CharacterState.empty with HitPoints = 30; ControlType = PlayerControlled }
+                              CharacterAnimationState = { StartTime = 0L; AnimationType = CharacterAnimationFacing; Direction = Upward }
+                              CharacterAnimationSheet = Assets.PlayerImage
+                              DesiredTurnOpt = None }
+                        
+                        screen.SetGameplayModel { model with FieldMapOpt = Some fieldMap; Enemies = enemies; Player = player } world
                         
                     World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 | Tick -> tick world
@@ -603,4 +614,5 @@ module GameplayDispatcherModule =
                              Entity.CharacterModel <== model])
 
                  Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
-                    [Entity.Depth == Constants.Layout.CharacterDepth]]]
+                    [Entity.CharacterModel <== model --> fun model ->
+                        model.Player]]]
