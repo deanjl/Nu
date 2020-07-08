@@ -527,24 +527,6 @@ module GameplayDispatcherModule =
             
             world
 
-        static let handlePlayerInput playerInput world =
-            if (anyTurnsInProgress world) then world
-            else
-                let world = Simulants.HudSaveGame.SetEnabled false world
-                let playerTurn = Some (determinePlayerTurnFromInput playerInput world)
-                tickTurn playerTurn world
-
-        static let tick world =
-            let world =
-                if not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Up then handlePlayerInput (DetailInput Upward) world
-                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Right then handlePlayerInput (DetailInput Rightward) world
-                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Down then handlePlayerInput (DetailInput Downward) world
-                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Left then handlePlayerInput (DetailInput Leftward) world
-                elif (anyTurnsInProgress world) then tickTurn None world
-                elif not (Simulants.HudSaveGame.GetEnabled world) then Simulants.HudSaveGame.SetEnabled true world
-                else world
-            world
-        
         override this.Channel (_, _) =
             [//Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
              Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSelected Simulants.HudFeeler =|> fun evt -> cmd (HandlePlayerInput (TouchInput evt.Data))
@@ -591,8 +573,11 @@ module GameplayDispatcherModule =
                 let world = Simulants.HudHalt.SetEnabled (isPlayerNavigatingPath world) world
                 just world
             | HandlePlayerInput input ->
-                let world = handlePlayerInput input world
-                just world
+                if (anyTurnsInProgress world) then just world
+                else
+                    let world = Simulants.HudSaveGame.SetEnabled false world
+                    let playerTurn = Some (determinePlayerTurnFromInput input world)
+                    just (tickTurn playerTurn world)
             | SaveGame gameplay ->
                 World.writeScreenToFile Assets.SaveFilePath gameplay world
                 just world
@@ -606,8 +591,13 @@ module GameplayDispatcherModule =
                 let world = World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 withMsg world NewGame
             | Tick ->
-                let world = tick world
-                just world
+                if not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Up then withCmd world (HandlePlayerInput (DetailInput Upward))
+                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Right then withCmd world (HandlePlayerInput (DetailInput Rightward))
+                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Down then withCmd world (HandlePlayerInput (DetailInput Downward))
+                elif not (anyTurnsInProgress world) && KeyboardState.isKeyDown KeyboardKey.Left then withCmd world (HandlePlayerInput (DetailInput Leftward))
+                elif (anyTurnsInProgress world) then just (tickTurn None world)
+                elif not (Simulants.HudSaveGame.GetEnabled world) then just (Simulants.HudSaveGame.SetEnabled true world)
+                else just world
             | Nop -> just world
 
         override this.Content (model, screen) =
