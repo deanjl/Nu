@@ -451,6 +451,19 @@ module GameplayDispatcherModule =
                     tickReaction actionDescriptor character
         
         static let tickUpdate world =
+            // set enemy activities in accordance with the player's current activity
+            let world =
+                let enemies = getEnemies world
+                match (Simulants.Player.GetCharacterModel world).CharacterActivityState with
+                | Action _ -> world
+                | Navigation _ 
+                | NoActivity ->
+                    let newEnemyActivities = determineEnemyActivities enemies world
+                    if List.exists (fun (state : CharacterActivityState) -> state.IsActing) newEnemyActivities then
+                        let world = setEnemyActivities newEnemyActivities enemies world
+                        cancelNavigation Simulants.Player world
+                    else setEnemyActivities newEnemyActivities enemies world
+            
             let enemies = getEnemies world |> Seq.toList
             let characters = Simulants.Player :: enemies
             let rec recursion (characters : Entity list) world =
@@ -496,36 +509,15 @@ module GameplayDispatcherModule =
                     Seq.fold2 (fun world (enemy : Entity) turn -> enemy.SetCharacterModel { enemy.GetCharacterModel world with DesiredTurnOpt = Some turn } world) world enemies enemyDesiredTurns
                 | NoActivity -> world
 
-            world
+            tickUpdate world
         
-        static let tickTurn newPlayerTurnOpt world =
+        static let tickTurn world =
 
-            let playerTurn =
-                match newPlayerTurnOpt with
-                | Some playerTurn -> playerTurn
-                | None -> determinePlayerTurnFromNavigationProgress world
+            let playerTurn = determinePlayerTurnFromNavigationProgress world
 
-            let world =
-                match playerTurn with
-                | NoTurn -> world
-                | _ -> tickNewTurn playerTurn world
-
-            // set enemy activities in accordance with the player's current activity
-            let world =
-                let enemies = getEnemies world
-                match (Simulants.Player.GetCharacterModel world).CharacterActivityState with
-                | Action _ -> world
-                | Navigation _ 
-                | NoActivity ->
-                    let newEnemyActivities = determineEnemyActivities enemies world
-                    if List.exists (fun (state : CharacterActivityState) -> state.IsActing) newEnemyActivities then
-                        let world = setEnemyActivities newEnemyActivities enemies world
-                        cancelNavigation Simulants.Player world
-                    else setEnemyActivities newEnemyActivities enemies world
-
-            let world = tickUpdate world
-            
-            world
+            match playerTurn with
+            | NoTurn -> tickUpdate world
+            | _ -> tickNewTurn playerTurn world
 
         override this.Channel (_, _) =
             [//Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
@@ -576,8 +568,8 @@ module GameplayDispatcherModule =
                 if (anyTurnsInProgress world) then just world
                 else
                     let world = Simulants.HudSaveGame.SetEnabled false world
-                    let playerTurn = Some (determinePlayerTurnFromInput input world)
-                    just (tickTurn playerTurn world)
+                    let playerTurn = determinePlayerTurnFromInput input world
+                    just (tickNewTurn playerTurn world)
             | SaveGame gameplay ->
                 World.writeScreenToFile Assets.SaveFilePath gameplay world
                 just world
@@ -591,7 +583,7 @@ module GameplayDispatcherModule =
                 let world = World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 withMsg world NewGame
             | Tick ->
-                if (anyTurnsInProgress world) then just (tickTurn None world)
+                if (anyTurnsInProgress world) then just (tickTurn world)
                 elif KeyboardState.isKeyDown KeyboardKey.Up then withCmd world (HandlePlayerInput (DetailInput Upward))
                 elif KeyboardState.isKeyDown KeyboardKey.Right then withCmd world (HandlePlayerInput (DetailInput Rightward))
                 elif KeyboardState.isKeyDown KeyboardKey.Down then withCmd world (HandlePlayerInput (DetailInput Downward))
