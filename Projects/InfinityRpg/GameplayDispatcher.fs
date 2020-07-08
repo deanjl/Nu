@@ -480,7 +480,7 @@ module GameplayDispatcherModule =
                             else world
                         | NoActivity -> world
                     recursion characters.Tail world
-            recursion characters world
+            just (recursion characters world)
         
         static let tickNewTurn newPlayerTurn world =
 
@@ -569,7 +569,7 @@ module GameplayDispatcherModule =
                 else
                     let world = Simulants.HudSaveGame.SetEnabled false world
                     let playerTurn = determinePlayerTurnFromInput input world
-                    just (tickNewTurn playerTurn world)
+                    tickNewTurn playerTurn world
             | SaveGame gameplay ->
                 World.writeScreenToFile Assets.SaveFilePath gameplay world
                 just world
@@ -583,7 +583,7 @@ module GameplayDispatcherModule =
                 let world = World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 withMsg world NewGame
             | Tick ->
-                if (anyTurnsInProgress world) then just (tickTurn world)
+                if (anyTurnsInProgress world) then tickTurn world
                 elif KeyboardState.isKeyDown KeyboardKey.Up then withCmd world (HandlePlayerInput (DetailInput Upward))
                 elif KeyboardState.isKeyDown KeyboardKey.Right then withCmd world (HandlePlayerInput (DetailInput Rightward))
                 elif KeyboardState.isKeyDown KeyboardKey.Down then withCmd world (HandlePlayerInput (DetailInput Downward))
