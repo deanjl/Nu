@@ -30,6 +30,9 @@ module GameplayDispatcherModule =
         | DetailInput of Direction
         | NoInput
 
+    type GameplayMessage =
+        | NewGame
+    
     type [<NoEquality; NoComparison>] GameplayCommand =
         | ToggleHaltButton // TODO: reimplement once game is properly elmified
         | HandlePlayerInput of PlayerInput
@@ -49,7 +52,7 @@ module GameplayDispatcherModule =
         member this.GameplayModel = this.Model<GameplayModel> ()
 
     type GameplayDispatcher () =
-        inherit ScreenDispatcher<GameplayModel, unit, GameplayCommand> (GameplayModel.initial)
+        inherit ScreenDispatcher<GameplayModel, GameplayMessage, GameplayCommand> (GameplayModel.initial)
 
         static let getCharacters world =
             let entities = World.getEntities Simulants.Scene world
@@ -555,43 +558,57 @@ module GameplayDispatcherModule =
              Simulants.Title.SelectEvent => cmd QuittingGameplay
              Simulants.Gameplay.DeselectEvent => cmd QuitGameplay]
 
+        override this.Message (model, message, _, _) =
+            match message with
+            | NewGame ->
+                // TODO : reimplement and fix game loading
+                // TODO : arrange so new game can be started more than once!
+                
+                // make rand from gameplay
+                let rand = Rand.makeFromSeedState model.ContentRandState
+
+                // make field
+                let fieldMap = createField rand
+
+                // make enemies
+                let enemies = createEnemies fieldMap
+
+                let player =
+                    { InitialPosition = Vector2.Zero
+                      EnemyIndexOpt = None
+                      CharacterActivityState = NoActivity
+                      CharacterState = { CharacterState.empty with HitPoints = 30; ControlType = PlayerControlled }
+                      CharacterAnimationState = { StartTime = 0L; AnimationType = CharacterAnimationFacing; Direction = Upward }
+                      CharacterAnimationSheet = Assets.PlayerImage
+                      DesiredTurnOpt = None }
+                
+                let model = { model with FieldMapOpt = Some fieldMap; Enemies = enemies; Player = player }
+                just model
+        
         override this.Command (model, command, screen, world) =
-            let world =
-                match command with
-                | ToggleHaltButton -> Simulants.HudHalt.SetEnabled (isPlayerNavigatingPath world) world
-                | HandlePlayerInput input -> handlePlayerInput input world
-                | SaveGame gameplay -> World.writeScreenToFile Assets.SaveFilePath gameplay world; world
-                | QuittingGameplay -> World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.ButterflyGirlSong world
-                | QuitGameplay -> World.destroyLayer Simulants.Scene world
-                | RunGameplay ->
-                    let world =
-                        // TODO : reimplement and fix game loading
-                        // TODO : arrange so new game can be started more than once!
-                        
-                        // make rand from gameplay
-                        let rand = Rand.makeFromSeedState model.ContentRandState
-
-                        // make field
-                        let fieldMap = createField rand
-
-                        // make enemies
-                        let enemies = createEnemies fieldMap
-
-                        let player =
-                            { InitialPosition = Vector2.Zero
-                              EnemyIndexOpt = None
-                              CharacterActivityState = NoActivity
-                              CharacterState = { CharacterState.empty with HitPoints = 30; ControlType = PlayerControlled }
-                              CharacterAnimationState = { StartTime = 0L; AnimationType = CharacterAnimationFacing; Direction = Upward }
-                              CharacterAnimationSheet = Assets.PlayerImage
-                              DesiredTurnOpt = None }
-                        
-                        screen.SetGameplayModel { model with FieldMapOpt = Some fieldMap; Enemies = enemies; Player = player } world
-                        
-                    World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
-                | Tick -> tick world
-                | Nop -> world
-            just world
+            match command with
+            | ToggleHaltButton ->
+                let world = Simulants.HudHalt.SetEnabled (isPlayerNavigatingPath world) world
+                just world
+            | HandlePlayerInput input ->
+                let world = handlePlayerInput input world
+                just world
+            | SaveGame gameplay ->
+                World.writeScreenToFile Assets.SaveFilePath gameplay world
+                just world
+            | QuittingGameplay ->
+                let world = World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.ButterflyGirlSong world
+                just world
+            | QuitGameplay ->
+                let world = World.destroyLayer Simulants.Scene world
+                just world
+            | RunGameplay ->
+                let world = World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
+                withMsg world NewGame
+            | Tick ->
+                let world = tick world
+                just world
+            | Nop -> just world
 
         override this.Content (model, screen) =
 
