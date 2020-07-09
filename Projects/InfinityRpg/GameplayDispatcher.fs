@@ -340,22 +340,29 @@ module GameplayDispatcherModule =
             | NoActivity -> NoTurn
 
         static let determineEnemyActivities enemies world =
-            List.foldBack
-                (fun (enemy : Entity) precedingEnemyActivities ->
-                    let enemyActivity =
-                        let noPrecedingEnemyActionActivity = Seq.notExists (fun (state : CharacterActivityState) -> state.IsActing) precedingEnemyActivities
-                        let noCurrentEnemyActionActivity = Seq.notExists (fun (enemy : Entity) -> (enemy.GetCharacterModel world).CharacterActivityState.IsActing) enemies
-                        if noPrecedingEnemyActionActivity && noCurrentEnemyActionActivity then
-                            match Option.get (enemy.GetCharacterModel world).DesiredTurnOpt with
-                            | ActionTurn actionDescriptor -> Action actionDescriptor
-                            | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
-                            | CancelTurn -> NoActivity
-                            | NoTurn -> NoActivity
-                        else NoActivity
-                    enemyActivity :: precedingEnemyActivities)
-                (List.ofSeq enemies)
-                []
+            let enemyTurns = List.ofSeq enemies |> List.map (fun (enemy : Entity) -> Option.get (enemy.GetCharacterModel world).DesiredTurnOpt)
+            
+            // if any action is present, all activities but the currently active action, if present, or the first action turn in the list, is cancelled
+            let currentEnemyActionActivity = Seq.exists (fun (enemy : Entity) -> (enemy.GetCharacterModel world).CharacterActivityState.IsActing) enemies
+            let desiredEnemyActionActivity = List.exists (fun (turn : Turn) -> match turn with | ActionTurn a -> true; | _ -> false) enemyTurns
+                                                                               // ^----- better way?
+            
+            let enemyTurnsFiltered =
+                if currentEnemyActionActivity then List.map (fun _ -> NoTurn) enemyTurns
+                elif desiredEnemyActionActivity then
+                    let firstActionIndex = List.tryFindIndex (fun (turn : Turn) -> match turn with | ActionTurn a -> true; | _ -> false) enemyTurns |> Option.get
+                    List.mapi (fun index (turn : Turn) -> if index = firstActionIndex then turn else NoTurn ) enemyTurns
+                else enemyTurns
 
+            List.map
+                (fun (turn : Turn) ->
+                    match turn with
+                    | ActionTurn actionDescriptor -> Action actionDescriptor
+                    | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
+                    | CancelTurn -> NoActivity
+                    | NoTurn -> NoActivity)
+                enemyTurnsFiltered
+            
         static let setCharacterActivity newActivity (character : Entity) world =
             match newActivity with
             | Action newActionDescriptor -> character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = (Action newActionDescriptor) } world
@@ -364,26 +371,15 @@ module GameplayDispatcherModule =
                 character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = (Navigation newNavigationDescriptor) } world
             | NoActivity -> character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = NoActivity } world
 
-        static let trySetEnemyNavigation world newActivity (enemy : Entity) =
+        static let trySetEnemyActivity world newActivity (enemy : Entity) =
             match newActivity with
-            | Navigation _ ->
+            | NoActivity -> world
+            | _ ->
                 let world = enemy.SetCharacterModel { enemy.GetCharacterModel world with DesiredTurnOpt = Some NoTurn } world
-                setCharacterActivity newActivity enemy world
-            | _ -> world
-
-        static let trySetEnemyAction world newActivity (enemy : Entity) =
-            match newActivity with
-            | Action _ ->
-                let world = enemy.SetCharacterModel { enemy.GetCharacterModel world with DesiredTurnOpt = Some NoTurn } world
-                setCharacterActivity newActivity enemy world
-            | _ -> world
+                setCharacterActivity newActivity enemy world            
         
         static let setEnemyActivities enemyActivities enemies world =
-            let anyEnemyActionActivity = Seq.exists (fun (state : CharacterActivityState) -> state.IsActing) enemyActivities
-            if anyEnemyActionActivity then
-                (Seq.fold2 trySetEnemyAction world enemyActivities enemies)
-            else (Seq.fold2 trySetEnemyNavigation world enemyActivities enemies)
-
+            Seq.fold2 trySetEnemyActivity world enemyActivities enemies
         
         static let updateCharacterByWalk walkDescriptor (character : Entity) world =
             let (newPosition, walkState) = walk walkDescriptor (character.GetPosition world)
@@ -495,7 +491,7 @@ module GameplayDispatcherModule =
                 | ActionTurn actionDescriptor -> Action actionDescriptor
                 | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
                 | CancelTurn -> NoActivity
-                | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point."
+                | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point." // TODO : find out how this got triggered
             
             let world = setCharacterActivity newPlayerActivity Simulants.Player world
 
