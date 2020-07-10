@@ -491,7 +491,7 @@ module GameplayDispatcherModule =
                 | ActionTurn actionDescriptor -> Action actionDescriptor
                 | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
                 | CancelTurn -> NoActivity
-                | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point." // TODO : find out how this got triggered
+                | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point."
             
             let world = setCharacterActivity newPlayerActivity Simulants.Player world
 
@@ -565,7 +565,9 @@ module GameplayDispatcherModule =
                 else
                     let world = Simulants.HudSaveGame.SetEnabled false world
                     let playerTurn = determinePlayerTurnFromInput input world
-                    tickNewTurn playerTurn world
+                    match playerTurn with
+                    | NoTurn -> just world
+                    | _ -> tickNewTurn playerTurn world
             | SaveGame gameplay ->
                 World.writeScreenToFile Assets.SaveFilePath gameplay world
                 just world
