@@ -9,7 +9,7 @@ open InfinityRpg
 module CharacterDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] CharacterModel =
-        { InitialPosition : Vector2
+        { Position : Vector2
           EnemyIndexOpt : int option
           CharacterActivityState : CharacterActivityState
           CharacterState : CharacterState
@@ -22,7 +22,7 @@ module CharacterDispatcherModule =
                 { StartTime = 0L
                   AnimationType = CharacterAnimationFacing
                   Direction = Upward }
-            { InitialPosition = Vector2.Zero
+            { Position = Vector2.Zero
               EnemyIndexOpt = None
               CharacterActivityState = NoActivity
               CharacterState = CharacterState.empty
@@ -90,6 +90,9 @@ module CharacterDispatcherModule =
              define Entity.PublishChanges true
              define Entity.Omnipresent true]
 
+        override this.Initializers (model, _) =
+            [Entity.Position <== model --> fun (model : CharacterModel) -> model.Position]
+        
         override this.Actualize (entity, world) =
             if entity.GetInView world then
                 let transform =

@@ -136,7 +136,7 @@ module GameplayDispatcherModule =
                         let randResult = Gen.random1 availableCoordinates.Length
                         let enemyCoordinates = vmtovf availableCoordinates.[randResult]
                         let model =
-                            { InitialPosition = enemyCoordinates
+                            { Position = enemyCoordinates
                               EnemyIndexOpt = Some index
                               CharacterActivityState = NoActivity
                               CharacterState = { CharacterState.empty with HitPoints = 10; ControlType = Chaos }
@@ -383,9 +383,8 @@ module GameplayDispatcherModule =
         
         static let updateCharacterByWalk walkDescriptor (character : Entity) model world =
             let (newPosition, walkState) = walk walkDescriptor (character.GetPosition world)
-            let world = character.SetPosition newPosition world
             let characterAnimationState = { (character.GetCharacterModel world).CharacterAnimationState with Direction = walkDescriptor.WalkDirection }
-            let world = character.SetCharacterModel { (character.GetCharacterModel world) with CharacterAnimationState = characterAnimationState } world
+            let world = character.SetCharacterModel { (character.GetCharacterModel world) with Position = newPosition; CharacterAnimationState = characterAnimationState } world
             (walkState, world)
 
         static let updateCharacterByWalkState walkState navigationDescriptor (character : Entity) model world =
@@ -544,7 +543,7 @@ module GameplayDispatcherModule =
                 let enemies = createEnemies fieldMap
 
                 let player =
-                    { InitialPosition = Vector2.Zero
+                    { Position = Vector2.Zero
                       EnemyIndexOpt = None
                       CharacterActivityState = NoActivity
                       CharacterState = { CharacterState.empty with HitPoints = 30; ControlType = PlayerControlled }
@@ -604,11 +603,9 @@ module GameplayDispatcherModule =
                  Content.entitiesIndexedBy model
                      (fun model -> model.Enemies) constant
                      (fun model -> Option.get model.EnemyIndexOpt)
-                     (fun index model world ->
-                        let initialPosition = (model.Get world).InitialPosition
+                     (fun index model _ ->
                         Content.entity<EnemyDispatcher> ("Enemy+" + scstring index)
-                            [Entity.Position == initialPosition
-                             Entity.CharacterModel <== model])
+                            [Entity.CharacterModel <== model])
 
                  Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
                     [Entity.CharacterModel <== model --> fun model ->
