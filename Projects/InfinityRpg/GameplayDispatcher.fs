@@ -228,7 +228,7 @@ module GameplayDispatcherModule =
                     then makeAttackTurn (vftovm targetPosition)
                     else NoTurn
 
-        static let determineCharacterTurnFromTouch touchPosition occupationMap (character : Entity) opponents world =
+        static let determineCharacterTurnFromTouch touchPosition occupationMap (character : Entity) opponents model world =
             if (character.GetCharacterModel world).CharacterActivityState = NoActivity then
                 match tryGetNavigationPath touchPosition occupationMap character world with
                 | Some navigationPath ->
@@ -269,7 +269,7 @@ module GameplayDispatcherModule =
                     enemyTurn
             | Uncontrolled -> NoTurn
 
-        static let determineDesiredEnemyTurns occupationMap player enemies world =
+        static let determineDesiredEnemyTurns occupationMap player enemies model world =
             let (_, enemyTurns) =
                 List.foldBack
                     (fun (enemy : Entity) (occupationMap, enemyTurns) ->
@@ -280,7 +280,7 @@ module GameplayDispatcherModule =
                     (occupationMap, [])
             enemyTurns
 
-        static let determinePlayerTurnFromTouch touchPosition world =
+        static let determinePlayerTurnFromTouch touchPosition model world =
             let fieldMap = (Simulants.Field.GetFieldModel world).FieldMapNp
             let enemies = getEnemies world
             let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
@@ -291,7 +291,7 @@ module GameplayDispatcherModule =
                         (vftovm (Simulants.Player.GetPosition world))
                         fieldMap.FieldTiles
                         enemyPositions
-                match determineCharacterTurnFromTouch touchPositionW occupationMapWithAdjacentEnemies Simulants.Player enemies world with
+                match determineCharacterTurnFromTouch touchPositionW occupationMapWithAdjacentEnemies Simulants.Player enemies model world with
                 | ActionTurn _ as actionTurn -> actionTurn
                 | NavigationTurn navigationDescriptor as navigationTurn ->
                     let headNavigationNode = navigationDescriptor.NavigationPathOpt |> Option.get |> List.head
@@ -302,7 +302,7 @@ module GameplayDispatcherModule =
                 | NoTurn -> NoTurn
             else NoTurn
 
-        static let determinePlayerTurnFromDetailNavigation direction world =
+        static let determinePlayerTurnFromDetailNavigation direction model world =
             let fieldMap = (Simulants.Field.GetFieldModel world).FieldMapNp
             let enemies = getEnemies world
             let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
@@ -311,19 +311,19 @@ module GameplayDispatcherModule =
                 determineCharacterTurnFromDirection direction occupationMapWithEnemies Simulants.Player enemies world
             else NoTurn
 
-        static let determinePlayerTurnFromInput playerInput world =
+        static let determinePlayerTurnFromInput playerInput model world =
             match (Simulants.Player.GetCharacterModel world).CharacterState.ControlType with
             | PlayerControlled ->
                 match playerInput with
-                | TouchInput touchPosition -> determinePlayerTurnFromTouch touchPosition world
-                | DetailInput direction -> determinePlayerTurnFromDetailNavigation direction world
+                | TouchInput touchPosition -> determinePlayerTurnFromTouch touchPosition model world
+                | DetailInput direction -> determinePlayerTurnFromDetailNavigation direction model world
                 | NoInput -> NoTurn
             | Chaos ->
                 Log.debug ("Invalid ControlType 'Chaos' for player.")
                 NoTurn
             | Uncontrolled -> NoTurn
 
-        static let determinePlayerTurnFromNavigationProgress world =
+        static let determinePlayerTurnFromNavigationProgress model world =
             match (Simulants.Player.GetCharacterModel world).CharacterActivityState with
             | Action _ -> NoTurn
             | Navigation navigationDescriptor ->
@@ -339,7 +339,7 @@ module GameplayDispatcherModule =
                 else NoTurn
             | NoActivity -> NoTurn
 
-        static let determineEnemyActivities enemies world =
+        static let determineEnemyActivities enemies model world =
             let enemyTurns = List.ofSeq enemies |> List.map (fun (enemy : Entity) -> Option.get (enemy.GetCharacterModel world).DesiredTurnOpt)
             
             // if any action is present, all activities but the currently active action, if present, or the first action turn in the list, is cancelled
@@ -378,17 +378,17 @@ module GameplayDispatcherModule =
                 let world = enemy.SetCharacterModel { enemy.GetCharacterModel world with DesiredTurnOpt = Some NoTurn } world
                 setCharacterActivity newActivity enemy world            
         
-        static let setEnemyActivities enemyActivities enemies world =
+        static let setEnemyActivities enemyActivities enemies model world =
             Seq.fold2 trySetEnemyActivity world enemyActivities enemies
         
-        static let updateCharacterByWalk walkDescriptor (character : Entity) world =
+        static let updateCharacterByWalk walkDescriptor (character : Entity) model world =
             let (newPosition, walkState) = walk walkDescriptor (character.GetPosition world)
             let world = character.SetPosition newPosition world
             let characterAnimationState = { (character.GetCharacterModel world).CharacterAnimationState with Direction = walkDescriptor.WalkDirection }
             let world = character.SetCharacterModel { (character.GetCharacterModel world) with CharacterAnimationState = characterAnimationState } world
             (walkState, world)
 
-        static let updateCharacterByWalkState walkState navigationDescriptor (character : Entity) world =
+        static let updateCharacterByWalkState walkState navigationDescriptor (character : Entity) model world =
             match walkState with
             | WalkFinished ->
                 let lastOrigin = navigationDescriptor.WalkDescriptor.WalkOriginM
@@ -403,11 +403,11 @@ module GameplayDispatcherModule =
                 | None -> character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = NoActivity } world
             | WalkContinuing -> world
 
-        static let tickNavigation navigationDescriptor character world =
-            let (walkState, world) = updateCharacterByWalk navigationDescriptor.WalkDescriptor character world
-            updateCharacterByWalkState walkState navigationDescriptor character world
+        static let tickNavigation navigationDescriptor character model world =
+            let (walkState, world) = updateCharacterByWalk navigationDescriptor.WalkDescriptor character model world
+            updateCharacterByWalkState walkState navigationDescriptor character model world
 
-        static let tickReaction actionDescriptor (initiator : Entity) world =
+        static let tickReaction actionDescriptor (initiator : Entity) model world =
             let reactor =
                 getCharacterInDirection
                     (initiator.GetPosition world)
@@ -428,7 +428,7 @@ module GameplayDispatcherModule =
                 else world
             else world
 
-        static let tickAction actionDescriptor (character : Entity) world =
+        static let tickAction actionDescriptor (character : Entity) model world =
             let characterAnimationState = (character.GetCharacterModel world).CharacterAnimationState
             if actionDescriptor.ActionTicks = 0L then
                 let world = character.SetCharacterModel { (character.GetCharacterModel world) with CharacterAnimationState = (getCharacterAnimationStateByActionBegin (World.getTickTime world) (character.GetPosition world) characterAnimationState actionDescriptor) } world
@@ -438,15 +438,15 @@ module GameplayDispatcherModule =
                     character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks }) }
             elif actionDescriptor.ActionTicks < Constants.InfinityRpg.ActionTicksMax then
                 world |>
-                    tickReaction actionDescriptor character |>
+                    tickReaction actionDescriptor character model |>
                     character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks }) }
             else
                 let world = character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = NoActivity } world
                 world |>                    
                     character.SetCharacterModel { character.GetCharacterModel world with CharacterAnimationState = (getCharacterAnimationStateByActionEnd (World.getTickTime world) characterAnimationState ) } |>
-                    tickReaction actionDescriptor character
+                    tickReaction actionDescriptor character model
         
-        static let tickUpdate world =
+        static let tickUpdate model world =
             // set enemy activities in accordance with the player's current activity
             let world =
                 let enemies = getEnemies world
@@ -454,11 +454,11 @@ module GameplayDispatcherModule =
                 | Action _ -> world
                 | Navigation _ 
                 | NoActivity ->
-                    let newEnemyActivities = determineEnemyActivities enemies world
+                    let newEnemyActivities = determineEnemyActivities enemies model world
                     if List.exists (fun (state : CharacterActivityState) -> state.IsActing) newEnemyActivities then
-                        let world = setEnemyActivities newEnemyActivities enemies world
+                        let world = setEnemyActivities newEnemyActivities enemies model world
                         cancelNavigation Simulants.Player world
-                    else setEnemyActivities newEnemyActivities enemies world
+                    else setEnemyActivities newEnemyActivities enemies model world
             
             let enemies = getEnemies world |> Seq.toList
             let characters = Simulants.Player :: enemies
@@ -469,23 +469,17 @@ module GameplayDispatcherModule =
                     let world =
                         match (character.GetCharacterModel world).CharacterActivityState with
                         | Action actionDescriptor ->
-                            tickAction actionDescriptor character world
+                            tickAction actionDescriptor character model world
                         | Navigation navigationDescriptor ->
                             if navigationDescriptor.LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM then
-                                tickNavigation navigationDescriptor character world
+                                tickNavigation navigationDescriptor character model world
                             else world
                         | NoActivity -> world
                     recursion characters.Tail world
             just (recursion characters world)
         
-        static let tickNewTurn newPlayerTurn world =
+        static let tickNewTurn newPlayerTurn model world =
 
-            let occupationMap =
-                let fieldMap = (Simulants.Field.GetFieldModel world).FieldMapNp
-                let enemies = getEnemies world
-                let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
-                OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions newPlayerTurn
-            
             let newPlayerActivity =
                 match newPlayerTurn with
                 | ActionTurn actionDescriptor -> Action actionDescriptor
@@ -496,24 +490,30 @@ module GameplayDispatcherModule =
             let world = setCharacterActivity newPlayerActivity Simulants.Player world
 
             // determine (and set) enemy desired turns if applicable
+            let occupationMap =
+                let fieldMap = (Simulants.Field.GetFieldModel world).FieldMapNp
+                let enemies = getEnemies world
+                let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
+                OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions newPlayerTurn
+            
             let world =
                 match newPlayerActivity with
                 | Action _
                 | Navigation _ ->
                     let enemies = getEnemies world
-                    let enemyDesiredTurns = determineDesiredEnemyTurns occupationMap Simulants.Player enemies world
+                    let enemyDesiredTurns = determineDesiredEnemyTurns occupationMap Simulants.Player enemies model world
                     Seq.fold2 (fun world (enemy : Entity) turn -> enemy.SetCharacterModel { enemy.GetCharacterModel world with DesiredTurnOpt = Some turn } world) world enemies enemyDesiredTurns
                 | NoActivity -> world
 
-            tickUpdate world
+            tickUpdate model world
         
-        static let tickTurn world =
+        static let tickTurn model world =
 
-            let playerTurn = determinePlayerTurnFromNavigationProgress world
+            let playerTurn = determinePlayerTurnFromNavigationProgress model world
 
             match playerTurn with
-            | NoTurn -> tickUpdate world
-            | _ -> tickNewTurn playerTurn world
+            | NoTurn -> tickUpdate model world
+            | _ -> tickNewTurn playerTurn model world
 
         override this.Channel (_, _) =
             [//Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
@@ -564,10 +564,10 @@ module GameplayDispatcherModule =
                 if (anyTurnsInProgress world) then just world
                 else
                     let world = Simulants.HudSaveGame.SetEnabled false world
-                    let playerTurn = determinePlayerTurnFromInput input world
+                    let playerTurn = determinePlayerTurnFromInput input model world
                     match playerTurn with
                     | NoTurn -> just world
-                    | _ -> tickNewTurn playerTurn world
+                    | _ -> tickNewTurn playerTurn model world
             | SaveGame gameplay ->
                 World.writeScreenToFile Assets.SaveFilePath gameplay world
                 just world
@@ -581,7 +581,7 @@ module GameplayDispatcherModule =
                 let world = World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 withMsg world NewGame
             | Tick ->
-                if (anyTurnsInProgress world) then tickTurn world
+                if (anyTurnsInProgress world) then tickTurn model world
                 elif KeyboardState.isKeyDown KeyboardKey.Up then withCmd world (HandlePlayerInput (DetailInput Upward))
                 elif KeyboardState.isKeyDown KeyboardKey.Right then withCmd world (HandlePlayerInput (DetailInput Rightward))
                 elif KeyboardState.isKeyDown KeyboardKey.Down then withCmd world (HandlePlayerInput (DetailInput Downward))
