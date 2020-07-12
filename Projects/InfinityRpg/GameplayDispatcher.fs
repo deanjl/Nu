@@ -13,7 +13,7 @@ module GameplayDispatcherModule =
         { ContentRandState : uint64
           ShallLoadGame : bool
           FieldMapOpt : FieldMap option
-          Enemies : Map<int, CharacterModel>
+          Enemies : CharacterModel list
           Player : CharacterModel }
 
         static member initial =
@@ -22,7 +22,7 @@ module GameplayDispatcherModule =
             { ContentRandState = contentSeedState
               ShallLoadGame = false
               FieldMapOpt = None
-              Enemies = Map.empty
+              Enemies = []
               Player = CharacterModel.initial }
     
     type [<StructuralEquality; NoComparison>] PlayerInput =
@@ -143,8 +143,8 @@ module GameplayDispatcherModule =
                               CharacterAnimationState = { StartTime = 0L; AnimationType = CharacterAnimationFacing; Direction = Upward }
                               CharacterAnimationSheet = Assets.GoopyImage
                               DesiredTurnOpt = Some NoTurn }
-                        (Map.add index model models, enemyCoordinates :: coords))
-                    (Map.empty, [])
+                        (model :: models, enemyCoordinates :: coords))
+                    ([], [])
                     [0 .. enemyCount - 1]
             models
 
@@ -602,7 +602,7 @@ module GameplayDispatcherModule =
                          Entity.Persistent == false])
 
                  Content.entitiesIndexedBy model
-                     (fun model -> model.Enemies |> Map.toValueList) constant
+                     (fun model -> model.Enemies) constant
                      (fun model -> Option.get model.EnemyIndexOpt)
                      (fun index model world ->
                         let initialPosition = (model.Get world).InitialPosition
