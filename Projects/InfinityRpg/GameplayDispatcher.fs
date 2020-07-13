@@ -24,6 +24,33 @@ module GameplayDispatcherModule =
               FieldMapOpt = None
               Enemies = []
               Player = CharacterModel.initial }
+
+        (* these methods are designed to help me fully synchronize the gameplay and character models,
+        so they currently take character models seperately so they can be sourced directly from the entity. *)
+        
+        static member updateCharacterBy updater indexOpt newValue character gameplay =
+            match indexOpt with
+            | None -> { gameplay with Player = updater newValue character }
+            | Some index ->
+                let enemies =
+                    gameplay.Enemies |>
+                    List.map (fun model -> if (Option.get model.EnemyIndexOpt) = index then updater newValue character else model)
+                { gameplay with Enemies = enemies }
+        
+        static member updatePosition indexOpt newValue character gameplay =
+            GameplayModel.updateCharacterBy CharacterModel.updatePosition indexOpt newValue character gameplay
+
+        static member updateCharacterActivityState indexOpt newValue character gameplay =
+            GameplayModel.updateCharacterBy CharacterModel.updateCharacterActivityState indexOpt newValue character gameplay
+
+        static member updateCharacterState indexOpt newValue character gameplay =
+            GameplayModel.updateCharacterBy CharacterModel.updateCharacterState indexOpt newValue character gameplay
+
+        static member updateCharacterAnimationState indexOpt newValue character gameplay =
+            GameplayModel.updateCharacterBy CharacterModel.updateCharacterAnimationState indexOpt newValue character gameplay
+
+        static member updateDesiredTurnOpt indexOpt newValue character gameplay =
+            GameplayModel.updateCharacterBy CharacterModel.updateDesiredTurnOpt indexOpt newValue character gameplay
     
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
@@ -446,7 +473,12 @@ module GameplayDispatcherModule =
                     tickReaction actionDescriptor character model
         
         static let tickUpdate model world =
-            // set enemy activities in accordance with the player's current activity
+            
+            (* set enemy activities in accordance with the player's current activity.
+            "NoActivity" here means the player's turn is finished, and it's the enemy's turn.
+            the present location of this code reflects the fact that the turn in tickNewTurn means the entire round.
+            dividing this initialization into turns for individual characters will arguably make the code more intuitive. *)
+            
             let world =
                 let enemies = getEnemies world
                 match (Simulants.Player.GetCharacterModel world).CharacterActivityState with

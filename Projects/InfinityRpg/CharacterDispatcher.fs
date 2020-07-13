@@ -29,6 +29,21 @@ module CharacterDispatcherModule =
               CharacterAnimationState = characterAnimationState
               CharacterAnimationSheet = Assets.PlayerImage
               DesiredTurnOpt = None }
+
+        static member updatePosition newValue (model : CharacterModel) =
+            { model with Position = newValue }
+
+        static member updateCharacterActivityState newValue (model : CharacterModel) =
+            { model with CharacterActivityState = newValue }
+
+        static member updateCharacterState newValue (model : CharacterModel) =
+            { model with CharacterState = newValue }
+
+        static member updateCharacterAnimationState newValue (model : CharacterModel) =
+            { model with CharacterAnimationState = newValue }
+
+        static member updateDesiredTurnOpt newValue (model : CharacterModel) =
+            { model with DesiredTurnOpt = newValue }
     
     type Entity with
         member this.GetCharacterModel = this.GetModel<CharacterModel>
