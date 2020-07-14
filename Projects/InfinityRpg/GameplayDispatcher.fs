@@ -155,7 +155,7 @@ module GameplayDispatcherModule =
 
         static let createEnemies fieldMap =
             let randResult = Gen.random1 5
-            let enemyCount = randResult + 1
+            let enemyCount = randResult + 5
             let (models, _) =
                 List.fold
                     (fun (models, coords) index ->
@@ -390,23 +390,32 @@ module GameplayDispatcherModule =
                     | NoTurn -> NoActivity)
                 enemyTurnsFiltered
             
-        static let setCharacterActivity newActivity (character : Entity) world =
+        static let setCharacterActivity indexOpt newActivity (character : Entity) model world =
+            let characterModel = character.GetCharacterModel world
             match newActivity with
-            | Action newActionDescriptor -> character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = (Action newActionDescriptor) } world
+            | Action newActionDescriptor ->
+                
+                let newCharacterModel = CharacterModel.updateCharacterActivityState (Action newActionDescriptor) characterModel
+                character.SetCharacterModel newCharacterModel world
+                            
             | Navigation newNavigationDescriptor ->
                 let newNavigationDescriptor = {newNavigationDescriptor with LastWalkOriginM = newNavigationDescriptor.WalkDescriptor.WalkOriginM}
                 character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = (Navigation newNavigationDescriptor) } world
             | NoActivity -> character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = NoActivity } world
 
-        static let trySetEnemyActivity world newActivity (enemy : Entity) =
-            match newActivity with
-            | NoActivity -> world
-            | _ ->
-                let world = enemy.SetCharacterModel { enemy.GetCharacterModel world with DesiredTurnOpt = Some NoTurn } world
-                setCharacterActivity newActivity enemy world            
+        static let trySetEnemyActivity (model, world) newActivity (enemy : Entity) =
+            let world =
+                match newActivity with
+                | NoActivity -> world
+                | _ ->
+                    let index = (enemy.GetCharacterModel world).EnemyIndexOpt
+                    let world = enemy.SetCharacterModel { enemy.GetCharacterModel world with DesiredTurnOpt = Some NoTurn } world
+                    setCharacterActivity index newActivity enemy model world
+            (model, world)
         
         static let setEnemyActivities enemyActivities enemies model world =
-            Seq.fold2 trySetEnemyActivity world enemyActivities enemies
+            let (model, world) = Seq.fold2 trySetEnemyActivity (model, world) enemyActivities enemies
+            world
         
         static let updateCharacterByWalk walkDescriptor (character : Entity) model world =
             let (newPosition, walkState) = walk walkDescriptor (character.GetPosition world)
@@ -518,7 +527,7 @@ module GameplayDispatcherModule =
                 | CancelTurn -> NoActivity
                 | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point."
             
-            let world = setCharacterActivity newPlayerActivity Simulants.Player world
+            let world = setCharacterActivity None newPlayerActivity Simulants.Player model world
 
             // determine (and set) enemy desired turns if applicable
             let occupationMap =
