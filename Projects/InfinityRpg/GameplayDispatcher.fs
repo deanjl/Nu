@@ -227,13 +227,16 @@ module GameplayDispatcherModule =
         static let isPlayerNavigatingPath world =
             (Simulants.Player.GetCharacterModel world).CharacterActivityState.IsNavigatingPath
 
-        static let cancelNavigation (character : Entity) world =
+        static let cancelNavigation (character : Entity) model world =
+            let model = writeCharactersToGameplay model world
+            let characterModel = character.GetCharacterModel world
             let characterActivity =
-                match (character.GetCharacterModel world).CharacterActivityState with
+                match characterModel.CharacterActivityState with
                 | Action _ as action -> action
                 | NoActivity -> NoActivity
                 | Navigation navDescriptor -> Navigation { navDescriptor with NavigationPathOpt = None }
-            character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = characterActivity } world
+            let model = GameplayModel.updateCharacterActivityState characterModel.EnemyIndexOpt characterActivity model
+            Simulants.Gameplay.SetGameplayModel model world
 
         static let anyTurnsInProgress2 (player : Entity) enemies world =
             (player.GetCharacterModel world).CharacterActivityState <> NoActivity ||
@@ -396,7 +399,7 @@ module GameplayDispatcherModule =
                     | NoTurn -> NoActivity)
                 enemyTurnsFiltered
             
-        static let setCharacterActivity indexOpt newActivity (character : Entity) model world =
+        static let setCharacterActivity indexOpt newActivity model world =
             let model = writeCharactersToGameplay model world
             match newActivity with
             | Action newActionDescriptor ->
@@ -404,17 +407,22 @@ module GameplayDispatcherModule =
                 Simulants.Gameplay.SetGameplayModel model world
             | Navigation newNavigationDescriptor ->
                 let newNavigationDescriptor = {newNavigationDescriptor with LastWalkOriginM = newNavigationDescriptor.WalkDescriptor.WalkOriginM}
-                character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = (Navigation newNavigationDescriptor) } world
-            | NoActivity -> character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = NoActivity } world
+                let model = GameplayModel.updateCharacterActivityState indexOpt (Navigation newNavigationDescriptor) model
+                Simulants.Gameplay.SetGameplayModel model world
+            | NoActivity ->
+                let model = GameplayModel.updateCharacterActivityState indexOpt NoActivity model
+                Simulants.Gameplay.SetGameplayModel model world
 
         static let trySetEnemyActivity (model, world) newActivity (enemy : Entity) =
+            let model = writeCharactersToGameplay model world
             let world =
                 match newActivity with
                 | NoActivity -> world
                 | _ ->
                     let index = (enemy.GetCharacterModel world).EnemyIndexOpt
-                    let world = enemy.SetCharacterModel { enemy.GetCharacterModel world with DesiredTurnOpt = Some NoTurn } world
-                    setCharacterActivity index newActivity enemy model world
+                    let model = GameplayModel.updateDesiredTurnOpt index (Some NoTurn) model
+                    let world = Simulants.Gameplay.SetGameplayModel model world
+                    setCharacterActivity index newActivity model world
             (model, world)
         
         static let setEnemyActivities enemyActivities enemies model world =
@@ -501,7 +509,7 @@ module GameplayDispatcherModule =
                     let newEnemyActivities = determineEnemyActivities enemies model world
                     if List.exists (fun (state : CharacterActivityState) -> state.IsActing) newEnemyActivities then
                         let world = setEnemyActivities newEnemyActivities enemies model world
-                        cancelNavigation Simulants.Player world
+                        cancelNavigation Simulants.Player model world
                     else setEnemyActivities newEnemyActivities enemies model world
             
             let enemies = getEnemies world |> Seq.toList
@@ -531,7 +539,8 @@ module GameplayDispatcherModule =
                 | CancelTurn -> NoActivity
                 | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point."
             
-            let world = setCharacterActivity None newPlayerActivity Simulants.Player model world
+            // here None means player
+            let world = setCharacterActivity None newPlayerActivity model world
 
             // determine (and set) enemy desired turns if applicable
             let occupationMap =
@@ -546,7 +555,18 @@ module GameplayDispatcherModule =
                 | Navigation _ ->
                     let enemies = getEnemies world
                     let enemyDesiredTurns = determineDesiredEnemyTurns occupationMap Simulants.Player enemies model world
-                    Seq.fold2 (fun world (enemy : Entity) turn -> enemy.SetCharacterModel { enemy.GetCharacterModel world with DesiredTurnOpt = Some turn } world) world enemies enemyDesiredTurns
+                    let (model, world) =
+                        Seq.fold2
+                            (fun (model, world) (enemy : Entity) turn ->
+                                let model = writeCharactersToGameplay model world
+                                let index = (enemy.GetCharacterModel world).EnemyIndexOpt
+                                let model = GameplayModel.updateDesiredTurnOpt index (Some turn) model
+                                let world = Simulants.Gameplay.SetGameplayModel model world
+                                (model, world))
+                            (model, world)
+                            enemies
+                            enemyDesiredTurns
+                    world
                 | NoActivity -> world
 
             tickUpdate model world
