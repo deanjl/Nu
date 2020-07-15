@@ -476,9 +476,13 @@ module GameplayDispatcherModule =
             else world
 
         static let tickAction actionDescriptor (character : Entity) model world =
+            let model = writeCharactersToGameplay model world
+            let index = (character.GetCharacterModel world).EnemyIndexOpt
             let characterAnimationState = (character.GetCharacterModel world).CharacterAnimationState
             if actionDescriptor.ActionTicks = 0L then
-                let world = character.SetCharacterModel { (character.GetCharacterModel world) with CharacterAnimationState = (getCharacterAnimationStateByActionBegin (World.getTickTime world) (character.GetPosition world) characterAnimationState actionDescriptor) } world
+                
+                let newAnimation = (getCharacterAnimationStateByActionBegin (World.getTickTime world) (character.GetPosition world) characterAnimationState actionDescriptor)
+                let world = character.SetCharacterModel { (character.GetCharacterModel world) with CharacterAnimationState = newAnimation } world
                 character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks }) } world
             elif actionDescriptor.ActionTicks < (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
                 world |>
@@ -514,8 +518,8 @@ module GameplayDispatcherModule =
             
             let enemies = getEnemies world |> Seq.toList
             let characters = Simulants.Player :: enemies
-            let rec recursion (characters : Entity list) world =
-                if characters.Length = 0 then world
+            let rec recursion (characters : Entity list) model world =
+                if characters.Length = 0 then (model,world)
                 else
                     let character = characters.Head
                     let world =
@@ -527,8 +531,10 @@ module GameplayDispatcherModule =
                                 tickNavigation navigationDescriptor character model world
                             else world
                         | NoActivity -> world
-                    recursion characters.Tail world
-            just (recursion characters world)
+                    recursion characters.Tail model world
+            
+            let (model, world) = recursion characters model world
+            just world
         
         static let tickNewTurn newPlayerTurn model world =
 
