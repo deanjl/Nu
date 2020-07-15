@@ -28,29 +28,29 @@ module GameplayDispatcherModule =
         (* these methods are designed to help me fully synchronize the gameplay and character models,
         so they currently take character models seperately so they can be sourced directly from the entity. *)
         
-        static member updateCharacterBy updater indexOpt newValue character gameplay =
+        static member updateCharacterBy updater indexOpt newValue model =
             match indexOpt with
-            | None -> { gameplay with Player = updater newValue character }
+            | None -> { model with Player = updater newValue model.Player }
             | Some index ->
                 let enemies =
-                    gameplay.Enemies |>
-                    List.map (fun model -> if (Option.get model.EnemyIndexOpt) = index then updater newValue character else model)
-                { gameplay with Enemies = enemies }
+                    model.Enemies |>
+                    List.map (fun model -> if (Option.get model.EnemyIndexOpt) = index then updater newValue model else model)
+                { model with Enemies = enemies }
         
-        static member updatePosition indexOpt newValue character gameplay =
-            GameplayModel.updateCharacterBy CharacterModel.updatePosition indexOpt newValue character gameplay
+        static member updatePosition indexOpt newValue model =
+            GameplayModel.updateCharacterBy CharacterModel.updatePosition indexOpt newValue model
 
-        static member updateCharacterActivityState indexOpt newValue character gameplay =
-            GameplayModel.updateCharacterBy CharacterModel.updateCharacterActivityState indexOpt newValue character gameplay
+        static member updateCharacterActivityState indexOpt newValue model =
+            GameplayModel.updateCharacterBy CharacterModel.updateCharacterActivityState indexOpt newValue model
 
-        static member updateCharacterState indexOpt newValue character gameplay =
-            GameplayModel.updateCharacterBy CharacterModel.updateCharacterState indexOpt newValue character gameplay
+        static member updateCharacterState indexOpt newValue model =
+            GameplayModel.updateCharacterBy CharacterModel.updateCharacterState indexOpt newValue model
 
-        static member updateCharacterAnimationState indexOpt newValue character gameplay =
-            GameplayModel.updateCharacterBy CharacterModel.updateCharacterAnimationState indexOpt newValue character gameplay
+        static member updateCharacterAnimationState indexOpt newValue model =
+            GameplayModel.updateCharacterBy CharacterModel.updateCharacterAnimationState indexOpt newValue model
 
-        static member updateDesiredTurnOpt indexOpt newValue character gameplay =
-            GameplayModel.updateCharacterBy CharacterModel.updateDesiredTurnOpt indexOpt newValue character gameplay
+        static member updateDesiredTurnOpt indexOpt newValue model =
+            GameplayModel.updateCharacterBy CharacterModel.updateDesiredTurnOpt indexOpt newValue model
     
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
@@ -99,6 +99,12 @@ module GameplayDispatcherModule =
             let entities = World.getEntities Simulants.Scene world
             Seq.filter (fun (entity : Entity) -> entity.Is<EnemyDispatcher> world) entities
 
+        static let writeCharactersToGameplay model world =
+            let enemies = getEnemies world |> List.ofSeq |> List.map (fun enemy -> enemy.GetCharacterModel world)
+            let enemies = model.Enemies |> List.map (fun enemy -> List.tryFind (fun model -> (Option.get model.EnemyIndexOpt) = (Option.get enemy.EnemyIndexOpt) ) enemies) |> List.definitize
+            let player = Simulants.Player.GetCharacterModel world
+            { model with Enemies = enemies; Player = player }
+        
         static let makeAttackTurn targetPositionM =
             ActionTurn
                 { ActionTicks = 0L
@@ -391,13 +397,11 @@ module GameplayDispatcherModule =
                 enemyTurnsFiltered
             
         static let setCharacterActivity indexOpt newActivity (character : Entity) model world =
-            let characterModel = character.GetCharacterModel world
+            let model = writeCharactersToGameplay model world
             match newActivity with
             | Action newActionDescriptor ->
-                
-                let newCharacterModel = CharacterModel.updateCharacterActivityState (Action newActionDescriptor) characterModel
-                character.SetCharacterModel newCharacterModel world
-                            
+                let model = GameplayModel.updateCharacterActivityState indexOpt (Action newActionDescriptor) model
+                Simulants.Gameplay.SetGameplayModel model world
             | Navigation newNavigationDescriptor ->
                 let newNavigationDescriptor = {newNavigationDescriptor with LastWalkOriginM = newNavigationDescriptor.WalkDescriptor.WalkOriginM}
                 character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = (Navigation newNavigationDescriptor) } world
