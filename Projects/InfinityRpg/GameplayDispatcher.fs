@@ -479,23 +479,25 @@ module GameplayDispatcherModule =
             let model = writeCharactersToGameplay model world
             let index = (character.GetCharacterModel world).EnemyIndexOpt
             let characterAnimationState = (character.GetCharacterModel world).CharacterAnimationState
+            let actionInc = Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks }
             if actionDescriptor.ActionTicks = 0L then
-                
-                let newAnimation = (getCharacterAnimationStateByActionBegin (World.getTickTime world) (character.GetPosition world) characterAnimationState actionDescriptor)
-                let world = character.SetCharacterModel { (character.GetCharacterModel world) with CharacterAnimationState = newAnimation } world
-                character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks }) } world
+                let newAnimation = getCharacterAnimationStateByActionBegin (World.getTickTime world) (character.GetPosition world) characterAnimationState actionDescriptor
+                let model = GameplayModel.updateCharacterAnimationState index newAnimation model
+                let model = GameplayModel.updateCharacterActivityState index actionInc model
+                Simulants.Gameplay.SetGameplayModel model world                
             elif actionDescriptor.ActionTicks < (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
-                world |>
-                    character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks }) }
+                let model = GameplayModel.updateCharacterActivityState index actionInc model
+                Simulants.Gameplay.SetGameplayModel model world
             elif actionDescriptor.ActionTicks < Constants.InfinityRpg.ActionTicksMax then
-                world |>
-                    tickReaction actionDescriptor character model |>
-                    character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = (Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks }) }
+                let model = GameplayModel.updateCharacterActivityState index actionInc model
+                let world = Simulants.Gameplay.SetGameplayModel model world
+                tickReaction actionDescriptor character model world
             else
-                let world = character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = NoActivity } world
-                world |>                    
-                    character.SetCharacterModel { character.GetCharacterModel world with CharacterAnimationState = (getCharacterAnimationStateByActionEnd (World.getTickTime world) characterAnimationState ) } |>
-                    tickReaction actionDescriptor character model
+                let newAnimation = getCharacterAnimationStateByActionEnd (World.getTickTime world) characterAnimationState
+                let model = GameplayModel.updateCharacterAnimationState index newAnimation model
+                let model = GameplayModel.updateCharacterActivityState index NoActivity model
+                let world = Simulants.Gameplay.SetGameplayModel model world
+                tickReaction actionDescriptor character model world
         
         static let tickUpdate model world =
             
