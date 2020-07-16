@@ -429,30 +429,40 @@ module GameplayDispatcherModule =
             let (model, world) = Seq.fold2 trySetEnemyActivity (model, world) enemyActivities enemies
             world
         
-        static let updateCharacterByWalk walkDescriptor (character : Entity) model world =
+        static let updateCharacterByWalk index walkDescriptor (character : Entity) model world =
             let (newPosition, walkState) = walk walkDescriptor (character.GetPosition world)
             let characterAnimationState = { (character.GetCharacterModel world).CharacterAnimationState with Direction = walkDescriptor.WalkDirection }
-            let world = character.SetCharacterModel { (character.GetCharacterModel world) with Position = newPosition; CharacterAnimationState = characterAnimationState } world
+            let model = writeCharactersToGameplay model world
+            let model = GameplayModel.updateCharacterAnimationState index characterAnimationState model
+            let model = GameplayModel.updatePosition index newPosition model
+            let world = Simulants.Gameplay.SetGameplayModel model world
             (walkState, world)
 
-        static let updateCharacterByWalkState walkState navigationDescriptor (character : Entity) model world =
+        static let updateCharacterByWalkState index walkState navigationDescriptor (character : Entity) model world =
+            let model = writeCharactersToGameplay model world
             match walkState with
             | WalkFinished ->
                 let lastOrigin = navigationDescriptor.WalkDescriptor.WalkOriginM
                 match navigationDescriptor.NavigationPathOpt with
                 | Some [] -> failwith "NavigationPath should never be empty here."
-                | Some (_ :: []) -> character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = NoActivity } world
+                | Some (_ :: []) ->
+                    let model = GameplayModel.updateCharacterActivityState index NoActivity model
+                    Simulants.Gameplay.SetGameplayModel model world
                 | Some (currentNode :: navigationPath) ->
                     let walkDirection = vmtod ((List.head navigationPath).PositionM - currentNode.PositionM)
                     let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = vftovm (character.GetPosition world) }
                     let navigationDescriptor = { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath; LastWalkOriginM = lastOrigin }
-                    character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = (Navigation navigationDescriptor) } world
-                | None -> character.SetCharacterModel { character.GetCharacterModel world with CharacterActivityState = NoActivity } world
+                    let model = GameplayModel.updateCharacterActivityState index (Navigation navigationDescriptor) model
+                    Simulants.Gameplay.SetGameplayModel model world
+                | None ->
+                    let model = GameplayModel.updateCharacterActivityState index NoActivity model
+                    Simulants.Gameplay.SetGameplayModel model world
             | WalkContinuing -> world
 
-        static let tickNavigation navigationDescriptor character model world =
-            let (walkState, world) = updateCharacterByWalk navigationDescriptor.WalkDescriptor character model world
-            updateCharacterByWalkState walkState navigationDescriptor character model world
+        static let tickNavigation navigationDescriptor (character : Entity) model world =
+            let index = (character.GetCharacterModel world).EnemyIndexOpt
+            let (walkState, world) = updateCharacterByWalk index navigationDescriptor.WalkDescriptor character model world
+            updateCharacterByWalkState index walkState navigationDescriptor character model world
 
         static let tickReaction actionDescriptor (initiator : Entity) model world =
             let reactor =
@@ -463,11 +473,14 @@ module GameplayDispatcherModule =
             if actionDescriptor.ActionTicks = (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
                 let reactorDamage = 4 // NOTE: just hard-coding damage for now
                 let reactorModel = reactor.GetCharacterModel world
+                let index = reactorModel.EnemyIndexOpt
                 let reactorState = reactorModel.CharacterState
-                let world = reactor.SetCharacterModel { reactorModel with CharacterState = { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } } world
+                let model = GameplayModel.updateCharacterState index { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
+                let world = Simulants.Gameplay.SetGameplayModel model world
                 if (reactor.GetCharacterModel world).CharacterState.HitPoints <= 0 then
                     let characterAnimationState = (reactor.GetCharacterModel world).CharacterAnimationState
-                    reactor.SetCharacterModel { (reactor.GetCharacterModel world) with CharacterAnimationState = { characterAnimationState with AnimationType = CharacterAnimationSlain } } world
+                    let model = GameplayModel.updateCharacterAnimationState index { characterAnimationState with AnimationType = CharacterAnimationSlain } model
+                    Simulants.Gameplay.SetGameplayModel model world
                 else world
             elif actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
                 if (reactor.GetCharacterModel world).CharacterState.HitPoints <= 0 then
@@ -644,13 +657,13 @@ module GameplayDispatcherModule =
                 World.writeScreenToFile Assets.SaveFilePath gameplay world
                 just world
             | QuittingGameplay ->
-                let world = World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.ButterflyGirlSong world
+            //    let world = World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.ButterflyGirlSong world
                 just world
             | QuitGameplay ->
                 let world = World.destroyLayer Simulants.Scene world
                 just world
             | RunGameplay ->
-                let world = World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
+            //    let world = World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 withMsg world NewGame
             | Tick ->
                 if (anyTurnsInProgress world) then tickTurn model world

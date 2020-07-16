@@ -66,8 +66,8 @@ module InfinityDispatcherModule =
         override this.Command (_, command, _, world) =
             let world =
                 match command with
-                | PlayTitleSong -> World.playSong 0 1.0f Assets.ButterflyGirlSong world
-                | FadeSong -> World.fadeOutSong Constants.Audio.DefaultFadeOutMs world
+                | PlayTitleSong -> world // World.playSong 0 1.0f Assets.ButterflyGirlSong world
+                | FadeSong -> world // World.fadeOutSong Constants.Audio.DefaultFadeOutMs world
                 | ShowTitle -> World.transitionScreen Simulants.Title world
                 | ShowCredits -> World.transitionScreen Simulants.Credits world
                 | ShowGameplay -> World.transitionScreen Simulants.Gameplay world
