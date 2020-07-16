@@ -51,6 +51,10 @@ module GameplayDispatcherModule =
 
         static member updateDesiredTurnOpt indexOpt newValue model =
             GameplayModel.updateCharacterBy CharacterModel.updateDesiredTurnOpt indexOpt newValue model
+
+        static member removeEnemy index model =
+            let enemies = List.filter (fun model -> (Option.get model.EnemyIndexOpt) <> index) model.Enemies
+            { model with Enemies = enemies }
     
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
@@ -359,15 +363,14 @@ module GameplayDispatcherModule =
                 NoTurn
             | Uncontrolled -> NoTurn
 
-        static let determinePlayerTurnFromNavigationProgress model world =
-            match (Simulants.Player.GetCharacterModel world).CharacterActivityState with
+        static let determinePlayerTurnFromNavigationProgress model =
+            match model.Player.CharacterActivityState with
             | Action _ -> NoTurn
             | Navigation navigationDescriptor ->
                 let walkDescriptor = navigationDescriptor.WalkDescriptor
-                if Simulants.Player.GetPosition world = vmtovf walkDescriptor.WalkOriginM then
-                    let fieldMap = (Simulants.Field.GetFieldModel world).FieldMapNp
-                    let enemies = getEnemies world
-                    let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
+                if model.Player.Position = vmtovf walkDescriptor.WalkOriginM then
+                    let fieldMap = Option.get model.FieldMapOpt
+                    let enemyPositions = model.Enemies |> List.toSeq |> Seq.map (fun model -> model.Position)
                     let occupationMapWithEnemies = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles enemyPositions
                     let walkDestinationM = walkDescriptor.WalkOriginM + dtovm walkDescriptor.WalkDirection
                     if Map.find walkDestinationM occupationMapWithEnemies then CancelTurn
@@ -470,21 +473,25 @@ module GameplayDispatcherModule =
                     (initiator.GetPosition world)
                     (initiator.GetCharacterModel world).CharacterAnimationState.Direction
                     world
+            let reactorModel = reactor.GetCharacterModel world
+            let indexOpt = reactorModel.EnemyIndexOpt
             if actionDescriptor.ActionTicks = (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
                 let reactorDamage = 4 // NOTE: just hard-coding damage for now
-                let reactorModel = reactor.GetCharacterModel world
-                let index = reactorModel.EnemyIndexOpt
                 let reactorState = reactorModel.CharacterState
-                let model = GameplayModel.updateCharacterState index { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
+                let model = GameplayModel.updateCharacterState indexOpt { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
                 let world = Simulants.Gameplay.SetGameplayModel model world
                 if (reactor.GetCharacterModel world).CharacterState.HitPoints <= 0 then
                     let characterAnimationState = (reactor.GetCharacterModel world).CharacterAnimationState
-                    let model = GameplayModel.updateCharacterAnimationState index { characterAnimationState with AnimationType = CharacterAnimationSlain } model
+                    let model = GameplayModel.updateCharacterAnimationState indexOpt { characterAnimationState with AnimationType = CharacterAnimationSlain } model
                     Simulants.Gameplay.SetGameplayModel model world
                 else world
             elif actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
                 if (reactor.GetCharacterModel world).CharacterState.HitPoints <= 0 then
-                    if reactor.Name = Simulants.Player.Name then World.transitionScreen Simulants.Title world else World.destroyEntity reactor world
+                    if reactor.Name = Simulants.Player.Name then
+                        World.transitionScreen Simulants.Title world
+                    else
+                        let model = GameplayModel.removeEnemy (Option.get indexOpt) model
+                        Simulants.Gameplay.SetGameplayModel model world
                 else world
             else world
 
@@ -594,7 +601,7 @@ module GameplayDispatcherModule =
         
         static let tickTurn model world =
 
-            let playerTurn = determinePlayerTurnFromNavigationProgress model world
+            let playerTurn = determinePlayerTurnFromNavigationProgress model
 
             match playerTurn with
             | NoTurn -> tickUpdate model world
