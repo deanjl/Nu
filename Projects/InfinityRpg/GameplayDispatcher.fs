@@ -252,7 +252,7 @@ module GameplayDispatcherModule =
             let enemies = getEnemies world
             anyTurnsInProgress2 Simulants.Player enemies world
 
-        static let determineCharacterTurnFromDirection direction occupationMap (character : Entity) opponents world =
+        static let determineCharacterTurnFromDirection indexOpt direction occupationMap (character : Entity) opponents model world =
             match (character.GetCharacterModel world).CharacterActivityState with
             | Action _ -> NoTurn
             | Navigation _ -> NoTurn
@@ -288,7 +288,7 @@ module GameplayDispatcherModule =
                     else NoTurn
             else NoTurn
 
-        static let determineDesiredEnemyTurn occupationMap (player : Entity) (enemy : Entity) world =
+        static let determineDesiredEnemyTurn indexOpt occupationMap (player : Entity) (enemy : Entity) model world =
             match (enemy.GetCharacterModel world).CharacterState.ControlType with
             | PlayerControlled as controlType ->
                 Log.debug ("Invalid ControlType '" + scstring controlType + "' for enemy.")
@@ -305,19 +305,20 @@ module GameplayDispatcherModule =
                 else
                     let randResult = Gen.random1 4
                     let direction = Direction.fromInt randResult
-                    let enemyTurn = determineCharacterTurnFromDirection direction occupationMap enemy [player] world
+                    let enemyTurn = determineCharacterTurnFromDirection indexOpt direction occupationMap enemy [player] model world
                     enemyTurn
             | Uncontrolled -> NoTurn
 
         static let determineDesiredEnemyTurns occupationMap player enemies model world =
-            let (_, enemyTurns) =
+            let (_, enemyTurns, model, world) =
                 List.foldBack
-                    (fun (enemy : Entity) (occupationMap, enemyTurns) ->
-                        let enemyTurn = determineDesiredEnemyTurn occupationMap player enemy world
+                    (fun (enemy : Entity) (occupationMap, enemyTurns, model, world) ->
+                        let indexOpt = (enemy.GetCharacterModel world).EnemyIndexOpt
+                        let enemyTurn = determineDesiredEnemyTurn indexOpt occupationMap player enemy model world
                         let occupationMap = OccupationMap.transferByDesiredTurn enemyTurn (enemy.GetPosition world) occupationMap
-                        (occupationMap, enemyTurn :: enemyTurns))
+                        (occupationMap, enemyTurn :: enemyTurns, model, world))
                     (List.ofSeq enemies)
-                    (occupationMap, [])
+                    (occupationMap, [], model, world)
             enemyTurns
 
         static let determinePlayerTurnFromTouch touchPosition model world =
@@ -348,7 +349,7 @@ module GameplayDispatcherModule =
             let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
             if not (anyTurnsInProgress2 Simulants.Player enemies world) then
                 let occupationMapWithEnemies = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles enemyPositions
-                determineCharacterTurnFromDirection direction occupationMapWithEnemies Simulants.Player enemies world
+                determineCharacterTurnFromDirection None direction occupationMapWithEnemies Simulants.Player enemies model world
             else NoTurn
 
         static let determinePlayerTurnFromInput playerInput model world =
@@ -402,19 +403,16 @@ module GameplayDispatcherModule =
                     | NoTurn -> NoActivity)
                 enemyTurnsFiltered
             
-        static let setCharacterActivity indexOpt newActivity model world =
-            let model = writeCharactersToGameplay model world
+        static let setCharacterActivity indexOpt newActivity model =
             match newActivity with
             | Action newActionDescriptor ->
-                let model = GameplayModel.updateCharacterActivityState indexOpt (Action newActionDescriptor) model
-                Simulants.Gameplay.SetGameplayModel model world
+                GameplayModel.updateCharacterActivityState indexOpt (Action newActionDescriptor) model
             | Navigation newNavigationDescriptor ->
                 let newNavigationDescriptor = {newNavigationDescriptor with LastWalkOriginM = newNavigationDescriptor.WalkDescriptor.WalkOriginM}
-                let model = GameplayModel.updateCharacterActivityState indexOpt (Navigation newNavigationDescriptor) model
-                Simulants.Gameplay.SetGameplayModel model world
+                GameplayModel.updateCharacterActivityState indexOpt (Navigation newNavigationDescriptor) model
             | NoActivity ->
-                let model = GameplayModel.updateCharacterActivityState indexOpt NoActivity model
-                Simulants.Gameplay.SetGameplayModel model world
+                GameplayModel.updateCharacterActivityState indexOpt NoActivity model
+                
 
         static let trySetEnemyActivity (model, world) newActivity (enemy : Entity) =
             let model = writeCharactersToGameplay model world
@@ -424,8 +422,8 @@ module GameplayDispatcherModule =
                 | _ ->
                     let index = (enemy.GetCharacterModel world).EnemyIndexOpt
                     let model = GameplayModel.updateDesiredTurnOpt index (Some NoTurn) model
-                    let world = Simulants.Gameplay.SetGameplayModel model world
-                    setCharacterActivity index newActivity model world
+                    let model = setCharacterActivity index newActivity model
+                    Simulants.Gameplay.SetGameplayModel model world
             (model, world)
         
         static let setEnemyActivities enemyActivities enemies model world =
@@ -568,13 +566,13 @@ module GameplayDispatcherModule =
                 | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point."
             
             // here None means player
-            let world = setCharacterActivity None newPlayerActivity model world
+            let model = setCharacterActivity None newPlayerActivity model
+            let world = Simulants.Gameplay.SetGameplayModel model world
 
             // determine (and set) enemy desired turns if applicable
             let occupationMap =
-                let fieldMap = (Simulants.Field.GetFieldModel world).FieldMapNp
-                let enemies = getEnemies world
-                let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
+                let fieldMap = Option.get model.FieldMapOpt
+                let enemyPositions = model.Enemies |> List.toSeq |> Seq.map (fun model -> model.Position)
                 OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions newPlayerTurn
             
             let world =
