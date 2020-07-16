@@ -25,8 +25,15 @@ module GameplayDispatcherModule =
               Enemies = []
               Player = CharacterModel.initial }
 
-        (* these methods are designed to help me fully synchronize the gameplay and character models,
-        so they currently take character models seperately so they can be sourced directly from the entity. *)
+        static member getCharacterByIndex indexOpt model =
+            match indexOpt with
+            | None -> model.Player
+            | Some index -> model.Enemies |> List.find (fun model -> (Option.get model.EnemyIndexOpt) = index)
+
+        static member getCharacterOpponents indexOpt model =
+            match indexOpt with
+            | None -> model.Enemies
+            | _ -> [model.Player]
         
         static member updateCharacterBy updater indexOpt newValue model =
             match indexOpt with
@@ -252,19 +259,21 @@ module GameplayDispatcherModule =
             let enemies = getEnemies world
             anyTurnsInProgress2 Simulants.Player enemies world
 
-        static let determineCharacterTurnFromDirection indexOpt direction occupationMap (character : Entity) opponents model world =
-            match (character.GetCharacterModel world).CharacterActivityState with
+        static let determineCharacterTurnFromDirection indexOpt direction occupationMap model =
+            let characterModel = GameplayModel.getCharacterByIndex indexOpt model
+            match characterModel.CharacterActivityState with
             | Action _ -> NoTurn
             | Navigation _ -> NoTurn
             | NoActivity ->
-                let openDirections = OccupationMap.getOpenDirectionsAtPositionM (vftovm (character.GetPosition world)) occupationMap
+                let characterPositionM = vftovm characterModel.Position
+                let openDirections = OccupationMap.getOpenDirectionsAtPositionM characterPositionM occupationMap
                 if Set.contains direction openDirections then
-                    let characterPositionM = vftovm (character.GetPosition world)
                     let walkDescriptor = { WalkDirection = direction; WalkOriginM = characterPositionM }
                     NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = None; LastWalkOriginM = characterPositionM }
                 else
-                    let targetPosition = character.GetPosition world + dtovf direction
-                    if Seq.exists (fun (opponent : Entity) -> opponent.GetPosition world = targetPosition) opponents
+                    let targetPosition = characterModel.Position + dtovf direction
+                    let opponents = GameplayModel.getCharacterOpponents indexOpt model
+                    if List.exists (fun opponent -> opponent.Position = targetPosition) opponents
                     then makeAttackTurn (vftovm targetPosition)
                     else NoTurn
 
@@ -305,7 +314,7 @@ module GameplayDispatcherModule =
                 else
                     let randResult = Gen.random1 4
                     let direction = Direction.fromInt randResult
-                    let enemyTurn = determineCharacterTurnFromDirection indexOpt direction occupationMap enemy [player] model world
+                    let enemyTurn = determineCharacterTurnFromDirection indexOpt direction occupationMap model
                     enemyTurn
             | Uncontrolled -> NoTurn
 
@@ -349,7 +358,7 @@ module GameplayDispatcherModule =
             let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
             if not (anyTurnsInProgress2 Simulants.Player enemies world) then
                 let occupationMapWithEnemies = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles enemyPositions
-                determineCharacterTurnFromDirection None direction occupationMapWithEnemies Simulants.Player enemies model world
+                determineCharacterTurnFromDirection None direction occupationMapWithEnemies model
             else NoTurn
 
         static let determinePlayerTurnFromInput playerInput model world =
