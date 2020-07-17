@@ -35,6 +35,12 @@ module GameplayDispatcherModule =
             | None -> model.Enemies
             | _ -> [model.Player]
         
+        static member getEnemyPositions model =
+            List.map (fun model -> model.Position) model.Enemies
+        
+        static member getEnemyDesiredTurns model =
+            List.map (fun model -> Option.get model.DesiredTurnOpt) model.Enemies
+        
         static member updateCharacterBy updater indexOpt newValue model =
             match indexOpt with
             | None -> { model with Player = updater newValue model.Player }
@@ -238,16 +244,14 @@ module GameplayDispatcherModule =
         static let isPlayerNavigatingPath world =
             (Simulants.Player.GetCharacterModel world).CharacterActivityState.IsNavigatingPath
 
-        static let cancelNavigation (character : Entity) model world =
-            let model = writeCharactersToGameplay model world
-            let characterModel = character.GetCharacterModel world
+        static let cancelNavigation indexOpt model =
+            let characterModel = GameplayModel.getCharacterByIndex indexOpt model
             let characterActivity =
                 match characterModel.CharacterActivityState with
                 | Action _ as action -> action
                 | NoActivity -> NoActivity
                 | Navigation navDescriptor -> Navigation { navDescriptor with NavigationPathOpt = None }
-            let model = GameplayModel.updateCharacterActivityState characterModel.EnemyIndexOpt characterActivity model
-            Simulants.Gameplay.SetGameplayModel model world
+            GameplayModel.updateCharacterActivityState characterModel.EnemyIndexOpt characterActivity model
 
         static let anyTurnsInProgress2 (player : Entity) enemies world =
             (player.GetCharacterModel world).CharacterActivityState <> NoActivity ||
@@ -380,7 +384,7 @@ module GameplayDispatcherModule =
                 let walkDescriptor = navigationDescriptor.WalkDescriptor
                 if model.Player.Position = vmtovf walkDescriptor.WalkOriginM then
                     let fieldMap = Option.get model.FieldMapOpt
-                    let enemyPositions = model.Enemies |> List.toSeq |> Seq.map (fun model -> model.Position)
+                    let enemyPositions = GameplayModel.getEnemyPositions model |> List.toSeq
                     let occupationMapWithEnemies = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles enemyPositions
                     let walkDestinationM = walkDescriptor.WalkOriginM + dtovm walkDescriptor.WalkDirection
                     if Map.find walkDestinationM occupationMapWithEnemies then CancelTurn
@@ -388,11 +392,11 @@ module GameplayDispatcherModule =
                 else NoTurn
             | NoActivity -> NoTurn
 
-        static let determineEnemyActivities enemies model world =
-            let enemyTurns = List.ofSeq enemies |> List.map (fun (enemy : Entity) -> Option.get (enemy.GetCharacterModel world).DesiredTurnOpt)
+        static let determineEnemyActivities model =
+            let enemyTurns = GameplayModel.getEnemyDesiredTurns model
             
             // if any action is present, all activities but the currently active action, if present, or the first action turn in the list, is cancelled
-            let currentEnemyActionActivity = Seq.exists (fun (enemy : Entity) -> (enemy.GetCharacterModel world).CharacterActivityState.IsActing) enemies
+            let currentEnemyActionActivity = List.exists (fun model -> model.CharacterActivityState.IsActing) model.Enemies
             let desiredEnemyActionActivity = List.exists (fun (turn : Turn) -> match turn with | ActionTurn a -> true; | _ -> false) enemyTurns
                                                                                // ^----- better way?
             
@@ -421,23 +425,16 @@ module GameplayDispatcherModule =
                 GameplayModel.updateCharacterActivityState indexOpt (Navigation newNavigationDescriptor) model
             | NoActivity ->
                 GameplayModel.updateCharacterActivityState indexOpt NoActivity model
-                
 
-        static let trySetEnemyActivity (model, world) newActivity (enemy : Entity) =
-            let model = writeCharactersToGameplay model world
-            let world =
-                match newActivity with
-                | NoActivity -> world
-                | _ ->
-                    let index = (enemy.GetCharacterModel world).EnemyIndexOpt
-                    let model = GameplayModel.updateDesiredTurnOpt index (Some NoTurn) model
-                    let model = setCharacterActivity index newActivity model
-                    Simulants.Gameplay.SetGameplayModel model world
-            (model, world)
+        static let trySetEnemyActivity model newActivity enemy =
+            match newActivity with
+            | NoActivity -> model
+            | _ ->
+                let model = GameplayModel.updateDesiredTurnOpt enemy.EnemyIndexOpt (Some NoTurn) model
+                setCharacterActivity enemy.EnemyIndexOpt newActivity model
         
-        static let setEnemyActivities enemyActivities enemies model world =
-            let (model, world) = Seq.fold2 trySetEnemyActivity (model, world) enemyActivities enemies
-            world
+        static let setEnemyActivities enemyActivities model =
+            Seq.fold2 trySetEnemyActivity model enemyActivities model.Enemies
         
         static let updateCharacterByWalk index walkDescriptor (character : Entity) model world =
             let (newPosition, walkState) = walk walkDescriptor (character.GetPosition world)
@@ -533,17 +530,18 @@ module GameplayDispatcherModule =
             the present location of this code reflects the fact that the turn in tickNewTurn means the entire round.
             dividing this initialization into turns for individual characters will arguably make the code more intuitive. *)
             
-            let world =
-                let enemies = getEnemies world
-                match (Simulants.Player.GetCharacterModel world).CharacterActivityState with
-                | Action _ -> world
+            let model =
+                match model.Player.CharacterActivityState with
+                | Action _ -> model
                 | Navigation _ 
                 | NoActivity ->
-                    let newEnemyActivities = determineEnemyActivities enemies model world
+                    let newEnemyActivities = determineEnemyActivities model
                     if List.exists (fun (state : CharacterActivityState) -> state.IsActing) newEnemyActivities then
-                        let world = setEnemyActivities newEnemyActivities enemies model world
-                        cancelNavigation Simulants.Player model world
-                    else setEnemyActivities newEnemyActivities enemies model world
+                        let model = setEnemyActivities newEnemyActivities model
+                        cancelNavigation None model
+                    else setEnemyActivities newEnemyActivities model
+            
+            let world = Simulants.Gameplay.SetGameplayModel model world
             
             let enemies = getEnemies world |> Seq.toList
             let characters = Simulants.Player :: enemies
@@ -580,7 +578,7 @@ module GameplayDispatcherModule =
             // determine (and set) enemy desired turns if applicable
             let occupationMap =
                 let fieldMap = Option.get model.FieldMapOpt
-                let enemyPositions = model.Enemies |> List.toSeq |> Seq.map (fun model -> model.Position)
+                let enemyPositions = GameplayModel.getEnemyPositions model |> List.toSeq
                 OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions newPlayerTurn
             
             let model =
