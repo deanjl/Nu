@@ -35,6 +35,16 @@ module GameplayDispatcherModule =
             | None -> model.Enemies
             | _ -> [model.Player]
         
+        static member getCharacters model =
+            model.Player :: model.Enemies
+
+        static member tryGetCharacterAtPosition position model =
+            GameplayModel.getCharacters model |> List.tryFind (fun model -> model.Position = position)
+
+        static member getCharacterInDirection indexOpt direction model =
+            let position = (GameplayModel.getCharacterByIndex indexOpt model).Position
+            GameplayModel.tryGetCharacterAtPosition (position + dtovf direction) model |> Option.get
+        
         static member getEnemyPositions model =
             List.map (fun model -> model.Position) model.Enemies
         
@@ -97,20 +107,6 @@ module GameplayDispatcherModule =
 
     type GameplayDispatcher () =
         inherit ScreenDispatcher<GameplayModel, GameplayMessage, GameplayCommand> (GameplayModel.initial)
-
-        static let getCharacters world =
-            let entities = World.getEntities Simulants.Scene world
-            Seq.filter (fun (entity : Entity) -> entity.Is<CharacterDispatcher> world) entities
-
-        static let tryGetCharacterAtPosition position world =
-            let characters = getCharacters world
-            Seq.tryFind (fun (character : Entity) -> character.GetPosition world = position) characters
-        
-        static let tryGetCharacterInDirection position direction world =
-            tryGetCharacterAtPosition (position + dtovf direction) world
-        
-        static let getCharacterInDirection position direction world =
-            Option.get (tryGetCharacterInDirection position direction world)
 
         static let getEnemies world =
             let entities = World.getEntities Simulants.Scene world
@@ -471,57 +467,46 @@ module GameplayDispatcherModule =
             let (walkState, world) = updateCharacterByWalk index navigationDescriptor.WalkDescriptor character model world
             updateCharacterByWalkState index walkState navigationDescriptor character model world
 
-        static let tickReaction actionDescriptor (initiator : Entity) model world =
-            let reactor =
-                getCharacterInDirection
-                    (initiator.GetPosition world)
-                    (initiator.GetCharacterModel world).CharacterAnimationState.Direction
-                    world
-            let reactorModel = reactor.GetCharacterModel world
-            let indexOpt = reactorModel.EnemyIndexOpt
+        static let tickReaction initiatorIndexOpt actionDescriptor model =
+            let initiatorModel = GameplayModel.getCharacterByIndex initiatorIndexOpt model
+            let reactorModel = GameplayModel.getCharacterInDirection initiatorIndexOpt initiatorModel.CharacterAnimationState.Direction model
+            let reactorState = reactorModel.CharacterState
+            let reactorIndexOpt = reactorModel.EnemyIndexOpt
             if actionDescriptor.ActionTicks = (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
                 let reactorDamage = 4 // NOTE: just hard-coding damage for now
-                let reactorState = reactorModel.CharacterState
-                let model = GameplayModel.updateCharacterState indexOpt { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
-                let world = Simulants.Gameplay.SetGameplayModel model world
-                if (reactor.GetCharacterModel world).CharacterState.HitPoints <= 0 then
-                    let characterAnimationState = (reactor.GetCharacterModel world).CharacterAnimationState
-                    let model = GameplayModel.updateCharacterAnimationState indexOpt { characterAnimationState with AnimationType = CharacterAnimationSlain } model
-                    Simulants.Gameplay.SetGameplayModel model world
-                else world
+                let model = GameplayModel.updateCharacterState reactorIndexOpt { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
+                let reactorModel = GameplayModel.getCharacterByIndex reactorIndexOpt model
+                if reactorModel.CharacterState.HitPoints <= 0 then
+                    let characterAnimationState = reactorModel.CharacterAnimationState
+                    GameplayModel.updateCharacterAnimationState reactorIndexOpt { characterAnimationState with AnimationType = CharacterAnimationSlain } model
+                else model
             elif actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
-                if (reactor.GetCharacterModel world).CharacterState.HitPoints <= 0 then
-                    if reactor.Name = Simulants.Player.Name then
-                        World.transitionScreen Simulants.Title world
-                    else
-                        let model = GameplayModel.removeEnemy (Option.get indexOpt) model
-                        Simulants.Gameplay.SetGameplayModel model world
-                else world
-            else world
+                if reactorModel.CharacterState.HitPoints <= 0 then
+                    match reactorIndexOpt with
+                    | None -> GameplayModel.updateCharacterState None {reactorState with ControlType = Uncontrolled} model // TODO: reimplement screen transition
+                    | Some index -> GameplayModel.removeEnemy index model
+                else model
+            else model
 
-        static let tickAction actionDescriptor (character : Entity) model world =
+        static let tickAction indexOpt actionDescriptor model world =
             let model = writeCharactersToGameplay model world
-            let index = (character.GetCharacterModel world).EnemyIndexOpt
-            let characterAnimationState = (character.GetCharacterModel world).CharacterAnimationState
+            let characterModel = GameplayModel.getCharacterByIndex indexOpt model
+            let characterAnimationState = characterModel.CharacterAnimationState
             let actionInc = Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks }
             if actionDescriptor.ActionTicks = 0L then
-                let newAnimation = getCharacterAnimationStateByActionBegin (World.getTickTime world) (character.GetPosition world) characterAnimationState actionDescriptor
-                let model = GameplayModel.updateCharacterAnimationState index newAnimation model
-                let model = GameplayModel.updateCharacterActivityState index actionInc model
-                Simulants.Gameplay.SetGameplayModel model world                
+                let newAnimation = getCharacterAnimationStateByActionBegin (World.getTickTime world) characterModel.Position characterAnimationState actionDescriptor
+                let model = GameplayModel.updateCharacterAnimationState indexOpt newAnimation model
+                GameplayModel.updateCharacterActivityState indexOpt actionInc model
             elif actionDescriptor.ActionTicks < (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
-                let model = GameplayModel.updateCharacterActivityState index actionInc model
-                Simulants.Gameplay.SetGameplayModel model world
+                GameplayModel.updateCharacterActivityState indexOpt actionInc model
             elif actionDescriptor.ActionTicks < Constants.InfinityRpg.ActionTicksMax then
-                let model = GameplayModel.updateCharacterActivityState index actionInc model
-                let world = Simulants.Gameplay.SetGameplayModel model world
-                tickReaction actionDescriptor character model world
+                let model = GameplayModel.updateCharacterActivityState indexOpt actionInc model
+                tickReaction indexOpt actionDescriptor model
             else
                 let newAnimation = getCharacterAnimationStateByActionEnd (World.getTickTime world) characterAnimationState
-                let model = GameplayModel.updateCharacterAnimationState index newAnimation model
-                let model = GameplayModel.updateCharacterActivityState index NoActivity model
-                let world = Simulants.Gameplay.SetGameplayModel model world
-                tickReaction actionDescriptor character model world
+                let model = GameplayModel.updateCharacterAnimationState indexOpt newAnimation model
+                let model = GameplayModel.updateCharacterActivityState indexOpt NoActivity model
+                tickReaction indexOpt actionDescriptor model
         
         static let tickUpdate model world =
             
@@ -549,10 +534,13 @@ module GameplayDispatcherModule =
                 if characters.Length = 0 then (model,world)
                 else
                     let character = characters.Head
+                    let indexOpt = (character.GetCharacterModel world).EnemyIndexOpt
+                    let characterModel = GameplayModel.getCharacterByIndex indexOpt model
                     let world =
-                        match (character.GetCharacterModel world).CharacterActivityState with
+                        match characterModel.CharacterActivityState with
                         | Action actionDescriptor ->
-                            tickAction actionDescriptor character model world
+                            let model = tickAction indexOpt actionDescriptor model world
+                            Simulants.Gameplay.SetGameplayModel model world
                         | Navigation navigationDescriptor ->
                             if navigationDescriptor.LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM then
                                 tickNavigation navigationDescriptor character model world
