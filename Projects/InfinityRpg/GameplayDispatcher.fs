@@ -45,6 +45,9 @@ module GameplayDispatcherModule =
             let position = (GameplayModel.getCharacterByIndex indexOpt model).Position
             GameplayModel.tryGetCharacterAtPosition (position + dtovf direction) model |> Option.get
         
+        static member getCharacterIndices model =
+            GameplayModel.getCharacters model |> List.map (fun model -> model.EnemyIndexOpt)
+        
         static member getEnemyPositions model =
             List.map (fun model -> model.Position) model.Enemies
         
@@ -432,40 +435,35 @@ module GameplayDispatcherModule =
         static let setEnemyActivities enemyActivities model =
             Seq.fold2 trySetEnemyActivity model enemyActivities model.Enemies
         
-        static let updateCharacterByWalk index walkDescriptor (character : Entity) model world =
-            let (newPosition, walkState) = walk walkDescriptor (character.GetPosition world)
-            let characterAnimationState = { (character.GetCharacterModel world).CharacterAnimationState with Direction = walkDescriptor.WalkDirection }
-            let model = writeCharactersToGameplay model world
-            let model = GameplayModel.updateCharacterAnimationState index characterAnimationState model
-            let model = GameplayModel.updatePosition index newPosition model
-            let world = Simulants.Gameplay.SetGameplayModel model world
-            (walkState, world)
+        static let updateCharacterByWalk indexOpt walkDescriptor model =
+            let characterModel = GameplayModel.getCharacterByIndex indexOpt model
+            let (newPosition, walkState) = walk walkDescriptor characterModel.Position
+            let characterAnimationState = { characterModel.CharacterAnimationState with Direction = walkDescriptor.WalkDirection }
+            let model = GameplayModel.updateCharacterAnimationState indexOpt characterAnimationState model
+            let model = GameplayModel.updatePosition indexOpt newPosition model
+            (walkState, model)
 
-        static let updateCharacterByWalkState index walkState navigationDescriptor (character : Entity) model world =
-            let model = writeCharactersToGameplay model world
+        static let updateCharacterByWalkState indexOpt walkState navigationDescriptor model =
+            let characterModel = GameplayModel.getCharacterByIndex indexOpt model
             match walkState with
             | WalkFinished ->
                 let lastOrigin = navigationDescriptor.WalkDescriptor.WalkOriginM
                 match navigationDescriptor.NavigationPathOpt with
                 | Some [] -> failwith "NavigationPath should never be empty here."
                 | Some (_ :: []) ->
-                    let model = GameplayModel.updateCharacterActivityState index NoActivity model
-                    Simulants.Gameplay.SetGameplayModel model world
+                    GameplayModel.updateCharacterActivityState indexOpt NoActivity model
                 | Some (currentNode :: navigationPath) ->
                     let walkDirection = vmtod ((List.head navigationPath).PositionM - currentNode.PositionM)
-                    let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = vftovm (character.GetPosition world) }
+                    let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = vftovm characterModel.Position }
                     let navigationDescriptor = { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath; LastWalkOriginM = lastOrigin }
-                    let model = GameplayModel.updateCharacterActivityState index (Navigation navigationDescriptor) model
-                    Simulants.Gameplay.SetGameplayModel model world
+                    GameplayModel.updateCharacterActivityState indexOpt (Navigation navigationDescriptor) model
                 | None ->
-                    let model = GameplayModel.updateCharacterActivityState index NoActivity model
-                    Simulants.Gameplay.SetGameplayModel model world
-            | WalkContinuing -> world
+                    GameplayModel.updateCharacterActivityState indexOpt NoActivity model
+            | WalkContinuing -> model
 
-        static let tickNavigation navigationDescriptor (character : Entity) model world =
-            let index = (character.GetCharacterModel world).EnemyIndexOpt
-            let (walkState, world) = updateCharacterByWalk index navigationDescriptor.WalkDescriptor character model world
-            updateCharacterByWalkState index walkState navigationDescriptor character model world
+        static let tickNavigation indexOpt navigationDescriptor model =
+            let (walkState, model) = updateCharacterByWalk indexOpt navigationDescriptor.WalkDescriptor model
+            updateCharacterByWalkState indexOpt walkState navigationDescriptor model
 
         static let tickReaction initiatorIndexOpt actionDescriptor model =
             let initiatorModel = GameplayModel.getCharacterByIndex initiatorIndexOpt model
@@ -488,13 +486,12 @@ module GameplayDispatcherModule =
                 else model
             else model
 
-        static let tickAction indexOpt actionDescriptor model world =
-            let model = writeCharactersToGameplay model world
+        static let tickAction time indexOpt actionDescriptor model =
             let characterModel = GameplayModel.getCharacterByIndex indexOpt model
             let characterAnimationState = characterModel.CharacterAnimationState
             let actionInc = Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks }
             if actionDescriptor.ActionTicks = 0L then
-                let newAnimation = getCharacterAnimationStateByActionBegin (World.getTickTime world) characterModel.Position characterAnimationState actionDescriptor
+                let newAnimation = getCharacterAnimationStateByActionBegin time characterModel.Position characterAnimationState actionDescriptor
                 let model = GameplayModel.updateCharacterAnimationState indexOpt newAnimation model
                 GameplayModel.updateCharacterActivityState indexOpt actionInc model
             elif actionDescriptor.ActionTicks < (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
@@ -503,12 +500,12 @@ module GameplayDispatcherModule =
                 let model = GameplayModel.updateCharacterActivityState indexOpt actionInc model
                 tickReaction indexOpt actionDescriptor model
             else
-                let newAnimation = getCharacterAnimationStateByActionEnd (World.getTickTime world) characterAnimationState
+                let newAnimation = getCharacterAnimationStateByActionEnd time characterAnimationState
                 let model = GameplayModel.updateCharacterAnimationState indexOpt newAnimation model
                 let model = GameplayModel.updateCharacterActivityState indexOpt NoActivity model
                 tickReaction indexOpt actionDescriptor model
         
-        static let tickUpdate model world =
+        static let tickUpdate time model world =
             
             (* set enemy activities in accordance with the player's current activity.
             "NoActivity" here means the player's turn is finished, and it's the enemy's turn.
@@ -528,22 +525,23 @@ module GameplayDispatcherModule =
             
             let world = Simulants.Gameplay.SetGameplayModel model world
             
-            let enemies = getEnemies world |> Seq.toList
-            let characters = Simulants.Player :: enemies
-            let rec recursion (characters : Entity list) model world =
+            let characters = GameplayModel.getCharacterIndices model
+            let rec recursion (characters : int option list) model world =
                 if characters.Length = 0 then (model,world)
                 else
-                    let character = characters.Head
-                    let indexOpt = (character.GetCharacterModel world).EnemyIndexOpt
+                    let indexOpt = characters.Head
                     let characterModel = GameplayModel.getCharacterByIndex indexOpt model
                     let world =
                         match characterModel.CharacterActivityState with
                         | Action actionDescriptor ->
-                            let model = tickAction indexOpt actionDescriptor model world
+                            let model = writeCharactersToGameplay model world
+                            let model = tickAction time indexOpt actionDescriptor model
                             Simulants.Gameplay.SetGameplayModel model world
                         | Navigation navigationDescriptor ->
                             if navigationDescriptor.LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM then
-                                tickNavigation navigationDescriptor character model world
+                                let model = writeCharactersToGameplay model world
+                                let model = tickNavigation indexOpt navigationDescriptor model
+                                Simulants.Gameplay.SetGameplayModel model world
                             else world
                         | NoActivity -> world
                     recursion characters.Tail model world
@@ -551,7 +549,7 @@ module GameplayDispatcherModule =
             let (model, world) = recursion characters model world
             just world
         
-        static let tickNewTurn newPlayerTurn model world =
+        static let tickNewTurn time newPlayerTurn model world =
 
             let newPlayerActivity =
                 match newPlayerTurn with
@@ -585,15 +583,15 @@ module GameplayDispatcherModule =
 
             let world = Simulants.Gameplay.SetGameplayModel model world
 
-            tickUpdate model world
+            tickUpdate time model world
         
-        static let tickTurn model world =
+        static let tickTurn time model world =
 
             let playerTurn = determinePlayerTurnFromNavigationProgress model
 
             match playerTurn with
-            | NoTurn -> tickUpdate model world
-            | _ -> tickNewTurn playerTurn model world
+            | NoTurn -> tickUpdate time model world
+            | _ -> tickNewTurn time playerTurn model world
 
         override this.Channel (_, _) =
             [//Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
@@ -647,7 +645,7 @@ module GameplayDispatcherModule =
                     let playerTurn = determinePlayerTurnFromInput input model world
                     match playerTurn with
                     | NoTurn -> just world
-                    | _ -> tickNewTurn playerTurn model world
+                    | _ -> tickNewTurn (World.getTickTime world) playerTurn model world
             | SaveGame gameplay ->
                 World.writeScreenToFile Assets.SaveFilePath gameplay world
                 just world
@@ -661,7 +659,7 @@ module GameplayDispatcherModule =
             //    let world = World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 withMsg world NewGame
             | Tick ->
-                if (anyTurnsInProgress world) then tickTurn model world
+                if (anyTurnsInProgress world) then tickTurn (World.getTickTime world) model world
                 elif KeyboardState.isKeyDown KeyboardKey.Up then withCmd world (HandlePlayerInput (DetailInput Upward))
                 elif KeyboardState.isKeyDown KeyboardKey.Right then withCmd world (HandlePlayerInput (DetailInput Rightward))
                 elif KeyboardState.isKeyDown KeyboardKey.Down then withCmd world (HandlePlayerInput (DetailInput Downward))
