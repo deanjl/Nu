@@ -25,10 +25,13 @@ module GameplayDispatcherModule =
               Enemies = []
               Player = CharacterModel.initial }
 
-        static member getCharacterByIndex indexOpt model =
+        static member tryGetCharacterByIndex indexOpt model =
             match indexOpt with
-            | None -> model.Player
-            | Some index -> model.Enemies |> List.find (fun model -> (Option.get model.EnemyIndexOpt) = index)
+            | None -> Some model.Player
+            | Some index -> model.Enemies |> List.tryFind (fun model -> (Option.get model.EnemyIndexOpt) = index)
+        
+        static member getCharacterByIndex indexOpt model =
+            GameplayModel.tryGetCharacterByIndex indexOpt model |> Option.get
 
         static member getCharacterOpponents indexOpt model =
             match indexOpt with
@@ -356,9 +359,9 @@ module GameplayDispatcherModule =
             else NoTurn
 
         static let determinePlayerTurnFromDetailNavigation direction model world =
-            let fieldMap = (Simulants.Field.GetFieldModel world).FieldMapNp
+            let fieldMap = Option.get model.FieldMapOpt
             let enemies = getEnemies world
-            let enemyPositions = Seq.map (fun (enemy : Entity) -> enemy.GetPosition world) enemies
+            let enemyPositions = GameplayModel.getEnemyPositions model
             if not (anyTurnsInProgress2 Simulants.Player enemies world) then
                 let occupationMapWithEnemies = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles enemyPositions
                 determineCharacterTurnFromDirection None direction occupationMapWithEnemies model
@@ -523,30 +526,28 @@ module GameplayDispatcherModule =
                         cancelNavigation None model
                     else setEnemyActivities newEnemyActivities model
             
-            let world = Simulants.Gameplay.SetGameplayModel model world
-            
             let characters = GameplayModel.getCharacterIndices model
-            let rec recursion (characters : int option list) model world =
-                if characters.Length = 0 then (model,world)
+            let rec recursion (characters : int option list) model =
+                if characters.Length = 0 then model
                 else
                     let indexOpt = characters.Head
-                    let characterModel = GameplayModel.getCharacterByIndex indexOpt model
-                    let world =
-                        match characterModel.CharacterActivityState with
-                        | Action actionDescriptor ->
-                            let model = writeCharactersToGameplay model world
-                            let model = tickAction time indexOpt actionDescriptor model
-                            Simulants.Gameplay.SetGameplayModel model world
-                        | Navigation navigationDescriptor ->
-                            if navigationDescriptor.LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM then
-                                let model = writeCharactersToGameplay model world
-                                let model = tickNavigation indexOpt navigationDescriptor model
-                                Simulants.Gameplay.SetGameplayModel model world
-                            else world
-                        | NoActivity -> world
-                    recursion characters.Tail model world
+                    let characterModelOpt = GameplayModel.tryGetCharacterByIndex indexOpt model
+                    let model =
+                        match characterModelOpt with
+                        | None -> model
+                        | Some characterModel ->
+                            match characterModel.CharacterActivityState with
+                            | Action actionDescriptor ->
+                                tickAction time indexOpt actionDescriptor model
+                            | Navigation navigationDescriptor ->
+                                if navigationDescriptor.LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM then
+                                    tickNavigation indexOpt navigationDescriptor model
+                                else model
+                            | NoActivity -> model
+                    recursion characters.Tail model
             
-            let (model, world) = recursion characters model world
+            let model = recursion characters model
+            let world = Simulants.Gameplay.SetGameplayModel model world
             just world
         
         static let tickNewTurn time newPlayerTurn model world =
