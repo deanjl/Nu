@@ -111,7 +111,8 @@ module CharacterDispatcherModule =
         override this.Actualize (entity, world) =
             if entity.GetInView world then
                 let transform =
-                    { Position = entity.GetPosition world
+                    { RefCount = 0
+                      Position = entity.GetPosition world
                       Size = entity.GetSize world
                       Rotation = entity.GetRotation world
                       Depth = entity.GetDepth world 

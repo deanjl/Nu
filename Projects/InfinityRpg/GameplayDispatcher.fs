@@ -646,7 +646,7 @@ module GameplayDispatcherModule =
 
             [Content.layer Simulants.Scene.Name []
 
-                [Content.entityOpt model (fun model -> model.FieldMapOpt) (fun _ fieldMap world ->
+                [Content.entityOpt model (fun model -> model.FieldMapOpt) (fun fieldMap world ->
                     let fieldMap = fieldMap.Get world
                     Content.entity<FieldDispatcher> Simulants.Field.Name
                         [Entity.FieldModel == { FieldMapNp = fieldMap }
