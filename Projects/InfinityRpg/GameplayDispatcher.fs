@@ -99,6 +99,7 @@ module GameplayDispatcherModule =
 
     type GameplayMessage =
         | NewGame
+        | TickTurn of Turn
     
     type [<NoEquality; NoComparison>] GameplayCommand =
         | ToggleHaltButton // TODO: reimplement once game is properly elmified
@@ -488,7 +489,7 @@ module GameplayDispatcherModule =
                 let model = GameplayModel.updateCharacterActivityState indexOpt NoActivity model
                 tickReaction indexOpt actionDescriptor model
         
-        static let tickUpdate time model world =
+        static let tickUpdate time model =
             
             (* set enemy activities in accordance with the player's current activity.
             "NoActivity" here means the player's turn is finished, and it's the enemy's turn.
@@ -529,11 +530,9 @@ module GameplayDispatcherModule =
                             | NoActivity -> model
                     recursion characters.Tail model
             
-            let model = recursion characters model
-            let world = Simulants.Gameplay.SetGameplayModel model world
-            just world
+            recursion characters model
         
-        static let tickNewTurn time newPlayerTurn model world =
+        static let tickNewTurn time newPlayerTurn model =
 
             let newPlayerActivity =
                 match newPlayerTurn with
@@ -567,16 +566,8 @@ module GameplayDispatcherModule =
                     model
                 | NoActivity -> model
 
-            tickUpdate time model world
+            tickUpdate time model
         
-        static let tickTurn time model world =
-
-            let playerTurn = determinePlayerTurnFromNavigationProgress model
-
-            match playerTurn with
-            | NoTurn -> tickUpdate time model world
-            | _ -> tickNewTurn time playerTurn model world
-
         override this.Channel (_, _) =
             [//Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
              Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSelected Simulants.HudFeeler =|> fun evt -> cmd (HandlePlayerInput (TouchInput evt.Data))
@@ -590,7 +581,7 @@ module GameplayDispatcherModule =
              Simulants.Title.SelectEvent => cmd QuittingGameplay
              Simulants.Gameplay.DeselectEvent => cmd QuitGameplay]
 
-        override this.Message (model, message, _, _) =
+        override this.Message (model, message, _, world) =
             match message with
             | NewGame ->
                 // TODO : reimplement and fix game loading
@@ -616,6 +607,13 @@ module GameplayDispatcherModule =
                 
                 let model = { model with FieldMapOpt = Some fieldMap; Enemies = enemies; Player = player }
                 just model
+            | TickTurn playerTurn ->
+                let time = (World.getTickTime world)
+                let model =
+                    match playerTurn with
+                    | NoTurn -> tickUpdate time model
+                    | _ -> tickNewTurn time playerTurn model
+                just model
         
         override this.Command (model, command, screen, world) =
             match command with
@@ -629,7 +627,7 @@ module GameplayDispatcherModule =
                     let playerTurn = determinePlayerTurnFromInput input model world
                     match playerTurn with
                     | NoTurn -> just world
-                    | _ -> tickNewTurn (World.getTickTime world) playerTurn model world
+                    | _ -> withMsg world (TickTurn playerTurn)
             | SaveGame gameplay ->
                 World.writeScreenToFile Assets.SaveFilePath gameplay world
                 just world
@@ -643,7 +641,7 @@ module GameplayDispatcherModule =
             //    let world = World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 withMsg world NewGame
             | Tick ->
-                if (GameplayModel.anyTurnsInProgress model) then tickTurn (World.getTickTime world) model world
+                if (GameplayModel.anyTurnsInProgress model) then withMsg world (TickTurn (determinePlayerTurnFromNavigationProgress model))
                 elif KeyboardState.isKeyDown KeyboardKey.Up then withCmd world (HandlePlayerInput (DetailInput Upward))
                 elif KeyboardState.isKeyDown KeyboardKey.Right then withCmd world (HandlePlayerInput (DetailInput Rightward))
                 elif KeyboardState.isKeyDown KeyboardKey.Down then withCmd world (HandlePlayerInput (DetailInput Downward))
