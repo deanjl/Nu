@@ -17,6 +17,8 @@ module WorldScreenModule =
         member this.GetModel<'a> world = World.getScreenModel<'a> this world
         member this.SetModel<'a> value world = World.setScreenModel<'a> value this world
         member this.Model<'a> () = lens Property? Model this.GetModel<'a> this.SetModel<'a> this
+        member this.GetEcs world = World.getScreenEcs this world
+        member this.Ecs = lensReadOnly Property? Ecs this.GetEcs this
         member this.GetTransitionState world = World.getScreenTransitionState this world
         member this.SetTransitionState value world = World.setScreenTransitionState value this world
         member this.TransitionState = lens Property? TransitionState this.GetTransitionState this.SetTransitionState this
@@ -108,6 +110,10 @@ module WorldScreenModule =
     type World with
 
         static member internal updateScreen (screen : Screen) world =
+
+            // update ecs
+            let ecs = World.getScreenEcs screen world
+            let world = ecs.ProcessUpdate world
                 
             // update via dispatcher
             let dispatcher = World.getScreenDispatcher screen world
@@ -118,6 +124,10 @@ module WorldScreenModule =
             World.publishPlus () (Events.Update --> screen) eventTrace Simulants.Game false world
 
         static member internal postUpdateScreen (screen : Screen) world =
+
+            // post-update ecs
+            let ecs = World.getScreenEcs screen world
+            let world = ecs.ProcessPostUpdate world
                 
             // post-update via dispatcher
             let dispatcher = World.getScreenDispatcher screen world
@@ -128,6 +138,12 @@ module WorldScreenModule =
             World.publishPlus () (Events.PostUpdate --> screen) eventTrace Simulants.Game false world
 
         static member internal actualizeScreen (screen : Screen) world =
+
+            // actualize ecs
+            let ecs = World.getScreenEcs screen world
+            let world = ecs.ProcessActualize world
+            
+            // actualize via dispatcher
             let dispatcher = screen.GetDispatcher world
             dispatcher.Actualize (screen, world)
 
@@ -167,7 +183,8 @@ module WorldScreenModule =
                 match Map.tryFind dispatcherName dispatchers with
                 | Some dispatcher -> dispatcher
                 | None -> failwith ("Could not find ScreenDispatcher '" + dispatcherName + "'. Did you forget to expose this dispatcher from your NuPlugin?")
-            let screenState = ScreenState.make nameOpt dispatcher
+            let ecs = world.Plugin.MakeEcs ()
+            let screenState = ScreenState.make nameOpt dispatcher ecs
             let screenState = Reflection.attachProperties ScreenState.copy screenState.Dispatcher screenState world
             let screen = ntos screenState.Name
             let world =

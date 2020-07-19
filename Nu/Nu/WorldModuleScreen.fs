@@ -97,6 +97,7 @@ module WorldModuleScreen =
         static member internal getScreenDispatcher screen world = (World.getScreenState screen world).Dispatcher
         static member internal getScreenModelProperty screen world = (World.getScreenState screen world).Model
         static member internal getScreenModel<'a> screen world = (World.getScreenState screen world).Model.DesignerValue :?> 'a
+        static member internal getScreenEcs screen world = (World.getScreenState screen world).Ecs
         static member internal getScreenTransitionState screen world = (World.getScreenState screen world).TransitionState
         static member internal setScreenTransitionState value screen world = World.updateScreenState (fun screenState -> if value <> screenState.TransitionState then Some { screenState with TransitionState = value } else None) Property? TransitionState value screen world
         static member internal getScreenTransitionTicks screen world = (World.getScreenState screen world).TransitionTicks
@@ -234,7 +235,7 @@ module WorldModuleScreen =
 
         static member internal readScreen4 readLayers screenDescriptor nameOpt world =
             
-            // create the dispatcher
+            // make the dispatcher
             let dispatcherName = screenDescriptor.ScreenDispatcherName
             let dispatchers = World.getScreenDispatchers world
             let dispatcher =
@@ -245,8 +246,11 @@ module WorldModuleScreen =
                     let dispatcherName = typeof<ScreenDispatcher>.Name
                     Map.find dispatcherName dispatchers
 
+            // make the ecs
+            let ecs = world.Plugin.MakeEcs ()
+
             // make the screen state and populate its properties
-            let screenState = ScreenState.make None dispatcher
+            let screenState = ScreenState.make None dispatcher ecs
             let screenState = Reflection.attachProperties ScreenState.copy screenState.Dispatcher screenState world
             let screenState = Reflection.readPropertiesToTarget ScreenState.copy screenDescriptor.ScreenProperties screenState
 
@@ -274,6 +278,7 @@ module WorldModuleScreen =
     let private initGetters () =
         Getters.Add ("Dispatcher", fun screen world -> { PropertyType = typeof<ScreenDispatcher>; PropertyValue = World.getScreenDispatcher screen world })
         Getters.Add ("Model", fun screen world -> let designerProperty = World.getScreenModelProperty screen world in { PropertyType = designerProperty.DesignerType; PropertyValue = designerProperty.DesignerValue })
+        Getters.Add ("Ecs", fun screen world -> { PropertyType = typeof<World Ecs>; PropertyValue = World.getScreenEcs screen world })
         Getters.Add ("TransitionState", fun screen world -> { PropertyType = typeof<TransitionState>; PropertyValue = World.getScreenTransitionState screen world })
         Getters.Add ("TransitionTicks", fun screen world -> { PropertyType = typeof<int64>; PropertyValue = World.getScreenTransitionTicks screen world })
         Getters.Add ("Incoming", fun screen world -> { PropertyType = typeof<Transition>; PropertyValue = World.getScreenIncoming screen world })

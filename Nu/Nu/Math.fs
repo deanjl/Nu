@@ -10,8 +10,8 @@ open Nu
 [<AutoOpen>]
 module internal TransformMasks =
 
-    // OPTIMIZATION: Entity flag bit-masks; only for use by internal reflection facilities.
-    let [<Literal>] OccupiedMask =             0b000000000001
+    // OPTIMIZATION: Transform flag bit-masks for performance.
+    let [<Literal>] DirtyMask =                0b000000000001
     let [<Literal>] InvalidatedMask =          0b000000000010
     let [<Literal>] OmnipresentMask =          0b000000000100
     let [<Literal>] AbsoluteMask =             0b000000001000
@@ -27,20 +27,21 @@ module internal TransformMasks =
 /// Carries transformation data specific to an Entity.
 type [<StructuralEquality; NoComparison; Struct>] Transform =
     { // cache line begin
+      mutable RefCount : int
       mutable Position : Vector2 // NOTE: will become a Vector3 if Nu gets 3D capabilities
       mutable Size : Vector2 // NOTE: will become a Vector3 if Nu gets 3D capabilities
       mutable Rotation : single // NOTE: will become a Vector3 if Nu gets 3D capabilities
       mutable Depth : single // NOTE: will become part of position if Nu gets 3D capabilities
       mutable Flags : int }
-      // 4 free cache line bytes
+      // cache line end
 
     interface Component with
-        member this.Occupied
-          with get () = this.Flags &&& 0b1 <> 0
-          and set value = this.Flags <- if value then this.Flags ||| 0b1 else this.Flags &&& ~~~0b1
+        member this.RefCount
+          with get () = this.RefCount
+          and set value = this.RefCount <- value
 
-    member internal this.Occupied with get () = this.Flags &&& OccupiedMask <> 0 and set value = this.Flags <- if value then this.Flags ||| OccupiedMask else this.Flags &&& ~~~OccupiedMask
-    member internal this.Invalidated with get () = this.Flags &&& InvalidatedMask <> 0 and set value = this.Flags <- if value then this.Flags ||| InvalidatedMask else this.Flags &&& ~~~InvalidatedMask
+    member this.Dirty with get () = this.Flags &&& DirtyMask <> 0 and set value = this.Flags <- if value then this.Flags ||| DirtyMask else this.Flags &&& ~~~DirtyMask
+    member this.Invalidated with get () = this.Flags &&& InvalidatedMask <> 0 and set value = this.Flags <- if value then this.Flags ||| InvalidatedMask else this.Flags &&& ~~~InvalidatedMask
     member this.Omnipresent with get () = this.Flags &&& OmnipresentMask <> 0 and set value = this.Flags <- if value then this.Flags ||| OmnipresentMask else this.Flags &&& ~~~OmnipresentMask
     member this.Absolute with get () = this.Flags &&& AbsoluteMask <> 0 and set value = this.Flags <- if value then this.Flags ||| AbsoluteMask else this.Flags &&& ~~~AbsoluteMask
     member this.Imperative with get () = this.Flags &&& ImperativeMask <> 0 and set value = this.Flags <- if value then this.Flags ||| ImperativeMask else this.Flags &&& ~~~ImperativeMask
