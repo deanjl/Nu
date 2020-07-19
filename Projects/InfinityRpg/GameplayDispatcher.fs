@@ -121,12 +121,6 @@ module GameplayDispatcherModule =
     type GameplayDispatcher () =
         inherit ScreenDispatcher<GameplayModel, GameplayMessage, GameplayCommand> (GameplayModel.initial)
 
-        static let makeAttackTurn targetPositionM =
-            ActionTurn
-                { ActionTicks = 0L
-                  ActionTargetPositionMOpt = Some targetPositionM
-                  ActionDataName = Constants.InfinityRpg.AttackName }
-
         static let determinePathEnd rand =
             let (randResult, rand) = Rand.nextIntUnder (Constants.Layout.FieldUnitSizeM.X - 4) rand // assumes X and Y are equal
             let pathEnd = if randResult % 2 = 0 then Vector2i (randResult + 2, Constants.Layout.FieldUnitSizeM.Y - 2) else Vector2i (Constants.Layout.FieldUnitSizeM.X - 2, randResult + 2)
@@ -197,22 +191,12 @@ module GameplayDispatcherModule =
                     [0 .. enemyCount - 1]
             models
 
-        static let walk3 positive current destination =
-            let walkSpeed = if positive then Constants.Layout.CharacterWalkSpeed else -Constants.Layout.CharacterWalkSpeed
-            let next = current + walkSpeed
-            let delta = if positive then destination - next else next - destination
-            if delta < Constants.Layout.CharacterWalkSpeed then (destination, WalkFinished) else (next, WalkContinuing)
-
-        static let walk walkDescriptor (position : Vector2) =
-            let walkOrigin = vmtovf walkDescriptor.WalkOriginM
-            let walkVector = dtovf walkDescriptor.WalkDirection
-            let walkDestination = walkOrigin + walkVector
-            match walkDescriptor.WalkDirection with
-            | Upward -> let (newY, arrival) = walk3 true position.Y walkDestination.Y in (Vector2 (position.X, newY), arrival)
-            | Rightward -> let (newX, arrival) = walk3 true position.X walkDestination.X in (Vector2 (newX, position.Y), arrival)
-            | Downward -> let (newY, arrival) = walk3 false position.Y walkDestination.Y in (Vector2 (position.X, newY), arrival)
-            | Leftward -> let (newX, arrival) = walk3 false position.X walkDestination.X in (Vector2 (newX, position.Y), arrival)
-
+        static let makeAttackTurn targetPositionM =
+            ActionTurn
+                { ActionTicks = 0L
+                  ActionTargetPositionMOpt = Some targetPositionM
+                  ActionDataName = Constants.InfinityRpg.AttackName }
+        
         static let getCharacterAnimationStateByActionBegin tickTime characterPosition characterAnimationState (actionDescriptor : ActionDescriptor) =
             let currentDirection = characterAnimationState.Direction
             let direction = actionDescriptor.ComputeActionDirection characterPosition currentDirection
@@ -293,39 +277,6 @@ module GameplayDispatcherModule =
                     else NoTurn
             else NoTurn
 
-        static let determineDesiredEnemyTurn indexOpt occupationMap model =
-            let characterModel = GameplayModel.getCharacterByIndex indexOpt model
-            match characterModel.CharacterState.ControlType with
-            | PlayerControlled as controlType ->
-                Log.debug ("Invalid ControlType '" + scstring controlType + "' for enemy.")
-                NoTurn
-            | Chaos ->
-                let nextPlayerPosition =
-                    match model.Player.CharacterActivityState with
-                    | Action _ -> model.Player.Position
-                    | Navigation navigationDescriptor -> navigationDescriptor.NextPosition
-                    | NoActivity -> model.Player.Position
-                if Math.arePositionsAdjacent characterModel.Position nextPlayerPosition then
-                    let enemyTurn = makeAttackTurn (vftovm nextPlayerPosition)
-                    enemyTurn
-                else
-                    let randResult = Gen.random1 4
-                    let direction = Direction.fromInt randResult
-                    let enemyTurn = determineCharacterTurnFromDirection indexOpt direction occupationMap model
-                    enemyTurn
-            | Uncontrolled -> NoTurn
-
-        static let determineDesiredEnemyTurns occupationMap model =
-            let (_, enemyTurns, model) =
-                List.foldBack
-                    (fun enemy (occupationMap, enemyTurns, model) ->
-                        let enemyTurn = determineDesiredEnemyTurn enemy.EnemyIndexOpt occupationMap model
-                        let occupationMap = OccupationMap.transferByDesiredTurn enemyTurn enemy.Position occupationMap
-                        (occupationMap, enemyTurn :: enemyTurns, model))
-                    (model.Enemies)
-                    (occupationMap, [], model)
-            enemyTurns
-
         static let determinePlayerTurnFromTouch touchPosition model world =
             let fieldMap = Option.get model.FieldMapOpt
             let enemyPositions = GameplayModel.getEnemyPositions model
@@ -382,6 +333,39 @@ module GameplayDispatcherModule =
                 else NoTurn
             | NoActivity -> NoTurn
 
+        static let determineDesiredEnemyTurn indexOpt occupationMap model =
+            let characterModel = GameplayModel.getCharacterByIndex indexOpt model
+            match characterModel.CharacterState.ControlType with
+            | PlayerControlled as controlType ->
+                Log.debug ("Invalid ControlType '" + scstring controlType + "' for enemy.")
+                NoTurn
+            | Chaos ->
+                let nextPlayerPosition =
+                    match model.Player.CharacterActivityState with
+                    | Action _ -> model.Player.Position
+                    | Navigation navigationDescriptor -> navigationDescriptor.NextPosition
+                    | NoActivity -> model.Player.Position
+                if Math.arePositionsAdjacent characterModel.Position nextPlayerPosition then
+                    let enemyTurn = makeAttackTurn (vftovm nextPlayerPosition)
+                    enemyTurn
+                else
+                    let randResult = Gen.random1 4
+                    let direction = Direction.fromInt randResult
+                    let enemyTurn = determineCharacterTurnFromDirection indexOpt direction occupationMap model
+                    enemyTurn
+            | Uncontrolled -> NoTurn
+
+        static let determineDesiredEnemyTurns occupationMap model =
+            let (_, enemyTurns, model) =
+                List.foldBack
+                    (fun enemy (occupationMap, enemyTurns, model) ->
+                        let enemyTurn = determineDesiredEnemyTurn enemy.EnemyIndexOpt occupationMap model
+                        let occupationMap = OccupationMap.transferByDesiredTurn enemyTurn enemy.Position occupationMap
+                        (occupationMap, enemyTurn :: enemyTurns, model))
+                    (model.Enemies)
+                    (occupationMap, [], model)
+            enemyTurns
+
         static let determineEnemyActivities model =
             let enemyTurns = GameplayModel.getEnemyDesiredTurns model
             
@@ -406,25 +390,33 @@ module GameplayDispatcherModule =
                     | NoTurn -> NoActivity)
                 enemyTurnsFiltered
             
-        static let setCharacterActivity indexOpt newActivity model =
-            match newActivity with
-            | Action newActionDescriptor ->
-                GameplayModel.updateCharacterActivityState indexOpt (Action newActionDescriptor) model
-            | Navigation newNavigationDescriptor ->
-                let newNavigationDescriptor = {newNavigationDescriptor with LastWalkOriginM = newNavigationDescriptor.WalkDescriptor.WalkOriginM}
-                GameplayModel.updateCharacterActivityState indexOpt (Navigation newNavigationDescriptor) model
-            | NoActivity ->
-                GameplayModel.updateCharacterActivityState indexOpt NoActivity model
-
-        static let trySetEnemyActivity model newActivity enemy =
-            match newActivity with
-            | NoActivity -> model
-            | _ ->
-                let model = GameplayModel.updateDesiredTurnOpt enemy.EnemyIndexOpt (Some NoTurn) model
-                setCharacterActivity enemy.EnemyIndexOpt newActivity model
-        
         static let setEnemyActivities enemyActivities model =
-            Seq.fold2 trySetEnemyActivity model enemyActivities model.Enemies
+            Seq.fold2
+                (fun model newActivity enemy ->
+                    match newActivity with
+                    | NoActivity -> model
+                    | _ ->
+                        let model = GameplayModel.updateDesiredTurnOpt enemy.EnemyIndexOpt (Some NoTurn) model
+                        GameplayModel.updateCharacterActivityState enemy.EnemyIndexOpt newActivity model)
+                model
+                enemyActivities
+                model.Enemies
+        
+        static let walk3 positive current destination =
+            let walkSpeed = if positive then Constants.Layout.CharacterWalkSpeed else -Constants.Layout.CharacterWalkSpeed
+            let next = current + walkSpeed
+            let delta = if positive then destination - next else next - destination
+            if delta < Constants.Layout.CharacterWalkSpeed then (destination, WalkFinished) else (next, WalkContinuing)
+
+        static let walk walkDescriptor (position : Vector2) =
+            let walkOrigin = vmtovf walkDescriptor.WalkOriginM
+            let walkVector = dtovf walkDescriptor.WalkDirection
+            let walkDestination = walkOrigin + walkVector
+            match walkDescriptor.WalkDirection with
+            | Upward -> let (newY, arrival) = walk3 true position.Y walkDestination.Y in (Vector2 (position.X, newY), arrival)
+            | Rightward -> let (newX, arrival) = walk3 true position.X walkDestination.X in (Vector2 (newX, position.Y), arrival)
+            | Downward -> let (newY, arrival) = walk3 false position.Y walkDestination.Y in (Vector2 (position.X, newY), arrival)
+            | Leftward -> let (newX, arrival) = walk3 false position.X walkDestination.X in (Vector2 (newX, position.Y), arrival)
         
         static let updateCharacterByWalk indexOpt walkDescriptor model =
             let characterModel = GameplayModel.getCharacterByIndex indexOpt model
@@ -501,7 +493,10 @@ module GameplayDispatcherModule =
             (* set enemy activities in accordance with the player's current activity.
             "NoActivity" here means the player's turn is finished, and it's the enemy's turn.
             the present location of this code reflects the fact that the turn in tickNewTurn means the entire round.
-            dividing this initialization into turns for individual characters will arguably make the code more intuitive. *)
+            dividing this initialization into turns for individual characters will arguably make the code more intuitive.
+            also, this should only happen at the beginning of enemy turns, whereas it's currently happening throughout their turns.
+            and once this is done, enemy LastWalkOriginM needs to be updated like player's to make enemy navigation possible.
+            significant refactor needed. *)
             
             let model =
                 match model.Player.CharacterActivityState with
@@ -543,12 +538,14 @@ module GameplayDispatcherModule =
             let newPlayerActivity =
                 match newPlayerTurn with
                 | ActionTurn actionDescriptor -> Action actionDescriptor
-                | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
+                | NavigationTurn navigationDescriptor ->
+                    let navigationDescriptor = {navigationDescriptor with LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM}
+                    Navigation navigationDescriptor
                 | CancelTurn -> NoActivity
                 | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point."
             
             // here None means player
-            let model = setCharacterActivity None newPlayerActivity model
+            let model = GameplayModel.updateCharacterActivityState None newPlayerActivity model
 
             // determine (and set) enemy desired turns if applicable
             let occupationMap =
