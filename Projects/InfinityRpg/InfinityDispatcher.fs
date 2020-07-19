@@ -15,8 +15,6 @@ module InfinityDispatcherModule =
         | SetLoad of bool
     
     type InfinityCommand =
-        | PlayTitleSong
-        | FadeSong
         | ShowTitle
         | ShowCredits
         | ShowGameplay
@@ -46,17 +44,14 @@ module InfinityDispatcherModule =
             Simulants.Hud.SetPersistent false world
 
         override this.Channel (_, _) =
-            [Simulants.Title.IncomingStartEvent => cmd PlayTitleSong
-             Simulants.Title.OutgoingStartEvent => cmd FadeSong
-             Simulants.TitleCredits.ClickEvent => cmd ShowCredits
+            [Simulants.TitleCredits.ClickEvent => cmd ShowCredits
              Simulants.TitleNewGame.ClickEvent => msg (SetLoad false)
              Simulants.TitleLoadGame.ClickEvent => msg (SetLoad true)
              Simulants.TitleExit.ClickEvent => cmd ExitGame
              Simulants.CreditsBack.ClickEvent => cmd ShowTitle
-             Simulants.Gameplay.OutgoingStartEvent => cmd FadeSong
              Simulants.HudBack.ClickEvent => cmd ShowTitle]
 
-        override this.Message (model, message, _, world) =
+        override this.Message (model, message, _, _) =
             match message with
             | SetLoad load ->
                 let gameplayModel = { model.GameplayModel with ShallLoadGame = load }
@@ -66,8 +61,6 @@ module InfinityDispatcherModule =
         override this.Command (_, command, _, world) =
             let world =
                 match command with
-                | PlayTitleSong -> world // World.playSong 0 1.0f Assets.ButterflyGirlSong world
-                | FadeSong -> world // World.fadeOutSong Constants.Audio.DefaultFadeOutMs world
                 | ShowTitle -> World.transitionScreen Simulants.Title world
                 | ShowCredits -> World.transitionScreen Simulants.Credits world
                 | ShowGameplay -> World.transitionScreen Simulants.Gameplay world
@@ -76,9 +69,8 @@ module InfinityDispatcherModule =
 
         override this.Content (model, _) =
             [Content.screen Simulants.Splash.Name (Splash (Constants.InfinityRpg.DissolveDescriptor, Constants.InfinityRpg.SplashData, Simulants.Title)) [] []
-             Content.screenFromLayerFile Simulants.Title.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None)) Assets.TitleLayerFilePath
-             Content.screenFromLayerFile Simulants.Credits.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None)) Assets.CreditsLayerFilePath
-             Content.screen<GameplayDispatcher> Simulants.Gameplay.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None))
-                 [Screen.GameplayModel <== model --> fun model ->
-                     model.GameplayModel]
+             Content.screenFromLayerFile Simulants.Title.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, Some Assets.ButterflyGirlSong)) Assets.TitleLayerFilePath
+             Content.screenFromLayerFile Simulants.Credits.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, Some Assets.ButterflyGirlSong)) Assets.CreditsLayerFilePath
+             Content.screen<GameplayDispatcher> Simulants.Gameplay.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, Some Assets.HerosVengeanceSong))
+                 [Screen.GameplayModel <== model --> fun model -> model.GameplayModel]
                  [Content.layerFromFile Simulants.Hud.Name Assets.HudLayerFilePath]]

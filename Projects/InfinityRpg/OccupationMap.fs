@@ -88,7 +88,7 @@ module OccupationMap =
         // make the nodes without neighbors
         let nodes = Map.map (fun positionM _ -> { PositionM = positionM; Neighbors = [] }) occupationMap
 
-        // OPTIMIZATION: populate node neghbors imperatively for speed
+        // OPTIMIZATION: populate node neighbors imperatively for speed
         Map.iter
             (fun positionM node -> 
                 let neighborPositionMs = List.ofSeq (getOpenNeighborPositionMsAtPositionM positionM occupationMap)

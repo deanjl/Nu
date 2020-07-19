@@ -1,6 +1,5 @@
 ﻿namespace InfinityRpg
 open System
-open System.IO
 open Prime
 open Nu
 open Nu.Declarative
@@ -97,7 +96,7 @@ module GameplayDispatcherModule =
         | DetailInput of Direction
         | NoInput
 
-    type GameplayMessage =
+    type [<StructuralEquality; NoComparison>] GameplayMessage =
         | NewGame
         | TickTurn of Turn
     
@@ -105,7 +104,6 @@ module GameplayDispatcherModule =
         | ToggleHaltButton // TODO: reimplement once game is properly elmified
         | HandlePlayerInput of PlayerInput
         | SaveGame of Screen
-        | QuittingGameplay
         | QuitGameplay
         | RunGameplay
         | Tick
@@ -162,7 +160,6 @@ module GameplayDispatcherModule =
                     [0 .. extentions - 1]
             let offsetCount = (fst fieldUnitTuples.Head).OffsetCount
             let fieldTilesTupleList = List.map (fun fieldUnitTuple -> fieldUnitToFieldTiles fieldUnitTuple) fieldUnitTuples
-            let rand = snd fieldTilesTupleList.Head
             let fieldTiles = List.map (fun fieldTiles -> fst fieldTiles) fieldTilesTupleList |> List.reduce (fun concat fieldTiles -> concat @@ fieldTiles)
             let fieldMap = 
                 { FieldSizeM = Constants.Layout.FieldUnitSizeM + Vector2i.Multiply (offsetCount, Constants.Layout.FieldUnitSizeM)
@@ -315,7 +312,7 @@ module GameplayDispatcherModule =
                 | DetailInput direction -> determinePlayerTurnFromDetailNavigation direction model
                 | NoInput -> NoTurn
             | Chaos ->
-                Log.debug ("Invalid ControlType 'Chaos' for player.")
+                Log.debug "Invalid ControlType 'Chaos' for player."
                 NoTurn
             | Uncontrolled -> NoTurn
 
@@ -357,7 +354,7 @@ module GameplayDispatcherModule =
             | Uncontrolled -> NoTurn
 
         static let determineDesiredEnemyTurns occupationMap model =
-            let (_, enemyTurns, model) =
+            let (_, enemyTurns, _) =
                 List.foldBack
                     (fun enemy (occupationMap, enemyTurns, model) ->
                         let enemyTurn = determineDesiredEnemyTurn enemy.EnemyIndexOpt occupationMap model
@@ -372,13 +369,13 @@ module GameplayDispatcherModule =
             
             // if any action is present, all activities but the currently active action, if present, or the first action turn in the list, is cancelled
             let currentEnemyActionActivity = List.exists (fun model -> model.CharacterActivityState.IsActing) model.Enemies
-            let desiredEnemyActionActivity = List.exists (fun (turn : Turn) -> match turn with | ActionTurn a -> true; | _ -> false) enemyTurns
+            let desiredEnemyActionActivity = List.exists (fun (turn : Turn) -> match turn with ActionTurn _ -> true; | _ -> false) enemyTurns
                                                                                // ^----- better way?
             
             let enemyTurnsFiltered =
                 if currentEnemyActionActivity then List.map (fun _ -> NoTurn) enemyTurns
                 elif desiredEnemyActionActivity then
-                    let firstActionIndex = List.tryFindIndex (fun (turn : Turn) -> match turn with | ActionTurn a -> true; | _ -> false) enemyTurns |> Option.get
+                    let firstActionIndex = List.tryFindIndex (fun (turn : Turn) -> match turn with ActionTurn _ -> true; | _ -> false) enemyTurns |> Option.get
                     List.mapi (fun index (turn : Turn) -> if index = firstActionIndex then turn else NoTurn ) enemyTurns
                 else enemyTurns
 
@@ -578,7 +575,6 @@ module GameplayDispatcherModule =
              Simulants.Gameplay.UpdateEvent => cmd Tick
              Simulants.Gameplay.SelectEvent => cmd RunGameplay
              Simulants.HudSaveGame.ClickEvent =|> fun evt -> cmd (SaveGame evt.Subscriber)
-             Simulants.Title.SelectEvent => cmd QuittingGameplay
              Simulants.Gameplay.DeselectEvent => cmd QuitGameplay]
 
         override this.Message (model, message, _, world) =
@@ -614,8 +610,8 @@ module GameplayDispatcherModule =
                     | NoTurn -> tickUpdate time model
                     | _ -> tickNewTurn time playerTurn model
                 just model
-        
-        override this.Command (model, command, screen, world) =
+
+        override this.Command (model, command, _, world) =
             match command with
             | ToggleHaltButton ->
                 let world = Simulants.HudHalt.SetEnabled (isPlayerNavigatingPath model) world
@@ -631,14 +627,10 @@ module GameplayDispatcherModule =
             | SaveGame gameplay ->
                 World.writeScreenToFile Assets.SaveFilePath gameplay world
                 just world
-            | QuittingGameplay ->
-            //    let world = World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.ButterflyGirlSong world
-                just world
             | QuitGameplay ->
                 let world = World.destroyLayer Simulants.Scene world
                 just world
             | RunGameplay ->
-            //    let world = World.playSong Constants.Audio.DefaultFadeOutMs 1.0f Assets.HerosVengeanceSong world
                 withMsg world NewGame
             | Tick ->
                 if (GameplayModel.anyTurnsInProgress model) then withMsg world (TickTurn (determinePlayerTurnFromNavigationProgress model))
@@ -650,7 +642,7 @@ module GameplayDispatcherModule =
                 else just world
             | Nop -> just world
 
-        override this.Content (model, screen) =
+        override this.Content (model, _) =
 
             [Content.layer Simulants.Scene.Name []
 
@@ -664,10 +656,7 @@ module GameplayDispatcherModule =
                  Content.entitiesIndexedBy model
                      (fun model -> model.Enemies) constant
                      (fun model -> Option.get model.EnemyIndexOpt)
-                     (fun index model _ ->
-                        Content.entity<EnemyDispatcher> ("Enemy+" + scstring index)
-                            [Entity.CharacterModel <== model])
+                     (fun index model _ -> Content.entity<EnemyDispatcher> ("Enemy+" + scstring index) [Entity.CharacterModel <== model])
 
                  Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
-                    [Entity.CharacterModel <== model --> fun model ->
-                        model.Player]]]
+                    [Entity.CharacterModel <== model --> fun model -> model.Player]]]

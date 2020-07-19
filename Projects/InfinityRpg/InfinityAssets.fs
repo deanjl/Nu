@@ -9,8 +9,8 @@ module Assets =
     let BatsyImage = asset<Image> GameplayPackageName "Batsy"
     let ZommieImage = asset<Image> GameplayPackageName "Zommie"
     let FieldTileSheetImage = asset<Image> GameplayPackageName "FieldTileSheet"
-    let HerosVengeanceSong = asset<Song> GameplayPackageName "Hero'sVengeance"
-    let ButterflyGirlSong = asset<Song> GuiPackageName "ButterflyGirl"
+    let HerosVengeanceSong = { Volume = Constants.Audio.DefaultSongVolume; FadeOutMs = Constants.Audio.DefaultFadeOutMs; Song = asset<Song> GameplayPackageName "Hero'sVengeance" }
+    let ButterflyGirlSong = { Volume = Constants.Audio.DefaultSongVolume; FadeOutMs = Constants.Audio.DefaultFadeOutMs; Song = asset<Song> GuiPackageName "ButterflyGirl" }
     let TitleLayerFilePath = "Assets/Gui/Title.nulyr"
     let CreditsLayerFilePath = "Assets/Gui/Credits.nulyr"
     let HudLayerFilePath = "Assets/Gui/Hud.nulyr"
