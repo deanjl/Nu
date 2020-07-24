@@ -53,8 +53,11 @@ module GameplayDispatcherModule =
         static member getEnemyPositions model =
             List.map (fun model -> model.Position) model.Enemies
 
+        static member getEnemyActivityStates model =
+            List.map (fun model -> model.CharacterActivityState) model.Enemies
+        
         static member getCharacterActivityStates model =
-            GameplayModel.getCharacters model |> List.map (fun model -> model.CharacterActivityState)
+            model.Player.CharacterActivityState :: (GameplayModel.getEnemyActivityStates model)
         
         static member getEnemyDesiredTurns model =
             List.map (fun model -> Option.get model.DesiredTurnOpt) model.Enemies
@@ -362,33 +365,26 @@ module GameplayDispatcherModule =
                         (occupationMap, enemyTurn :: enemyTurns, model))
                     (model.Enemies)
                     (occupationMap, [], model)
-            enemyTurns
-
-        static let determineEnemyActivities model =
-            let enemyTurns = GameplayModel.getEnemyDesiredTurns model
             
-            // if any action is present, all activities but the currently active action, if present, or the first action turn in the list, is cancelled
-            let currentEnemyActionActivity = List.exists (fun model -> model.CharacterActivityState.IsActing) model.Enemies
-            let desiredEnemyActionActivity = List.exists (fun (turn : Turn) -> match turn with ActionTurn _ -> true; | _ -> false) enemyTurns
+            // if any action turn is present, all actions except the first are cancelled
+            let desiredEnemyAction = List.exists (fun (turn : Turn) -> match turn with ActionTurn _ -> true; | _ -> false) enemyTurns
                                                                                // ^----- better way?
-            
-            let enemyTurnsFiltered =
-                if currentEnemyActionActivity then List.map (fun _ -> NoTurn) enemyTurns
-                elif desiredEnemyActionActivity then
-                    let firstActionIndex = List.tryFindIndex (fun (turn : Turn) -> match turn with ActionTurn _ -> true; | _ -> false) enemyTurns |> Option.get
-                    List.mapi (fun index (turn : Turn) -> if index = firstActionIndex then turn else NoTurn ) enemyTurns
-                else enemyTurns
+            if desiredEnemyAction then
+                let firstActionIndex = List.tryFindIndex (fun (turn : Turn) -> match turn with ActionTurn _ -> true; | _ -> false) enemyTurns |> Option.get
+                List.mapi (fun index (turn : Turn) -> if index = firstActionIndex then turn else NoTurn ) enemyTurns
+            else enemyTurns
 
-            List.map
-                (fun (turn : Turn) ->
-                    match turn with
-                    | ActionTurn actionDescriptor -> Action actionDescriptor
-                    | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
-                    | CancelTurn -> NoActivity
-                    | NoTurn -> NoActivity)
-                enemyTurnsFiltered
+        static let setEnemyActivities model =
+            let enemyActivities =
+                List.map
+                    (fun (turn : Turn) ->
+                        match turn with
+                        | ActionTurn actionDescriptor -> Action actionDescriptor
+                        | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
+                        | CancelTurn -> NoActivity
+                        | NoTurn -> NoActivity)
+                    (GameplayModel.getEnemyDesiredTurns model)
             
-        static let setEnemyActivities enemyActivities model =
             Seq.fold2
                 (fun model newActivity enemy ->
                     match newActivity with
@@ -488,25 +484,6 @@ module GameplayDispatcherModule =
         
         static let tickUpdate time model =
             
-            (* set enemy activities in accordance with the player's current activity.
-            "NoActivity" here means the player's turn is finished, and it's the enemy's turn.
-            the present location of this code reflects the fact that the turn in tickNewTurn means the entire round.
-            dividing this initialization into turns for individual characters will arguably make the code more intuitive.
-            also, this should only happen at the beginning of enemy turns, whereas it's currently happening throughout their turns.
-            and once this is done, enemy LastWalkOriginM needs to be updated like player's to make enemy navigation possible.
-            significant refactor needed. *)
-            
-            let model =
-                match model.Player.CharacterActivityState with
-                | Action _ -> model
-                | Navigation _ 
-                | NoActivity ->
-                    let newEnemyActivities = determineEnemyActivities model
-                    if List.exists (fun (state : CharacterActivityState) -> state.IsActing) newEnemyActivities then
-                        let model = setEnemyActivities newEnemyActivities model
-                        cancelNavigation None model
-                    else setEnemyActivities newEnemyActivities model
-            
             let characters = GameplayModel.getCharacterIndices model
             let rec recursion (characters : int option list) model =
                 if characters.Length = 0 then model
@@ -529,7 +506,23 @@ module GameplayDispatcherModule =
             
             recursion characters model
         
-        static let tickNewTurn time newPlayerTurn model =
+        static let tickNewEnemyTurns model =
+
+            (* set enemy activities in accordance with the player's current activity.
+            "NoActivity" here means the player's turn is finished, and it's the enemy's turn.
+            this should only happen at the beginning of enemy turns, whereas it's currently happening throughout their turns.
+            and once this is done, enemy LastWalkOriginM needs to be updated like player's to make enemy navigation possible. *)
+
+            match model.Player.CharacterActivityState with
+            | Action _ -> model
+            | Navigation _ 
+            | NoActivity ->
+                let model = setEnemyActivities model
+                if List.exists (fun (state : CharacterActivityState) -> state.IsActing) (GameplayModel.getEnemyActivityStates model) then
+                    cancelNavigation None model
+                else model
+
+        static let tickNewRound time newPlayerTurn model =
 
             let newPlayerActivity =
                 match newPlayerTurn with
@@ -563,6 +556,7 @@ module GameplayDispatcherModule =
                     model
                 | NoActivity -> model
 
+            let model = tickNewEnemyTurns model
             tickUpdate time model
         
         override this.Channel (_, _) =
@@ -607,8 +601,10 @@ module GameplayDispatcherModule =
                 let time = (World.getTickTime world)
                 let model =
                     match playerTurn with
-                    | NoTurn -> tickUpdate time model
-                    | _ -> tickNewTurn time playerTurn model
+                    | NoTurn ->
+                        let model = tickNewEnemyTurns model
+                        tickUpdate time model
+                    | _ -> tickNewRound time playerTurn model
                 just model
 
         override this.Command (model, command, _, world) =
