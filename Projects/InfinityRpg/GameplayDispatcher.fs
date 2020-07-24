@@ -62,9 +62,12 @@ module GameplayDispatcherModule =
         static member getEnemyDesiredTurns model =
             List.map (fun model -> Option.get model.DesiredTurnOpt) model.Enemies
 
+        static member enemyTurnsPending model =
+            GameplayModel.getEnemyDesiredTurns model |> List.exists (fun turn -> turn <> NoTurn)
+        
         static member anyTurnsInProgress model =
             GameplayModel.getCharacterActivityStates model |> List.exists (fun state -> state <> NoActivity) ||
-            GameplayModel.getEnemyDesiredTurns model |> List.exists (fun turn -> turn <> NoTurn)
+            GameplayModel.enemyTurnsPending model
         
         static member updateCharacterBy updater indexOpt newValue model =
             match indexOpt with
@@ -374,28 +377,6 @@ module GameplayDispatcherModule =
                 List.mapi (fun index (turn : Turn) -> if index = firstActionIndex then turn else NoTurn ) enemyTurns
             else enemyTurns
 
-        static let setEnemyActivities model =
-            let enemyActivities =
-                List.map
-                    (fun (turn : Turn) ->
-                        match turn with
-                        | ActionTurn actionDescriptor -> Action actionDescriptor
-                        | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
-                        | CancelTurn -> NoActivity
-                        | NoTurn -> NoActivity)
-                    (GameplayModel.getEnemyDesiredTurns model)
-            
-            Seq.fold2
-                (fun model newActivity enemy ->
-                    match newActivity with
-                    | NoActivity -> model
-                    | _ ->
-                        let model = GameplayModel.updateDesiredTurnOpt enemy.EnemyIndexOpt (Some NoTurn) model
-                        GameplayModel.updateCharacterActivityState enemy.EnemyIndexOpt newActivity model)
-                model
-                enemyActivities
-                model.Enemies
-        
         static let walk3 positive current destination =
             let walkSpeed = if positive then Constants.Layout.CharacterWalkSpeed else -Constants.Layout.CharacterWalkSpeed
             let next = current + walkSpeed
@@ -509,15 +490,34 @@ module GameplayDispatcherModule =
         static let tickNewEnemyTurns model =
 
             (* set enemy activities in accordance with the player's current activity.
-            "NoActivity" here means the player's turn is finished, and it's the enemy's turn.
-            this should only happen at the beginning of enemy turns, whereas it's currently happening throughout their turns.
-            and once this is done, enemy LastWalkOriginM needs to be updated like player's to make enemy navigation possible. *)
+            enemy turns must await player action to finish before executing.
+            NOTE: enemy LastWalkOriginM needs to be updated like player's to make enemy navigation possible. *)
 
             match model.Player.CharacterActivityState with
             | Action _ -> model
             | Navigation _ 
             | NoActivity ->
-                let model = setEnemyActivities model
+                let model =
+                    let enemyActivities =
+                        List.map
+                            (fun (turn : Turn) ->
+                                match turn with
+                                | ActionTurn actionDescriptor -> Action actionDescriptor
+                                | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
+                                | CancelTurn -> NoActivity
+                                | NoTurn -> NoActivity)
+                            (GameplayModel.getEnemyDesiredTurns model)
+                    
+                    Seq.fold2
+                        (fun model newActivity enemy ->
+                            match newActivity with
+                            | NoActivity -> model
+                            | _ ->
+                                let model = GameplayModel.updateDesiredTurnOpt enemy.EnemyIndexOpt (Some NoTurn) model
+                                GameplayModel.updateCharacterActivityState enemy.EnemyIndexOpt newActivity model)
+                        model
+                        enemyActivities
+                        model.Enemies
                 if List.exists (fun (state : CharacterActivityState) -> state.IsActing) (GameplayModel.getEnemyActivityStates model) then
                     cancelNavigation None model
                 else model
@@ -602,7 +602,7 @@ module GameplayDispatcherModule =
                 let model =
                     match playerTurn with
                     | NoTurn ->
-                        let model = tickNewEnemyTurns model
+                        let model = if (GameplayModel.enemyTurnsPending model) then (tickNewEnemyTurns model) else model
                         tickUpdate time model
                     | _ -> tickNewRound time playerTurn model
                 just model
