@@ -96,6 +96,20 @@ module GameplayDispatcherModule =
         static member removeEnemy index model =
             let enemies = List.filter (fun model -> (Option.get model.EnemyIndexOpt) <> index) model.Enemies
             { model with Enemies = enemies }
+
+        static member updateEnemiesBy updater newValues model =
+            let enemies = List.map2 (fun newValue model -> updater newValue model) newValues model.Enemies
+            { model with Enemies = enemies }
+
+        static member updateEnemyActivityStates newValues model =
+            GameplayModel.updateEnemiesBy CharacterModel.updateCharacterActivityState newValues model
+
+        static member updateEnemyDesiredTurns newValues model =
+            GameplayModel.updateEnemiesBy CharacterModel.updateDesiredTurnOpt newValues model
+
+        static member resetEnemyDesiredTurns model =
+            let enemies = List.map (fun model -> CharacterModel.updateDesiredTurnOpt (Some NoTurn) model) model.Enemies
+            { model with Enemies = enemies }
     
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
@@ -372,10 +386,13 @@ module GameplayDispatcherModule =
             // if any action turn is present, all actions except the first are cancelled
             let desiredEnemyAction = List.exists (fun (turn : Turn) -> match turn with ActionTurn _ -> true; | _ -> false) enemyTurns
                                                                                // ^----- better way?
-            if desiredEnemyAction then
-                let firstActionIndex = List.tryFindIndex (fun (turn : Turn) -> match turn with ActionTurn _ -> true; | _ -> false) enemyTurns |> Option.get
-                List.mapi (fun index (turn : Turn) -> if index = firstActionIndex then turn else NoTurn ) enemyTurns
-            else enemyTurns
+            let enemyTurns =
+                if desiredEnemyAction then
+                    let firstActionIndex = List.tryFindIndex (fun (turn : Turn) -> match turn with ActionTurn _ -> true; | _ -> false) enemyTurns |> Option.get
+                    List.mapi (fun index (turn : Turn) -> if index = firstActionIndex then turn else NoTurn ) enemyTurns
+                else enemyTurns
+
+            List.map (fun x -> Some x) enemyTurns
 
         static let walk3 positive current destination =
             let walkSpeed = if positive then Constants.Layout.CharacterWalkSpeed else -Constants.Layout.CharacterWalkSpeed
@@ -497,27 +514,18 @@ module GameplayDispatcherModule =
             | Action _ -> model
             | Navigation _ 
             | NoActivity ->
-                let model =
-                    let enemyActivities =
-                        List.map
-                            (fun (turn : Turn) ->
-                                match turn with
-                                | ActionTurn actionDescriptor -> Action actionDescriptor
-                                | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
-                                | CancelTurn -> NoActivity
-                                | NoTurn -> NoActivity)
-                            (GameplayModel.getEnemyDesiredTurns model)
+                let enemyActivities =
+                    List.map
+                        (fun (turn : Turn) ->
+                            match turn with
+                            | ActionTurn actionDescriptor -> Action actionDescriptor
+                            | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
+                            | CancelTurn -> NoActivity
+                            | NoTurn -> NoActivity)
+                        (GameplayModel.getEnemyDesiredTurns model)
+                let model = GameplayModel.updateEnemyActivityStates enemyActivities model
+                let model = GameplayModel.resetEnemyDesiredTurns model
                     
-                    Seq.fold2
-                        (fun model newActivity enemy ->
-                            match newActivity with
-                            | NoActivity -> model
-                            | _ ->
-                                let model = GameplayModel.updateDesiredTurnOpt enemy.EnemyIndexOpt (Some NoTurn) model
-                                GameplayModel.updateCharacterActivityState enemy.EnemyIndexOpt newActivity model)
-                        model
-                        enemyActivities
-                        model.Enemies
                 if List.exists (fun (state : CharacterActivityState) -> state.IsActing) (GameplayModel.getEnemyActivityStates model) then
                     cancelNavigation None model
                 else model
@@ -547,13 +555,7 @@ module GameplayDispatcherModule =
                 | Action _
                 | Navigation _ ->
                     let enemyDesiredTurns = determineDesiredEnemyTurns occupationMap model
-                    let model =
-                        Seq.fold2
-                            (fun model enemy turn -> GameplayModel.updateDesiredTurnOpt enemy.EnemyIndexOpt (Some turn) model)
-                            model
-                            model.Enemies
-                            enemyDesiredTurns
-                    model
+                    GameplayModel.updateEnemyDesiredTurns enemyDesiredTurns model
                 | NoActivity -> model
 
             let model = tickNewEnemyTurns model
