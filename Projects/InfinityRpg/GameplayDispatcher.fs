@@ -253,7 +253,7 @@ module GameplayDispatcherModule =
                 | Action _ as action -> action
                 | NoActivity -> NoActivity
                 | Navigation navDescriptor -> Navigation { navDescriptor with NavigationPathOpt = None }
-            GameplayModel.updateCharacterActivityState characterModel.EnemyIndexOpt characterActivity model
+            GameplayModel.updateCharacterActivityState indexOpt characterActivity model
 
         static let determineCharacterTurnFromDirection indexOpt direction occupationMap model =
             let characterModel = GameplayModel.getCharacterByIndex indexOpt model
@@ -410,16 +410,14 @@ module GameplayDispatcherModule =
             | Downward -> let (newY, arrival) = walk3 false position.Y walkDestination.Y in (Vector2 (position.X, newY), arrival)
             | Leftward -> let (newX, arrival) = walk3 false position.X walkDestination.X in (Vector2 (newX, position.Y), arrival)
         
-        static let updateCharacterByWalk indexOpt walkDescriptor model =
+        static let tickNavigation indexOpt navigationDescriptor model =
             let characterModel = GameplayModel.getCharacterByIndex indexOpt model
+            let walkDescriptor = navigationDescriptor.WalkDescriptor
             let (newPosition, walkState) = walk walkDescriptor characterModel.Position
             let characterAnimationState = { characterModel.CharacterAnimationState with Direction = walkDescriptor.WalkDirection }
             let model = GameplayModel.updateCharacterAnimationState indexOpt characterAnimationState model
             let model = GameplayModel.updatePosition indexOpt newPosition model
-            (walkState, model)
 
-        static let updateCharacterByWalkState indexOpt walkState navigationDescriptor model =
-            let characterModel = GameplayModel.getCharacterByIndex indexOpt model
             match walkState with
             | WalkFinished ->
                 let lastOrigin = navigationDescriptor.WalkDescriptor.WalkOriginM
@@ -428,6 +426,7 @@ module GameplayDispatcherModule =
                 | Some (_ :: []) ->
                     GameplayModel.updateCharacterActivityState indexOpt NoActivity model
                 | Some (currentNode :: navigationPath) ->
+                    let characterModel = GameplayModel.getCharacterByIndex indexOpt model
                     let walkDirection = vmtod ((List.head navigationPath).PositionM - currentNode.PositionM)
                     let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = vftovm characterModel.Position }
                     let navigationDescriptor = { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath; LastWalkOriginM = lastOrigin }
@@ -435,10 +434,6 @@ module GameplayDispatcherModule =
                 | None ->
                     GameplayModel.updateCharacterActivityState indexOpt NoActivity model
             | WalkContinuing -> model
-
-        static let tickNavigation indexOpt navigationDescriptor model =
-            let (walkState, model) = updateCharacterByWalk indexOpt navigationDescriptor.WalkDescriptor model
-            updateCharacterByWalkState indexOpt walkState navigationDescriptor model
 
         static let tickReaction initiatorIndexOpt actionDescriptor model =
             let initiatorModel = GameplayModel.getCharacterByIndex initiatorIndexOpt model
@@ -481,8 +476,6 @@ module GameplayDispatcherModule =
                 tickReaction indexOpt actionDescriptor model
         
         static let tickUpdate time model =
-            
-            let characters = GameplayModel.getCharacterIndices model
             let rec recursion (characters : int option list) model =
                 if characters.Length = 0 then model
                 else
@@ -501,8 +494,7 @@ module GameplayDispatcherModule =
                                 else model
                             | NoActivity -> model
                     recursion characters.Tail model
-            
-            recursion characters model
+            recursion (GameplayModel.getCharacterIndices model) model
         
         static let tickNewEnemyTurns model =
 
@@ -541,19 +533,16 @@ module GameplayDispatcherModule =
                 | CancelTurn -> NoActivity
                 | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point."
             
-            // here None means player
             let model = GameplayModel.updateCharacterActivityState None newPlayerActivity model
 
-            // determine (and set) enemy desired turns if applicable
-            let occupationMap =
-                let fieldMap = Option.get model.FieldMapOpt
-                let enemyPositions = GameplayModel.getEnemyPositions model |> List.toSeq
-                OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions newPlayerTurn
-            
             let model =
                 match newPlayerActivity with
                 | Action _
                 | Navigation _ ->
+                    let occupationMap =
+                        let fieldMap = Option.get model.FieldMapOpt
+                        let enemyPositions = GameplayModel.getEnemyPositions model |> List.toSeq
+                        OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions newPlayerTurn
                     let enemyDesiredTurns = determineDesiredEnemyTurns occupationMap model
                     GameplayModel.updateEnemyDesiredTurns enemyDesiredTurns model
                 | NoActivity -> model
