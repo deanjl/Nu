@@ -118,7 +118,8 @@ module GameplayDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] GameplayMessage =
         | NewGame
-        | TickTurn of Turn
+        | TickOngoingRound
+        | TickNewRound of Turn
     
     type [<NoEquality; NoComparison>] GameplayCommand =
         | ToggleHaltButton // TODO: reimplement once game is properly elmified
@@ -522,34 +523,6 @@ module GameplayDispatcherModule =
                     cancelNavigation None model
                 else model
 
-        static let tickNewRound time newPlayerTurn model =
-
-            let newPlayerActivity =
-                match newPlayerTurn with
-                | ActionTurn actionDescriptor -> Action actionDescriptor
-                | NavigationTurn navigationDescriptor ->
-                    let navigationDescriptor = {navigationDescriptor with LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM}
-                    Navigation navigationDescriptor
-                | CancelTurn -> NoActivity
-                | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point."
-            
-            let model = GameplayModel.updateCharacterActivityState None newPlayerActivity model
-
-            let model =
-                match newPlayerActivity with
-                | Action _
-                | Navigation _ ->
-                    let occupationMap =
-                        let fieldMap = Option.get model.FieldMapOpt
-                        let enemyPositions = GameplayModel.getEnemyPositions model |> List.toSeq
-                        OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions newPlayerTurn
-                    let enemyDesiredTurns = determineDesiredEnemyTurns occupationMap model
-                    GameplayModel.updateEnemyDesiredTurns enemyDesiredTurns model
-                | NoActivity -> model
-
-            let model = tickNewEnemyTurns model
-            tickUpdate time model
-        
         override this.Channel (_, _) =
             [//Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
              Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSelected Simulants.HudFeeler =|> fun evt -> cmd (HandlePlayerInput (TouchInput evt.Data))
@@ -588,15 +561,43 @@ module GameplayDispatcherModule =
                 
                 let model = { model with FieldMapOpt = Some fieldMap; Enemies = enemies; Player = player }
                 just model
-            | TickTurn playerTurn ->
+            
+            | TickOngoingRound ->
+                let playerTurn = determinePlayerTurnFromNavigationProgress model
+                match playerTurn with
+                | NoTurn ->
+                    let time = (World.getTickTime world)
+                    let model = if (GameplayModel.enemyTurnsPending model) then (tickNewEnemyTurns model) else model
+                    just (tickUpdate time model)
+                | _ -> withMsg model (TickNewRound playerTurn)
+            
+            | TickNewRound newPlayerTurn ->
                 let time = (World.getTickTime world)
+                let newPlayerActivity =
+                    match newPlayerTurn with
+                    | ActionTurn actionDescriptor -> Action actionDescriptor
+                    | NavigationTurn navigationDescriptor ->
+                        let navigationDescriptor = {navigationDescriptor with LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM}
+                        Navigation navigationDescriptor
+                    | CancelTurn -> NoActivity
+                    | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point."
+                
+                let model = GameplayModel.updateCharacterActivityState None newPlayerActivity model
+
                 let model =
-                    match playerTurn with
-                    | NoTurn ->
-                        let model = if (GameplayModel.enemyTurnsPending model) then (tickNewEnemyTurns model) else model
-                        tickUpdate time model
-                    | _ -> tickNewRound time playerTurn model
-                just model
+                    match newPlayerActivity with
+                    | Action _
+                    | Navigation _ ->
+                        let occupationMap =
+                            let fieldMap = Option.get model.FieldMapOpt
+                            let enemyPositions = GameplayModel.getEnemyPositions model |> List.toSeq
+                            OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions newPlayerTurn
+                        let enemyDesiredTurns = determineDesiredEnemyTurns occupationMap model
+                        GameplayModel.updateEnemyDesiredTurns enemyDesiredTurns model
+                    | NoActivity -> model
+
+                let model = tickNewEnemyTurns model
+                just (tickUpdate time model)
 
         override this.Command (model, command, _, world) =
             match command with
@@ -610,7 +611,7 @@ module GameplayDispatcherModule =
                     let playerTurn = determinePlayerTurnFromInput input model world
                     match playerTurn with
                     | NoTurn -> just world
-                    | _ -> withMsg world (TickTurn playerTurn)
+                    | _ -> withMsg world (TickNewRound playerTurn)
             | SaveGame gameplay ->
                 World.writeScreenToFile Assets.SaveFilePath gameplay world
                 just world
@@ -620,7 +621,7 @@ module GameplayDispatcherModule =
             | RunGameplay ->
                 withMsg world NewGame
             | Tick ->
-                if (GameplayModel.anyTurnsInProgress model) then withMsg world (TickTurn (determinePlayerTurnFromNavigationProgress model))
+                if (GameplayModel.anyTurnsInProgress model) then withMsg world TickOngoingRound
                 elif KeyboardState.isKeyDown KeyboardKey.Up then withCmd world (HandlePlayerInput (DetailInput Upward))
                 elif KeyboardState.isKeyDown KeyboardKey.Right then withCmd world (HandlePlayerInput (DetailInput Rightward))
                 elif KeyboardState.isKeyDown KeyboardKey.Down then withCmd world (HandlePlayerInput (DetailInput Downward))
