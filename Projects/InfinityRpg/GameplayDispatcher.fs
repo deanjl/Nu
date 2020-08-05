@@ -118,6 +118,7 @@ module GameplayDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] GameplayMessage =
         | NewGame
+        | TickCharacterTurns
         | TickOngoingRound
         | TickNewRound of Turn
     
@@ -476,53 +477,6 @@ module GameplayDispatcherModule =
                 let model = GameplayModel.updateCharacterActivityState indexOpt NoActivity model
                 tickReaction indexOpt actionDescriptor model
         
-        static let tickUpdate time model =
-            let rec recursion (characters : int option list) model =
-                if characters.Length = 0 then model
-                else
-                    let indexOpt = characters.Head
-                    let characterModelOpt = GameplayModel.tryGetCharacterByIndex indexOpt model
-                    let model =
-                        match characterModelOpt with
-                        | None -> model
-                        | Some characterModel ->
-                            match characterModel.CharacterActivityState with
-                            | Action actionDescriptor ->
-                                tickAction time indexOpt actionDescriptor model
-                            | Navigation navigationDescriptor ->
-                                if navigationDescriptor.LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM then
-                                    tickNavigation indexOpt navigationDescriptor model
-                                else model
-                            | NoActivity -> model
-                    recursion characters.Tail model
-            recursion (GameplayModel.getCharacterIndices model) model
-        
-        static let tickNewEnemyTurns model =
-
-            (* set enemy activities in accordance with the player's current activity.
-            enemy turns must await player action to finish before executing.
-            NOTE: enemy LastWalkOriginM needs to be updated like player's to make enemy navigation possible. *)
-
-            match model.Player.CharacterActivityState with
-            | Action _ -> model
-            | Navigation _ 
-            | NoActivity ->
-                let enemyActivities =
-                    List.map
-                        (fun (turn : Turn) ->
-                            match turn with
-                            | ActionTurn actionDescriptor -> Action actionDescriptor
-                            | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
-                            | CancelTurn -> NoActivity
-                            | NoTurn -> NoActivity)
-                        (GameplayModel.getEnemyDesiredTurns model)
-                let model = GameplayModel.updateEnemyActivityStates enemyActivities model
-                let model = GameplayModel.resetEnemyDesiredTurns model
-                    
-                if List.exists (fun (state : CharacterActivityState) -> state.IsActing) (GameplayModel.getEnemyActivityStates model) then
-                    cancelNavigation None model
-                else model
-
         override this.Channel (_, _) =
             [//Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
              Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSelected Simulants.HudFeeler =|> fun evt -> cmd (HandlePlayerInput (TouchInput evt.Data))
@@ -562,17 +516,66 @@ module GameplayDispatcherModule =
                 let model = { model with FieldMapOpt = Some fieldMap; Enemies = enemies; Player = player }
                 just model
             
-            | TickOngoingRound ->
+            | TickCharacterTurns ->
+                let time = World.getTickTime world
+                
+                let rec recursion (characters : int option list) model =
+                    if characters.Length = 0 then model
+                    else
+                        let indexOpt = characters.Head
+                        let characterModelOpt = GameplayModel.tryGetCharacterByIndex indexOpt model
+                        let model =
+                            match characterModelOpt with
+                            | None -> model
+                            | Some characterModel ->
+                                match characterModel.CharacterActivityState with
+                                | Action actionDescriptor ->
+                                    tickAction time indexOpt actionDescriptor model
+                                | Navigation navigationDescriptor ->
+                                    if navigationDescriptor.LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM then
+                                        tickNavigation indexOpt navigationDescriptor model
+                                    else model
+                                | NoActivity -> model
+                        recursion characters.Tail model
+                let model = recursion (GameplayModel.getCharacterIndices model) model
+
                 let playerTurn = determinePlayerTurnFromNavigationProgress model
                 match playerTurn with
-                | NoTurn ->
-                    let time = (World.getTickTime world)
-                    let model = if (GameplayModel.enemyTurnsPending model) then (tickNewEnemyTurns model) else model
-                    just (tickUpdate time model)
+                | NoTurn -> just model
                 | _ -> withMsg model (TickNewRound playerTurn)
             
+            | TickOngoingRound ->
+                
+                (* set enemy activities in accordance with the player's current activity.
+                enemy turns must await player action to finish before executing.
+                NOTE: enemy LastWalkOriginM needs to be updated like player's to make enemy navigation possible. *)
+                
+                let model =
+                    if (GameplayModel.enemyTurnsPending model) then
+                        match model.Player.CharacterActivityState with
+                        | Action _ -> model
+                        | Navigation _ 
+                        | NoActivity ->
+                            let enemyActivities =
+                                List.map
+                                    (fun (turn : Turn) ->
+                                        match turn with
+                                        | ActionTurn actionDescriptor -> Action actionDescriptor
+                                        | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
+                                        | CancelTurn -> NoActivity
+                                        | NoTurn -> NoActivity)
+                                    (GameplayModel.getEnemyDesiredTurns model)
+                            let model = GameplayModel.updateEnemyActivityStates enemyActivities model
+                            let model = GameplayModel.resetEnemyDesiredTurns model
+                                
+                            if List.exists (fun (state : CharacterActivityState) -> state.IsActing) (GameplayModel.getEnemyActivityStates model) then
+                                cancelNavigation None model
+                            else model
+                    else model
+                                
+                withMsg model TickCharacterTurns                
+            
             | TickNewRound newPlayerTurn ->
-                let time = (World.getTickTime world)
                 let newPlayerActivity =
                     match newPlayerTurn with
                     | ActionTurn actionDescriptor -> Action actionDescriptor
@@ -596,8 +599,7 @@ module GameplayDispatcherModule =
                         GameplayModel.updateEnemyDesiredTurns enemyDesiredTurns model
                     | NoActivity -> model
 
-                let model = tickNewEnemyTurns model
-                just (tickUpdate time model)
+                withMsg model TickOngoingRound
 
         override this.Command (model, command, _, world) =
             match command with
