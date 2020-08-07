@@ -50,13 +50,11 @@ type [<StructuralEquality; NoComparison>] NavigationDescriptor =
 
 type [<StructuralEquality; NoComparison>] ActionDescriptor =
     { ActionTicks : int64 // an arbitrary number to show a hacky action animation
-      ActionTargetPositionMOpt : Vector2i option
+      ActionTargetIndexOpt : int option // None is Player; targetless capacity suspended until proper character indexing is introduced
       ActionDataName : string }
 
-    member this.ComputeActionDirection currentPosition currentDirection =
-        match this.ActionTargetPositionMOpt with
-        | Some targetPositionM -> targetPositionM - vftovm currentPosition |> vmtod
-        | None -> currentDirection
+    member this.ComputeActionDirection currentPosition targetPositionM =
+        targetPositionM - vftovm currentPosition |> vmtod
 
 type [<StructuralEquality; NoComparison>] CharacterActivityState =
     | Action of ActionDescriptor
@@ -89,3 +87,14 @@ type [<StructuralEquality; NoComparison>] Turn =
     | NavigationTurn of NavigationDescriptor
     | CancelTurn
     | NoTurn
+
+    member this.IsAction =
+        match this with
+        | ActionTurn _ -> true
+        | _ -> false
+
+    static member makeAttack indexOpt =
+        ActionTurn
+            { ActionTicks = 0L
+              ActionTargetIndexOpt = indexOpt
+              ActionDataName = Constants.InfinityRpg.AttackName }

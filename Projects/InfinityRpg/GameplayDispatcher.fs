@@ -43,9 +43,12 @@ module GameplayDispatcherModule =
         static member tryGetCharacterAtPosition position model =
             GameplayModel.getCharacters model |> List.tryFind (fun model -> model.Position = position)
 
+        static member getCharacterAtPosition position model =
+            GameplayModel.tryGetCharacterAtPosition position model |> Option.get
+
         static member getCharacterInDirection indexOpt direction model =
             let position = (GameplayModel.getCharacterByIndex indexOpt model).Position
-            GameplayModel.tryGetCharacterAtPosition (position + dtovf direction) model |> Option.get
+            GameplayModel.getCharacterAtPosition (position + dtovf direction) model
         
         static member getCharacterIndices model =
             GameplayModel.getCharacters model |> List.map (fun model -> model.EnemyIndexOpt)
@@ -110,6 +113,18 @@ module GameplayDispatcherModule =
         static member resetEnemyDesiredTurns model =
             let enemies = List.map (fun model -> CharacterModel.updateDesiredTurnOpt (Some NoTurn) model) model.Enemies
             { model with Enemies = enemies }
+
+        static member applyAction actionTurn model =
+            match actionTurn with
+            | ActionTurn actionDescriptor ->
+                let reactorDamage = 4 // NOTE: just hard-coding damage for now
+                let reactorModel = GameplayModel.getCharacterByIndex actionDescriptor.ActionTargetIndexOpt model
+                let reactorState = reactorModel.CharacterState
+                GameplayModel.updateCharacterState reactorModel.EnemyIndexOpt { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
+            | _ -> failwith "Turn must be ActionTurn at this point."
+        
+        static member tryGetActionTurn turns =
+            List.tryFind (fun (x : Turn) -> x.IsAction) turns
     
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
@@ -211,15 +226,9 @@ module GameplayDispatcherModule =
                     [0 .. enemyCount - 1]
             models
 
-        static let makeAttackTurn targetPositionM =
-            ActionTurn
-                { ActionTicks = 0L
-                  ActionTargetPositionMOpt = Some targetPositionM
-                  ActionDataName = Constants.InfinityRpg.AttackName }
-        
-        static let getCharacterAnimationStateByActionBegin tickTime characterPosition characterAnimationState (actionDescriptor : ActionDescriptor) =
-            let currentDirection = characterAnimationState.Direction
-            let direction = actionDescriptor.ComputeActionDirection characterPosition currentDirection
+        static let getCharacterAnimationStateByActionBegin tickTime characterPosition characterAnimationState (actionDescriptor : ActionDescriptor) model =
+            let targetPositionM = vftovm (GameplayModel.getCharacterByIndex actionDescriptor.ActionTargetIndexOpt model).Position
+            let direction = actionDescriptor.ComputeActionDirection characterPosition targetPositionM
             { characterAnimationState with
                 Direction = direction
                 AnimationType = CharacterAnimationActing
@@ -272,7 +281,9 @@ module GameplayDispatcherModule =
                     let targetPosition = characterModel.Position + dtovf direction
                     let opponents = GameplayModel.getCharacterOpponents indexOpt model
                     if List.exists (fun opponent -> opponent.Position = targetPosition) opponents
-                    then makeAttackTurn (vftovm targetPosition)
+                    then
+                        let targetIndexOpt = (GameplayModel.getCharacterAtPosition targetPosition model).EnemyIndexOpt
+                        Turn.makeAttack targetIndexOpt
                     else NoTurn
 
         static let determineCharacterTurnFromTouch indexOpt touchPosition occupationMap model =
@@ -292,7 +303,9 @@ module GameplayDispatcherModule =
                     if Math.arePositionsAdjacent targetPosition characterModel.Position then
                         let opponents = GameplayModel.getCharacterOpponents indexOpt model
                         if List.exists (fun opponent -> opponent.Position = targetPosition) opponents
-                        then makeAttackTurn (vftovm targetPosition)
+                        then
+                            let targetIndexOpt = (GameplayModel.getCharacterAtPosition targetPosition model).EnemyIndexOpt
+                            Turn.makeAttack targetIndexOpt
                         else NoTurn
                     else NoTurn
             else NoTurn
@@ -360,19 +373,19 @@ module GameplayDispatcherModule =
                 Log.debug ("Invalid ControlType '" + scstring controlType + "' for enemy.")
                 NoTurn
             | Chaos ->
-                let nextPlayerPosition =
-                    match model.Player.CharacterActivityState with
-                    | Action _ -> model.Player.Position
-                    | Navigation navigationDescriptor -> navigationDescriptor.NextPosition
-                    | NoActivity -> model.Player.Position
-                if Math.arePositionsAdjacent characterModel.Position nextPlayerPosition then
-                    let enemyTurn = makeAttackTurn (vftovm nextPlayerPosition)
-                    enemyTurn
+                if characterModel.CharacterState.HitPoints <= 0 then NoTurn
                 else
-                    let randResult = Gen.random1 4
-                    let direction = Direction.fromInt randResult
-                    let enemyTurn = determineCharacterTurnFromDirection indexOpt direction occupationMap model
-                    enemyTurn
+                    let nextPlayerPosition =
+                        match model.Player.CharacterActivityState with
+                        | Action _ -> model.Player.Position
+                        | Navigation navigationDescriptor -> navigationDescriptor.NextPosition
+                        | NoActivity -> model.Player.Position
+                    if Math.arePositionsAdjacent characterModel.Position nextPlayerPosition then
+                        Turn.makeAttack None
+                    else
+                        let randResult = Gen.random1 4
+                        let direction = Direction.fromInt randResult
+                        determineCharacterTurnFromDirection indexOpt direction occupationMap model
             | Uncontrolled -> NoTurn
 
         static let determineDesiredEnemyTurns occupationMap model =
@@ -386,8 +399,7 @@ module GameplayDispatcherModule =
                     (occupationMap, [], model)
             
             // if any action turn is present, all actions except the first are cancelled
-            let desiredEnemyAction = List.exists (fun (turn : Turn) -> match turn with ActionTurn _ -> true; | _ -> false) enemyTurns
-                                                                               // ^----- better way?
+            let desiredEnemyAction = List.exists (fun (turn : Turn) -> turn.IsAction) enemyTurns
             let enemyTurns =
                 if desiredEnemyAction then
                     let firstActionIndex = List.tryFindIndex (fun (turn : Turn) -> match turn with ActionTurn _ -> true; | _ -> false) enemyTurns |> Option.get
@@ -443,8 +455,7 @@ module GameplayDispatcherModule =
             let reactorState = reactorModel.CharacterState
             let reactorIndexOpt = reactorModel.EnemyIndexOpt
             if actionDescriptor.ActionTicks = (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
-                let reactorDamage = 4 // NOTE: just hard-coding damage for now
-                let model = GameplayModel.updateCharacterState reactorIndexOpt { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
+                
                 let reactorModel = GameplayModel.getCharacterByIndex reactorIndexOpt model
                 if reactorModel.CharacterState.HitPoints <= 0 then
                     let characterAnimationState = reactorModel.CharacterAnimationState
@@ -463,7 +474,7 @@ module GameplayDispatcherModule =
             let characterAnimationState = characterModel.CharacterAnimationState
             let actionInc = Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks }
             if actionDescriptor.ActionTicks = 0L then
-                let newAnimation = getCharacterAnimationStateByActionBegin time characterModel.Position characterAnimationState actionDescriptor
+                let newAnimation = getCharacterAnimationStateByActionBegin time characterModel.Position characterAnimationState actionDescriptor model
                 let model = GameplayModel.updateCharacterAnimationState indexOpt newAnimation model
                 GameplayModel.updateCharacterActivityState indexOpt actionInc model
             elif actionDescriptor.ActionTicks < (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
@@ -576,6 +587,7 @@ module GameplayDispatcherModule =
                 withMsg model TickCharacterTurns                
             
             | TickNewRound newPlayerTurn ->
+                
                 let newPlayerActivity =
                     match newPlayerTurn with
                     | ActionTurn actionDescriptor -> Action actionDescriptor
@@ -587,6 +599,12 @@ module GameplayDispatcherModule =
                 
                 let model = GameplayModel.updateCharacterActivityState None newPlayerActivity model
 
+                let playerActionTurnOpt = GameplayModel.tryGetActionTurn [newPlayerTurn]
+                let model =
+                    match playerActionTurnOpt with
+                    | Some actionTurn -> GameplayModel.applyAction actionTurn model
+                    | None -> model
+                
                 let model =
                     match newPlayerActivity with
                     | Action _
@@ -599,6 +617,12 @@ module GameplayDispatcherModule =
                         GameplayModel.updateEnemyDesiredTurns enemyDesiredTurns model
                     | NoActivity -> model
 
+                let enemyActionTurnOpt = GameplayModel.getEnemyDesiredTurns model |> GameplayModel.tryGetActionTurn
+                let model =
+                    match enemyActionTurnOpt with
+                    | Some actionTurn -> GameplayModel.applyAction actionTurn model
+                    | None -> model
+                
                 withMsg model TickOngoingRound
 
         override this.Command (model, command, _, world) =
