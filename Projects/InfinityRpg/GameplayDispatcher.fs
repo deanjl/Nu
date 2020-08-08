@@ -449,44 +449,35 @@ module GameplayDispatcherModule =
                     GameplayModel.updateCharacterActivityState indexOpt NoActivity model
             | WalkContinuing -> model
 
-        static let tickReaction initiatorIndexOpt actionDescriptor model =
-            let initiatorModel = GameplayModel.getCharacterByIndex initiatorIndexOpt model
-            let reactorModel = GameplayModel.getCharacterInDirection initiatorIndexOpt initiatorModel.CharacterAnimationState.Direction model
+        static let tickAction time indexOpt actionDescriptor model =
+            let characterModel = GameplayModel.getCharacterByIndex indexOpt model
+            let actionTicks = actionDescriptor.ActionTicks
+            let reactorIndexOpt = actionDescriptor.ActionTargetIndexOpt
+            let reactorModel = GameplayModel.getCharacterByIndex reactorIndexOpt model
             let reactorState = reactorModel.CharacterState
-            let reactorIndexOpt = reactorModel.EnemyIndexOpt
-            if actionDescriptor.ActionTicks = (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
-                
-                let reactorModel = GameplayModel.getCharacterByIndex reactorIndexOpt model
-                if reactorModel.CharacterState.HitPoints <= 0 then
+            let characterAnimationState = characterModel.CharacterAnimationState
+            let actionInc = Action { actionDescriptor with ActionTicks = inc actionTicks }
+
+            if actionTicks = 0L then
+                let newAnimation = getCharacterAnimationStateByActionBegin time characterModel.Position characterAnimationState actionDescriptor model
+                let model = GameplayModel.updateCharacterAnimationState indexOpt newAnimation model
+                GameplayModel.updateCharacterActivityState indexOpt actionInc model
+            elif actionTicks = (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
+                let model = GameplayModel.updateCharacterActivityState indexOpt actionInc model
+                if reactorState.HitPoints <= 0 then
                     let characterAnimationState = reactorModel.CharacterAnimationState
                     GameplayModel.updateCharacterAnimationState reactorIndexOpt { characterAnimationState with AnimationType = CharacterAnimationSlain } model
                 else model
-            elif actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
-                if reactorModel.CharacterState.HitPoints <= 0 then
+            elif actionTicks = Constants.InfinityRpg.ActionTicksMax then
+                let newAnimation = getCharacterAnimationStateByActionEnd time characterAnimationState
+                let model = GameplayModel.updateCharacterAnimationState indexOpt newAnimation model
+                let model = GameplayModel.updateCharacterActivityState indexOpt NoActivity model
+                if reactorState.HitPoints <= 0 then
                     match reactorIndexOpt with
                     | None -> GameplayModel.updateCharacterState None {reactorState with ControlType = Uncontrolled} model // TODO: reimplement screen transition
                     | Some index -> GameplayModel.removeEnemy index model
                 else model
-            else model
-
-        static let tickAction time indexOpt actionDescriptor model =
-            let characterModel = GameplayModel.getCharacterByIndex indexOpt model
-            let characterAnimationState = characterModel.CharacterAnimationState
-            let actionInc = Action { actionDescriptor with ActionTicks = inc actionDescriptor.ActionTicks }
-            if actionDescriptor.ActionTicks = 0L then
-                let newAnimation = getCharacterAnimationStateByActionBegin time characterModel.Position characterAnimationState actionDescriptor model
-                let model = GameplayModel.updateCharacterAnimationState indexOpt newAnimation model
-                GameplayModel.updateCharacterActivityState indexOpt actionInc model
-            elif actionDescriptor.ActionTicks < (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
-                GameplayModel.updateCharacterActivityState indexOpt actionInc model
-            elif actionDescriptor.ActionTicks < Constants.InfinityRpg.ActionTicksMax then
-                let model = GameplayModel.updateCharacterActivityState indexOpt actionInc model
-                tickReaction indexOpt actionDescriptor model
-            else
-                let newAnimation = getCharacterAnimationStateByActionEnd time characterAnimationState
-                let model = GameplayModel.updateCharacterAnimationState indexOpt newAnimation model
-                let model = GameplayModel.updateCharacterActivityState indexOpt NoActivity model
-                tickReaction indexOpt actionDescriptor model
+            else GameplayModel.updateCharacterActivityState indexOpt actionInc model
         
         override this.Channel (_, _) =
             [//Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
