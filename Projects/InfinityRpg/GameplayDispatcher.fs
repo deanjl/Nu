@@ -266,85 +266,65 @@ module GameplayDispatcherModule =
                 | Navigation navDescriptor -> Navigation { navDescriptor with NavigationPathOpt = None }
             GameplayModel.updateCharacterActivityState indexOpt characterActivity model
 
-        static let determineCharacterTurnFromDirection indexOpt direction occupationMap model =
-            let characterModel = GameplayModel.getCharacterByIndex indexOpt model
-            match characterModel.CharacterActivityState with
-            | Action _ -> NoTurn
-            | Navigation _ -> NoTurn
-            | NoActivity ->
-                let characterPositionM = vftovm characterModel.Position
-                let openDirections = OccupationMap.getOpenDirectionsAtPositionM characterPositionM occupationMap
-                if Set.contains direction openDirections then
-                    let walkDescriptor = { WalkDirection = direction; WalkOriginM = characterPositionM }
-                    NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = None; LastWalkOriginM = characterPositionM }
-                else
-                    let targetPosition = characterModel.Position + dtovf direction
-                    let opponents = GameplayModel.getCharacterOpponents indexOpt model
-                    if List.exists (fun opponent -> opponent.Position = targetPosition) opponents
-                    then
-                        let targetIndexOpt = (GameplayModel.getCharacterAtPosition targetPosition model).EnemyIndexOpt
-                        Turn.makeAttack targetIndexOpt
-                    else NoTurn
-
-        static let determineCharacterTurnFromTouch indexOpt touchPosition occupationMap model =
+        static let determineCharacterTurnFromPosition indexOpt position occupationMap model =
             let characterModel = GameplayModel.getCharacterByIndex indexOpt model
             if characterModel.CharacterActivityState = NoActivity then
-                match tryGetNavigationPath indexOpt touchPosition occupationMap model with
-                | Some navigationPath ->
-                    match navigationPath with
-                    | [] -> NoTurn
-                    | _ ->
-                        let characterPositionM = vftovm characterModel.Position
-                        let walkDirection = vmtod ((List.head navigationPath).PositionM - characterPositionM)
-                        let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = characterPositionM }
-                        NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath; LastWalkOriginM = characterPositionM }
-                | None ->
-                    let targetPosition = touchPosition |> vftovm |> vmtovf
-                    if Math.arePositionsAdjacent targetPosition characterModel.Position then
+                let characterPositionM = vftovm characterModel.Position
+                if Math.arePositionsAdjacent position characterModel.Position then
+                    let openDirections = OccupationMap.getOpenDirectionsAtPositionM characterPositionM occupationMap
+                    let direction = vmtod ((vftovm position) - characterPositionM)
+                    if Set.contains direction openDirections then
+                        let walkDescriptor = { WalkDirection = direction; WalkOriginM = characterPositionM }
+                        NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = None; LastWalkOriginM = characterPositionM }
+                    else
                         let opponents = GameplayModel.getCharacterOpponents indexOpt model
-                        if List.exists (fun opponent -> opponent.Position = targetPosition) opponents
+                        if List.exists (fun opponent -> opponent.Position = position) opponents
                         then
-                            let targetIndexOpt = (GameplayModel.getCharacterAtPosition targetPosition model).EnemyIndexOpt
+                            let targetIndexOpt = (GameplayModel.getCharacterAtPosition position model).EnemyIndexOpt
                             Turn.makeAttack targetIndexOpt
                         else NoTurn
-                    else NoTurn
+                else
+                    match tryGetNavigationPath indexOpt position occupationMap model with
+                    | Some navigationPath ->
+                        match navigationPath with
+                        | [] -> NoTurn
+                        | _ ->
+                            let walkDirection = vmtod ((List.head navigationPath).PositionM - characterPositionM)
+                            let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = characterPositionM }
+                            NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath; LastWalkOriginM = characterPositionM }
+                    | None -> NoTurn
             else NoTurn
 
-        static let determinePlayerTurnFromTouch touchPosition model world =
-            let fieldMap = Option.get model.FieldMapOpt
-            let enemyPositions = GameplayModel.getEnemyPositions model
-            if not (GameplayModel.anyTurnsInProgress model) then
-                let touchPositionW = World.mouseToWorld false touchPosition world
+        static let determineCharacterTurnFromDirection indexOpt direction occupationMap model =
+            let characterModel = GameplayModel.getCharacterByIndex indexOpt model
+            let targetPosition = characterModel.Position + dtovf direction
+            determineCharacterTurnFromPosition indexOpt targetPosition occupationMap model
+        
+        static let determinePlayerTurnFromInput playerInput model world =
+            match model.Player.CharacterState.ControlType with
+            | PlayerControlled ->
+                let fieldMap = Option.get model.FieldMapOpt
+                let enemyPositions = GameplayModel.getEnemyPositions model
                 let occupationMapWithAdjacentEnemies =
                     OccupationMap.makeFromFieldTilesAndAdjacentCharacters
                         (vftovm model.Player.Position)
                         fieldMap.FieldTiles
                         enemyPositions
-                match determineCharacterTurnFromTouch None touchPositionW occupationMapWithAdjacentEnemies model with
-                | ActionTurn _ as actionTurn -> actionTurn
-                | NavigationTurn navigationDescriptor as navigationTurn ->
-                    let headNavigationNode = navigationDescriptor.NavigationPathOpt |> Option.get |> List.head
-                    let occupationMapWithEnemies = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles enemyPositions
-                    if Map.find headNavigationNode.PositionM occupationMapWithEnemies then CancelTurn
-                    else navigationTurn
-                | CancelTurn -> CancelTurn
-                | NoTurn -> NoTurn
-            else NoTurn
-
-        static let determinePlayerTurnFromDetailNavigation direction model =
-            let fieldMap = Option.get model.FieldMapOpt
-            let enemyPositions = GameplayModel.getEnemyPositions model
-            if not (GameplayModel.anyTurnsInProgress model) then
-                let occupationMapWithEnemies = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles enemyPositions
-                determineCharacterTurnFromDirection None direction occupationMapWithEnemies model
-            else NoTurn
-
-        static let determinePlayerTurnFromInput playerInput model world =
-            match model.Player.CharacterState.ControlType with
-            | PlayerControlled ->
                 match playerInput with
-                | TouchInput touchPosition -> determinePlayerTurnFromTouch touchPosition model world
-                | DetailInput direction -> determinePlayerTurnFromDetailNavigation direction model
+                | TouchInput touchPosition ->
+                    let touchPositionW = World.mouseToWorld false touchPosition world |> vftovm |> vmtovf // presumably for rounding
+                    match determineCharacterTurnFromPosition None touchPositionW occupationMapWithAdjacentEnemies model with
+                    | ActionTurn _ as actionTurn -> actionTurn
+                    | NavigationTurn navigationDescriptor as navigationTurn ->
+                        let nextPositionM =
+                            match navigationDescriptor.NavigationPathOpt with
+                            | Some navigationPath -> (List.head navigationPath).PositionM
+                            | None -> navigationDescriptor.WalkDescriptor.NextPositionM                
+                        if Map.find nextPositionM occupationMapWithAdjacentEnemies then CancelTurn
+                        else navigationTurn
+                    | CancelTurn -> CancelTurn
+                    | NoTurn -> NoTurn
+                | DetailInput direction -> determineCharacterTurnFromDirection None direction occupationMapWithAdjacentEnemies model
                 | NoInput -> NoTurn
             | Chaos ->
                 Log.debug "Invalid ControlType 'Chaos' for player."
