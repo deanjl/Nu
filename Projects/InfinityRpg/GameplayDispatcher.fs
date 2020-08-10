@@ -342,7 +342,9 @@ module GameplayDispatcherModule =
                     let occupationMapWithEnemies = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles enemyPositions
                     let walkDestinationM = walkDescriptor.WalkOriginM + dtovm walkDescriptor.WalkDirection
                     if Map.find walkDestinationM occupationMapWithEnemies then CancelTurn
-                    else NavigationTurn navigationDescriptor
+                    else
+                        let navigationDescriptor = {navigationDescriptor with LastWalkOriginM = walkDescriptor.WalkOriginM}
+                        NavigationTurn navigationDescriptor
                 else NoTurn
             | NoActivity -> NoTurn
 
@@ -414,7 +416,6 @@ module GameplayDispatcherModule =
 
             match walkState with
             | WalkFinished ->
-                let lastOrigin = navigationDescriptor.WalkDescriptor.WalkOriginM
                 match navigationDescriptor.NavigationPathOpt with
                 | Some [] -> failwith "NavigationPath should never be empty here."
                 | Some (_ :: []) ->
@@ -423,7 +424,7 @@ module GameplayDispatcherModule =
                     let characterModel = GameplayModel.getCharacterByIndex indexOpt model
                     let walkDirection = vmtod ((List.head navigationPath).PositionM - currentNode.PositionM)
                     let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = vftovm characterModel.Position }
-                    let navigationDescriptor = { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath; LastWalkOriginM = lastOrigin }
+                    let navigationDescriptor = { navigationDescriptor with WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath }
                     GameplayModel.updateCharacterActivityState indexOpt (Navigation navigationDescriptor) model
                 | None ->
                     GameplayModel.updateCharacterActivityState indexOpt NoActivity model
@@ -562,9 +563,7 @@ module GameplayDispatcherModule =
                 let newPlayerActivity =
                     match newPlayerTurn with
                     | ActionTurn actionDescriptor -> Action actionDescriptor
-                    | NavigationTurn navigationDescriptor ->
-                        let navigationDescriptor = {navigationDescriptor with LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM}
-                        Navigation navigationDescriptor
+                    | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
                     | CancelTurn -> NoActivity
                     | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point."
                 
