@@ -212,16 +212,17 @@ module GameplayDispatcherModule =
                     (fun (models, coords) index ->
                         let availableCoordinates = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles coords |> Map.filter (fun _ occupied -> occupied = false) |> Map.toKeyList |> List.toArray
                         let randResult = Gen.random1 availableCoordinates.Length
-                        let enemyCoordinates = vmtovf availableCoordinates.[randResult]
+                        let enemyCoordinates = availableCoordinates.[randResult]
                         let model =
-                            { Position = enemyCoordinates
+                            { Position = vmtovf enemyCoordinates
+                              PositionM = enemyCoordinates
                               EnemyIndexOpt = Some index
                               CharacterActivityState = NoActivity
                               CharacterState = { CharacterState.empty with HitPoints = 10; ControlType = Chaos }
                               CharacterAnimationState = { StartTime = 0L; AnimationType = CharacterAnimationFacing; Direction = Upward }
                               CharacterAnimationSheet = Assets.GoopyImage
                               DesiredTurnOpt = Some NoTurn }
-                        (model :: models, enemyCoordinates :: coords))
+                        (model :: models, (vmtovf enemyCoordinates) :: coords))
                     ([], [])
                     [0 .. enemyCount - 1]
             models
@@ -487,6 +488,7 @@ module GameplayDispatcherModule =
 
                 let player =
                     { Position = Vector2.Zero
+                      PositionM = Vector2i.Zero
                       EnemyIndexOpt = None
                       CharacterActivityState = NoActivity
                       CharacterState = { CharacterState.empty with HitPoints = 30; ControlType = PlayerControlled }
