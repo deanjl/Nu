@@ -36,8 +36,7 @@ type WalkDescriptor =
 
 type [<StructuralEquality; NoComparison>] NavigationDescriptor =
     { WalkDescriptor : WalkDescriptor
-      NavigationPathOpt : NavigationNode list option
-      LastWalkOriginM : Vector2i }
+      NavigationPathOpt : NavigationNode list option }
 
     member this.NextPositionM =
         this.WalkDescriptor.NextPositionM 

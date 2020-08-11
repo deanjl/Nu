@@ -275,7 +275,7 @@ module GameplayDispatcherModule =
                     let direction = vmtod ((vftovm position) - characterPositionM)
                     if Set.contains direction openDirections then
                         let walkDescriptor = { WalkDirection = direction; WalkOriginM = characterPositionM }
-                        NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = None; LastWalkOriginM = characterPositionM }
+                        NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = None }
                     else
                         let opponents = GameplayModel.getCharacterOpponents indexOpt model
                         if List.exists (fun opponent -> opponent.Position = position) opponents
@@ -291,7 +291,7 @@ module GameplayDispatcherModule =
                         | _ ->
                             let walkDirection = vmtod ((List.head navigationPath).PositionM - characterPositionM)
                             let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = characterPositionM }
-                            NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath; LastWalkOriginM = characterPositionM }
+                            NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath }
                     | None -> NoTurn
             else NoTurn
 
@@ -342,9 +342,7 @@ module GameplayDispatcherModule =
                     let occupationMapWithEnemies = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles enemyPositions
                     let walkDestinationM = walkDescriptor.WalkOriginM + dtovm walkDescriptor.WalkDirection
                     if Map.find walkDestinationM occupationMapWithEnemies then CancelTurn
-                    else
-                        let navigationDescriptor = {navigationDescriptor with LastWalkOriginM = walkDescriptor.WalkOriginM}
-                        NavigationTurn navigationDescriptor
+                    else NavigationTurn navigationDescriptor
                 else NoTurn
             | NoActivity -> NoTurn
 
@@ -424,7 +422,7 @@ module GameplayDispatcherModule =
                     let characterModel = GameplayModel.getCharacterByIndex indexOpt model
                     let walkDirection = vmtod ((List.head navigationPath).PositionM - currentNode.PositionM)
                     let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = vftovm characterModel.Position }
-                    let navigationDescriptor = { navigationDescriptor with WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath }
+                    let navigationDescriptor = { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath }
                     GameplayModel.updateCharacterActivityState indexOpt (Navigation navigationDescriptor) model
                 | None ->
                     GameplayModel.updateCharacterActivityState indexOpt NoActivity model
@@ -512,12 +510,8 @@ module GameplayDispatcherModule =
                             | None -> model
                             | Some characterModel ->
                                 match characterModel.CharacterActivityState with
-                                | Action actionDescriptor ->
-                                    tickAction time indexOpt actionDescriptor model
-                                | Navigation navigationDescriptor ->
-                                    if navigationDescriptor.LastWalkOriginM = navigationDescriptor.WalkDescriptor.WalkOriginM then
-                                        tickNavigation indexOpt navigationDescriptor model
-                                    else model
+                                | Action actionDescriptor -> tickAction time indexOpt actionDescriptor model
+                                | Navigation navigationDescriptor -> tickNavigation indexOpt navigationDescriptor model
                                 | NoActivity -> model
                         recursion characters.Tail model
                 let model = recursion (GameplayModel.getCharacterIndices model) model
@@ -530,8 +524,7 @@ module GameplayDispatcherModule =
             | TickOngoingRound ->
                 
                 (* set enemy activities in accordance with the player's current activity.
-                enemy turns must await player action to finish before executing.
-                NOTE: enemy LastWalkOriginM needs to be updated like player's to make enemy navigation possible. *)
+                enemy turns must await player action to finish before executing. *)
                 
                 let model =
                     if (GameplayModel.enemyTurnsPending model) then
