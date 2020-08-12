@@ -40,15 +40,15 @@ module GameplayDispatcherModule =
         static member getCharacters model =
             model.Player :: model.Enemies
 
-        static member tryGetCharacterAtPosition position model =
-            GameplayModel.getCharacters model |> List.tryFind (fun model -> model.Position = position)
+        static member tryGetCharacterAtPositionM positionM model =
+            GameplayModel.getCharacters model |> List.tryFind (fun model -> model.PositionM = positionM)
 
-        static member getCharacterAtPosition position model =
-            GameplayModel.tryGetCharacterAtPosition position model |> Option.get
+        static member getCharacterAtPositionM positionM model =
+            GameplayModel.tryGetCharacterAtPositionM positionM model |> Option.get
 
         static member getCharacterInDirection indexOpt direction model =
-            let position = (GameplayModel.getCharacterByIndex indexOpt model).Position
-            GameplayModel.getCharacterAtPosition (position + dtovf direction) model
+            let positionM = (GameplayModel.getCharacterByIndex indexOpt model).PositionM
+            GameplayModel.getCharacterAtPositionM (positionM + dtovm direction) model
         
         static member getCharacterIndices model =
             GameplayModel.getCharacters model |> List.map (fun model -> model.EnemyIndexOpt)
@@ -247,11 +247,11 @@ module GameplayDispatcherModule =
                 AnimationType = CharacterAnimationFacing
                 StartTime = tickTime }
 
-        static let tryGetNavigationPath indexOpt touchPosition occupationMap model =
+        static let tryGetNavigationPath indexOpt positionM occupationMap model =
             let characterModel = GameplayModel.getCharacterByIndex indexOpt model
             let nodes = OccupationMap.makeNavigationNodes occupationMap
-            let goalNode = Map.find (vftovm touchPosition) nodes
-            let currentNode = Map.find (vftovm characterModel.Position) nodes
+            let goalNode = Map.find positionM nodes
+            let currentNode = Map.find characterModel.PositionM nodes
             let navigationPathOpt =
                 AStar.FindPath (
                     currentNode,
@@ -274,25 +274,25 @@ module GameplayDispatcherModule =
                 | Navigation navDescriptor -> Navigation { navDescriptor with NavigationPathOpt = None }
             GameplayModel.updateCharacterActivityState indexOpt characterActivity model
 
-        static let determineCharacterTurnFromPosition indexOpt position occupationMap model =
+        static let determineCharacterTurnFromPosition indexOpt positionM occupationMap model =
             let characterModel = GameplayModel.getCharacterByIndex indexOpt model
             if characterModel.CharacterActivityState = NoActivity then
-                let characterPositionM = vftovm characterModel.Position
-                if Math.arePositionsAdjacent position characterModel.Position then
+                let characterPositionM = characterModel.PositionM
+                if Math.arePositionMsAdjacent positionM characterModel.PositionM then
                     let openDirections = OccupationMap.getOpenDirectionsAtPositionM characterPositionM occupationMap
-                    let direction = vmtod ((vftovm position) - characterPositionM)
+                    let direction = vmtod (positionM - characterPositionM)
                     if Set.contains direction openDirections then
                         let walkDescriptor = { WalkDirection = direction; WalkOriginM = characterPositionM }
                         NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = None }
                     else
                         let opponents = GameplayModel.getCharacterOpponents indexOpt model
-                        if List.exists (fun opponent -> opponent.Position = position) opponents
+                        if List.exists (fun opponent -> opponent.PositionM = positionM) opponents
                         then
-                            let targetIndexOpt = (GameplayModel.getCharacterAtPosition position model).EnemyIndexOpt
+                            let targetIndexOpt = (GameplayModel.getCharacterAtPositionM positionM model).EnemyIndexOpt
                             Turn.makeAttack targetIndexOpt
                         else NoTurn
                 else
-                    match tryGetNavigationPath indexOpt position occupationMap model with
+                    match tryGetNavigationPath indexOpt positionM occupationMap model with
                     | Some navigationPath ->
                         match navigationPath with
                         | [] -> NoTurn
@@ -305,8 +305,8 @@ module GameplayDispatcherModule =
 
         static let determineCharacterTurnFromDirection indexOpt direction occupationMap model =
             let characterModel = GameplayModel.getCharacterByIndex indexOpt model
-            let targetPosition = characterModel.Position + dtovf direction
-            determineCharacterTurnFromPosition indexOpt targetPosition occupationMap model
+            let targetPositionM = characterModel.PositionM + dtovm direction
+            determineCharacterTurnFromPosition indexOpt targetPositionM occupationMap model
         
         static let determinePlayerTurnFromInput playerInput model world =
             match model.Player.CharacterState.ControlType with
@@ -315,13 +315,13 @@ module GameplayDispatcherModule =
                 let enemyPositions = GameplayModel.getEnemyPositions model
                 let occupationMapWithAdjacentEnemies =
                     OccupationMap.makeFromFieldTilesAndAdjacentCharacters
-                        (vftovm model.Player.Position)
+                        model.Player.PositionM
                         fieldMap.FieldTiles
                         enemyPositions
                 match playerInput with
                 | TouchInput touchPosition ->
-                    let touchPositionW = World.mouseToWorld false touchPosition world |> vftovm |> vmtovf // presumably for rounding
-                    match determineCharacterTurnFromPosition None touchPositionW occupationMapWithAdjacentEnemies model with
+                    let targetPositionM = World.mouseToWorld false touchPosition world |> vftovm
+                    match determineCharacterTurnFromPosition None targetPositionM occupationMapWithAdjacentEnemies model with
                     | ActionTurn _ as actionTurn -> actionTurn
                     | NavigationTurn navigationDescriptor as navigationTurn ->
                         let nextPositionM =
@@ -344,7 +344,7 @@ module GameplayDispatcherModule =
             | Action _ -> NoTurn
             | Navigation navigationDescriptor ->
                 let walkDescriptor = navigationDescriptor.WalkDescriptor
-                if model.Player.Position = vmtovf walkDescriptor.WalkOriginM then
+                if model.Player.Position = vmtovf model.Player.PositionM then
                     let fieldMap = Option.get model.FieldMapOpt
                     let enemyPositions = GameplayModel.getEnemyPositions model |> List.toSeq
                     let occupationMapWithEnemies = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles enemyPositions
@@ -363,12 +363,7 @@ module GameplayDispatcherModule =
             | Chaos ->
                 if characterModel.CharacterState.HitPoints <= 0 then NoTurn
                 else
-                    let nextPlayerPosition =
-                        match model.Player.CharacterActivityState with
-                        | Action _ -> model.Player.Position
-                        | Navigation navigationDescriptor -> navigationDescriptor.NextPosition
-                        | NoActivity -> model.Player.Position
-                    if Math.arePositionsAdjacent characterModel.Position nextPlayerPosition then
+                    if Math.arePositionMsAdjacent characterModel.PositionM model.Player.PositionM then
                         Turn.makeAttack None
                     else
                         let randResult = Gen.random1 4
@@ -429,7 +424,7 @@ module GameplayDispatcherModule =
                 | Some (currentNode :: navigationPath) ->
                     let characterModel = GameplayModel.getCharacterByIndex indexOpt model
                     let walkDirection = vmtod ((List.head navigationPath).PositionM - currentNode.PositionM)
-                    let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = vftovm characterModel.Position }
+                    let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = characterModel.PositionM }
                     let navigationDescriptor = { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath }
                     GameplayModel.updateCharacterActivityState indexOpt (Navigation navigationDescriptor) model
                 | None ->
