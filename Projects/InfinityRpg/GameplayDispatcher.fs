@@ -53,6 +53,9 @@ module GameplayDispatcherModule =
         static member getCharacterIndices model =
             GameplayModel.getCharacters model |> List.map (fun model -> model.EnemyIndexOpt)
         
+        static member getEnemyIndices model =
+            List.map (fun model -> model.EnemyIndexOpt) model.Enemies
+        
         static member getEnemyPositions model =
             List.map (fun model -> model.Position) model.Enemies
 
@@ -123,9 +126,6 @@ module GameplayDispatcherModule =
                 GameplayModel.updateCharacterState reactorModel.EnemyIndexOpt { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
             | _ -> failwith "Turn must be ActionTurn at this point."
         
-        static member tryGetActionTurn turns =
-            List.tryFind (fun (x : Turn) -> x.IsAction) turns
-    
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
         | DetailInput of Direction
@@ -214,9 +214,9 @@ module GameplayDispatcherModule =
                         let randResult = Gen.random1 availableCoordinates.Length
                         let enemyCoordinates = availableCoordinates.[randResult]
                         let model =
-                            { Position = vmtovf enemyCoordinates
+                            { EnemyIndexOpt = Some index
+                              Position = vmtovf enemyCoordinates
                               PositionM = enemyCoordinates
-                              EnemyIndexOpt = Some index
                               CharacterActivityState = NoActivity
                               CharacterState = { CharacterState.empty with HitPoints = 10; ControlType = Chaos }
                               CharacterAnimationState = { StartTime = 0L; AnimationType = CharacterAnimationFacing; Direction = Upward }
@@ -487,9 +487,9 @@ module GameplayDispatcherModule =
                 let enemies = createEnemies fieldMap
 
                 let player =
-                    { Position = Vector2.Zero
+                    { EnemyIndexOpt = None
+                      Position = Vector2.Zero
                       PositionM = Vector2i.Zero
-                      EnemyIndexOpt = None
                       CharacterActivityState = NoActivity
                       CharacterState = { CharacterState.empty with HitPoints = 30; ControlType = PlayerControlled }
                       CharacterAnimationState = { StartTime = 0L; AnimationType = CharacterAnimationFacing; Direction = Upward }
@@ -564,29 +564,35 @@ module GameplayDispatcherModule =
                 
                 let model = GameplayModel.updateCharacterActivityState None newPlayerActivity model
 
-                let playerActionTurnOpt = GameplayModel.tryGetActionTurn [newPlayerTurn]
                 let model =
-                    match playerActionTurnOpt with
-                    | Some actionTurn -> GameplayModel.applyAction actionTurn model
-                    | None -> model
+                    match newPlayerTurn with
+                    | ActionTurn _ as actionTurn -> GameplayModel.applyAction actionTurn model
+                    | _ -> model
                 
                 let model =
-                    match newPlayerActivity with
-                    | Action _
-                    | Navigation _ ->
+                    match newPlayerTurn with
+                    | ActionTurn _
+                    | NavigationTurn _ ->
                         let occupationMap =
                             let fieldMap = Option.get model.FieldMapOpt
                             let enemyPositions = GameplayModel.getEnemyPositions model |> List.toSeq
                             OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions newPlayerTurn
                         let enemyDesiredTurns = determineDesiredEnemyTurns occupationMap model
                         GameplayModel.updateEnemyDesiredTurns enemyDesiredTurns model
-                    | NoActivity -> model
+                    | _ -> model
 
-                let enemyActionTurnOpt = GameplayModel.getEnemyDesiredTurns model |> GameplayModel.tryGetActionTurn
-                let model =
-                    match enemyActionTurnOpt with
-                    | Some actionTurn -> GameplayModel.applyAction actionTurn model
-                    | None -> model
+                let rec recursion (enemies : int option list) model =
+                    if enemies.Length = 0 then model
+                    else
+                        let indexOpt = enemies.Head
+                        let enemyModel = GameplayModel.getCharacterByIndex indexOpt model
+                        let enemyTurn = Option.get enemyModel.DesiredTurnOpt
+                        let model =
+                            match enemyTurn with
+                            | ActionTurn _ as actionTurn -> GameplayModel.applyAction actionTurn model
+                            | _ -> model
+                        recursion enemies.Tail model
+                let model = recursion (GameplayModel.getEnemyIndices model) model
                 
                 withMsg model TickOngoingRound
 

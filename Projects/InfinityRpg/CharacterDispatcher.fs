@@ -9,9 +9,9 @@ open InfinityRpg
 module CharacterDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] CharacterModel =
-        { Position : Vector2
+        { EnemyIndexOpt : int option
+          Position : Vector2
           PositionM : Vector2i
-          EnemyIndexOpt : int option
           CharacterActivityState : CharacterActivityState
           CharacterState : CharacterState
           CharacterAnimationState : CharacterAnimationState
@@ -23,9 +23,9 @@ module CharacterDispatcherModule =
                 { StartTime = 0L
                   AnimationType = CharacterAnimationFacing
                   Direction = Upward }
-            { Position = Vector2.Zero
+            { EnemyIndexOpt = None
+              Position = Vector2.Zero
               PositionM = Vector2i.Zero
-              EnemyIndexOpt = None
               CharacterActivityState = NoActivity
               CharacterState = CharacterState.empty
               CharacterAnimationState = characterAnimationState
