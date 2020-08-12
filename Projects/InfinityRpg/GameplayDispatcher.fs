@@ -87,6 +87,9 @@ module GameplayDispatcherModule =
         static member updatePosition indexOpt newValue model =
             GameplayModel.updateCharacterBy CharacterModel.updatePosition indexOpt newValue model
 
+        static member updatePositionM indexOpt newValue model =
+            GameplayModel.updateCharacterBy CharacterModel.updatePositionM indexOpt newValue model
+        
         static member updateCharacterActivityState indexOpt newValue model =
             GameplayModel.updateCharacterBy CharacterModel.updateCharacterActivityState indexOpt newValue model
 
@@ -117,14 +120,18 @@ module GameplayDispatcherModule =
             let enemies = List.map (fun model -> CharacterModel.updateDesiredTurnOpt (Some NoTurn) model) model.Enemies
             { model with Enemies = enemies }
 
-        static member applyAction actionTurn model =
-            match actionTurn with
+        static member applyTurn indexOpt turn model =
+            match turn with
             | ActionTurn actionDescriptor ->
                 let reactorDamage = 4 // NOTE: just hard-coding damage for now
                 let reactorModel = GameplayModel.getCharacterByIndex actionDescriptor.ActionTargetIndexOpt model
                 let reactorState = reactorModel.CharacterState
                 GameplayModel.updateCharacterState reactorModel.EnemyIndexOpt { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
-            | _ -> failwith "Turn must be ActionTurn at this point."
+            | NavigationTurn navigationDescriptor ->
+                let characterModel = GameplayModel.getCharacterByIndex indexOpt model
+                let positionM = characterModel.PositionM + dtovm navigationDescriptor.WalkDescriptor.WalkDirection
+                GameplayModel.updatePositionM indexOpt positionM model
+            | _ -> model
         
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
@@ -564,10 +571,7 @@ module GameplayDispatcherModule =
                 
                 let model = GameplayModel.updateCharacterActivityState None newPlayerActivity model
 
-                let model =
-                    match newPlayerTurn with
-                    | ActionTurn _ as actionTurn -> GameplayModel.applyAction actionTurn model
-                    | _ -> model
+                let model = GameplayModel.applyTurn None newPlayerTurn model
                 
                 let model =
                     match newPlayerTurn with
@@ -587,10 +591,7 @@ module GameplayDispatcherModule =
                         let indexOpt = enemies.Head
                         let enemyModel = GameplayModel.getCharacterByIndex indexOpt model
                         let enemyTurn = Option.get enemyModel.DesiredTurnOpt
-                        let model =
-                            match enemyTurn with
-                            | ActionTurn _ as actionTurn -> GameplayModel.applyAction actionTurn model
-                            | _ -> model
+                        let model = GameplayModel.applyTurn indexOpt enemyTurn model
                         recursion enemies.Tail model
                 let model = recursion (GameplayModel.getEnemyIndices model) model
                 

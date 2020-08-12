@@ -35,6 +35,9 @@ module CharacterDispatcherModule =
         static member updatePosition newValue (model : CharacterModel) =
             { model with Position = newValue }
 
+        static member updatePositionM newValue (model : CharacterModel) =
+            { model with PositionM = newValue }
+
         static member updateCharacterActivityState newValue (model : CharacterModel) =
             { model with CharacterActivityState = newValue }
 
