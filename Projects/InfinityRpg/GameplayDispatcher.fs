@@ -219,15 +219,7 @@ module GameplayDispatcherModule =
                         let availableCoordinates = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles coords |> Map.filter (fun _ occupied -> occupied = false) |> Map.toKeyList |> List.toArray
                         let randResult = Gen.random1 availableCoordinates.Length
                         let enemyCoordinates = availableCoordinates.[randResult]
-                        let model =
-                            { Index = EnemyIndex index
-                              Turn = NoTurn
-                              CharacterState = { CharacterState.empty with HitPoints = 10; ControlType = Chaos }
-                              PositionM = enemyCoordinates
-                              CharacterActivityState = NoActivity
-                              CharacterAnimationState = { StartTime = 0L; AnimationType = CharacterAnimationFacing; Direction = Upward }
-                              CharacterAnimationSheet = Assets.GoopyImage
-                              Position = vmtovf enemyCoordinates }
+                        let model = CharacterModel.makeEnemy index enemyCoordinates
                         (model :: models, (vmtovf enemyCoordinates) :: coords))
                     ([], [])
                     [0 .. enemyCount - 1]
@@ -282,8 +274,7 @@ module GameplayDispatcherModule =
                     let openDirections = OccupationMap.getOpenDirectionsAtPositionM characterPositionM occupationMap
                     let direction = vmtod (positionM - characterPositionM)
                     if Set.contains direction openDirections then
-                        let walkDescriptor = { WalkDirection = direction; WalkOriginM = characterPositionM }
-                        NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = None }
+                        Turn.makeNavigation None characterPositionM direction
                     else
                         let opponents = GameplayModel.getCharacterOpponents index model
                         if List.exists (fun opponent -> opponent.PositionM = positionM) opponents
@@ -298,8 +289,7 @@ module GameplayDispatcherModule =
                         | [] -> NoTurn
                         | _ ->
                             let walkDirection = vmtod ((List.head navigationPath).PositionM - characterPositionM)
-                            let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = characterPositionM }
-                            NavigationTurn { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath }
+                            Turn.makeNavigation (Some navigationPath) characterPositionM walkDirection
                     | None -> NoTurn
             else NoTurn
 
@@ -421,8 +411,7 @@ module GameplayDispatcherModule =
                 | Some (currentNode :: navigationPath) ->
                     let characterModel = GameplayModel.getCharacterByIndex index model
                     let walkDirection = vmtod ((List.head navigationPath).PositionM - currentNode.PositionM)
-                    let walkDescriptor = { WalkDirection = walkDirection; WalkOriginM = characterModel.PositionM }
-                    let navigationDescriptor = { WalkDescriptor = walkDescriptor; NavigationPathOpt = Some navigationPath }
+                    let navigationDescriptor = NavigationDescriptor.make (Some navigationPath) characterModel.PositionM walkDirection
                     GameplayModel.updateCharacterActivityState index (Navigation navigationDescriptor) model
                 | None ->
                     GameplayModel.updateCharacterActivityState index NoActivity model
@@ -485,17 +474,7 @@ module GameplayDispatcherModule =
                 // make enemies
                 let enemies = createEnemies fieldMap
 
-                let player =
-                    { Index = PlayerIndex
-                      Turn = NoTurn
-                      CharacterState = { CharacterState.empty with HitPoints = 30; ControlType = PlayerControlled }
-                      PositionM = Vector2i.Zero
-                      CharacterActivityState = NoActivity
-                      CharacterAnimationState = { StartTime = 0L; AnimationType = CharacterAnimationFacing; Direction = Upward }
-                      CharacterAnimationSheet = Assets.PlayerImage
-                      Position = Vector2.Zero }
-                
-                let model = { model with FieldMapOpt = Some fieldMap; Enemies = enemies; Player = player }
+                let model = { model with FieldMapOpt = Some fieldMap; Enemies = enemies; Player = CharacterModel.makePlayer }
                 just model
             
             | TickCharacterTurns ->

@@ -11,3 +11,8 @@ type CharacterAnimationState =
     { StartTime : int64
       AnimationType : CharacterAnimationType
       Direction : Direction }
+    
+    static member initial =
+        { StartTime = 0L
+          AnimationType = CharacterAnimationFacing
+          Direction = Upward }

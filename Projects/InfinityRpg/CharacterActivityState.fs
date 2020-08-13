@@ -43,6 +43,10 @@ type WalkDescriptor =
     member this.NextPositionM =
         this.WalkOriginM + dtovm this.WalkDirection
 
+    static member make origin direction =
+        { WalkDirection = direction
+          WalkOriginM = origin }
+
 type [<StructuralEquality; NoComparison>] NavigationDescriptor =
     { WalkDescriptor : WalkDescriptor
       NavigationPathOpt : NavigationNode list option }
@@ -55,6 +59,10 @@ type [<StructuralEquality; NoComparison>] NavigationDescriptor =
 
     member this.NextPosition =
         this.NextPositionI |> vitovf
+
+    static member make pathOpt origin direction =
+        { WalkDescriptor = WalkDescriptor.make origin direction
+          NavigationPathOpt = pathOpt }
 
 type [<StructuralEquality; NoComparison>] ActionDescriptor =
     { ActionTicks : int64 // an arbitrary number to show a hacky action animation
@@ -106,3 +114,6 @@ type [<StructuralEquality; NoComparison>] Turn =
             { ActionTicks = 0L
               ActionTargetIndexOpt = Some index
               ActionDataName = Constants.InfinityRpg.AttackName }
+
+    static member makeNavigation pathOpt origin direction =
+        NavigationTurn (NavigationDescriptor.make pathOpt origin direction)

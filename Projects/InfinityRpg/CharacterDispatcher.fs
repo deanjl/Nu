@@ -25,16 +25,12 @@ module CharacterDispatcherModule =
           Position : Vector2 }
 
         static member initial =
-            let characterAnimationState =
-                { StartTime = 0L
-                  AnimationType = CharacterAnimationFacing
-                  Direction = Upward }
             { Index = PlayerIndex
               Turn = NoTurn
               CharacterState = CharacterState.empty
               PositionM = Vector2i.Zero
               CharacterActivityState = NoActivity
-              CharacterAnimationState = characterAnimationState
+              CharacterAnimationState = CharacterAnimationState.initial
               CharacterAnimationSheet = Assets.PlayerImage
               Position = Vector2.Zero }
 
@@ -55,6 +51,19 @@ module CharacterDispatcherModule =
 
         static member updateTurn newValue (model : CharacterModel) =
             { model with Turn = newValue }
+        
+        static member makePlayer =
+            let characterState = { CharacterState.empty with HitPoints = 30; ControlType = PlayerControlled }
+            CharacterModel.updateCharacterState characterState CharacterModel.initial
+
+        static member makeEnemy index positionM =
+            let characterState = { CharacterState.empty with HitPoints = 10; ControlType = Chaos }
+            { CharacterModel.initial with
+                Index = EnemyIndex index
+                CharacterState = characterState
+                PositionM = positionM
+                CharacterAnimationSheet = Assets.GoopyImage
+                Position = vmtovf positionM }
     
     type Entity with
         member this.GetCharacterModel = this.GetModel<CharacterModel>
