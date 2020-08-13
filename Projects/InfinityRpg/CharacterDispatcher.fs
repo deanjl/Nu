@@ -9,14 +9,20 @@ open InfinityRpg
 module CharacterDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] CharacterModel =
-        { EnemyIndexOpt : int option
-          Position : Vector2
-          PositionM : Vector2i
-          CharacterActivityState : CharacterActivityState
+        { 
+          // gameplay logic data
+        
+          EnemyIndexOpt : int option
+          Turn : Turn
           CharacterState : CharacterState
+          PositionM : Vector2i
+          
+          // "puppet show" data
+          
+          CharacterActivityState : CharacterActivityState
           CharacterAnimationState : CharacterAnimationState
           CharacterAnimationSheet : Image AssetTag
-          DesiredTurnOpt : Turn option }
+          Position : Vector2 }
 
         static member initial =
             let characterAnimationState =
@@ -24,13 +30,13 @@ module CharacterDispatcherModule =
                   AnimationType = CharacterAnimationFacing
                   Direction = Upward }
             { EnemyIndexOpt = None
-              Position = Vector2.Zero
+              Turn = NoTurn
+              CharacterState = CharacterState.empty
               PositionM = Vector2i.Zero
               CharacterActivityState = NoActivity
-              CharacterState = CharacterState.empty
               CharacterAnimationState = characterAnimationState
               CharacterAnimationSheet = Assets.PlayerImage
-              DesiredTurnOpt = None }
+              Position = Vector2.Zero }
 
         static member updatePosition newValue (model : CharacterModel) =
             { model with Position = newValue }
@@ -47,8 +53,8 @@ module CharacterDispatcherModule =
         static member updateCharacterAnimationState newValue (model : CharacterModel) =
             { model with CharacterAnimationState = newValue }
 
-        static member updateDesiredTurnOpt newValue (model : CharacterModel) =
-            { model with DesiredTurnOpt = newValue }
+        static member updateTurn newValue (model : CharacterModel) =
+            { model with Turn = newValue }
     
     type Entity with
         member this.GetCharacterModel = this.GetModel<CharacterModel>
