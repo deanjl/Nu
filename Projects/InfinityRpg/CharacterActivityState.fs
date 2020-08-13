@@ -4,6 +4,15 @@ open Prime
 open Nu
 open InfinityRpg
 
+type CharacterIndex =
+    | EnemyIndex of int
+    | PlayerIndex
+
+    member this.getEnemyIndex =
+        match this with
+        | EnemyIndex index -> index
+        | _ -> failwith "must be enemy index."
+
 type [<CustomEquality; NoComparison>] NavigationNode =
     { PositionM : Vector2i
       mutable Neighbors : NavigationNode list } // OPTIMIZATION: has to be mutable to be efficiently populated.
@@ -49,7 +58,7 @@ type [<StructuralEquality; NoComparison>] NavigationDescriptor =
 
 type [<StructuralEquality; NoComparison>] ActionDescriptor =
     { ActionTicks : int64 // an arbitrary number to show a hacky action animation
-      ActionTargetIndexOpt : int option // None is Player; targetless capacity suspended until proper character indexing is introduced
+      ActionTargetIndexOpt : CharacterIndex option
       ActionDataName : string }
 
     member this.ComputeActionDirection currentPosition targetPositionM =
@@ -92,8 +101,8 @@ type [<StructuralEquality; NoComparison>] Turn =
         | ActionTurn _ -> true
         | _ -> false
 
-    static member makeAttack indexOpt =
+    static member makeAttack index =
         ActionTurn
             { ActionTicks = 0L
-              ActionTargetIndexOpt = indexOpt
+              ActionTargetIndexOpt = Some index
               ActionDataName = Constants.InfinityRpg.AttackName }

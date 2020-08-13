@@ -12,7 +12,7 @@ module CharacterDispatcherModule =
         { 
           // gameplay logic data
         
-          EnemyIndexOpt : int option
+          Index : CharacterIndex
           Turn : Turn
           CharacterState : CharacterState
           PositionM : Vector2i
@@ -29,7 +29,7 @@ module CharacterDispatcherModule =
                 { StartTime = 0L
                   AnimationType = CharacterAnimationFacing
                   Direction = Upward }
-            { EnemyIndexOpt = None
+            { Index = PlayerIndex
               Turn = NoTurn
               CharacterState = CharacterState.empty
               PositionM = Vector2i.Zero
