@@ -574,21 +574,22 @@ module GameplayDispatcherModule =
                 else just world
             | Nop -> just world
 
-        override this.Content (model, _) =
+        override this.Content (model, screen) =
 
-            [Content.layer Simulants.Scene.Name []
+            [Content.layerIfScreenSelected screen (fun _ _ ->
+                Content.layer Simulants.Scene.Name []
 
-                [Content.entityOpt model (fun model -> model.FieldMapOpt) (fun fieldMap world ->
-                    let fieldMap = fieldMap.Get world
-                    Content.entity<FieldDispatcher> Simulants.Field.Name
-                        [Entity.FieldModel == { FieldMapNp = fieldMap }
-                         Entity.Size == vmtovf fieldMap.FieldSizeM
-                         Entity.Persistent == false])
+                    [Content.entityOpt model (fun model -> model.FieldMapOpt) (fun fieldMap world ->
+                       let fieldMap = fieldMap.Get world
+                       Content.entity<FieldDispatcher> Simulants.Field.Name
+                           [Entity.FieldModel == { FieldMapNp = fieldMap }
+                            Entity.Size == vmtovf fieldMap.FieldSizeM
+                            Entity.Persistent == false])
 
-                 Content.entitiesIndexedBy model
-                     (fun model -> model.Enemies) constant
-                     (fun model -> model.Index.getEnemyIndex)
-                     (fun index model _ -> Content.entity<EnemyDispatcher> ("Enemy+" + scstring index) [Entity.CharacterModel <== model])
+                     Content.entitiesIndexedBy model
+                        (fun model -> model.Enemies) constant
+                        (fun model -> model.Index.getEnemyIndex)
+                        (fun index model _ -> Content.entity<EnemyDispatcher> ("Enemy+" + scstring index) [Entity.CharacterModel <== model])
 
-                 Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
-                    [Entity.CharacterModel <== model --> fun model -> model.Player]]]
+                     Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
+                       [Entity.CharacterModel <== model --> fun model -> model.Player]])]
