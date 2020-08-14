@@ -44,9 +44,11 @@ module GameplayDispatcherModule =
         static member getCharacterAtPositionM positionM model =
             GameplayModel.tryGetCharacterAtPositionM positionM model |> Option.get
 
-        static member getCharacterInDirection index direction model =
-            let positionM = (GameplayModel.getCharacterByIndex index model).PositionM
-            GameplayModel.getCharacterAtPositionM (positionM + dtovm direction) model
+        static member getCharacterIndexFromPositionM positionM model =
+            (GameplayModel.getCharacterAtPositionM positionM model).Index
+        
+        static member getCharacterPositionM index model =
+            (GameplayModel.getCharacterByIndex index model).PositionM
         
         static member getCharacterIndices model =
             GameplayModel.getCharacters model |> List.map (fun model -> model.Index)
@@ -142,6 +144,7 @@ module GameplayDispatcherModule =
         | TickCharacterTurns
         | TickOngoingRound
         | TickNewRound of Turn
+        | TryMakePlayerMove of PlayerInput
     
     type [<NoEquality; NoComparison>] GameplayCommand =
         | ToggleHaltButton // TODO: reimplement once game is properly elmified
@@ -266,69 +269,35 @@ module GameplayDispatcherModule =
                 | Navigation navDescriptor -> Navigation { navDescriptor with NavigationPathOpt = None }
             GameplayModel.updateCharacterActivityState index characterActivity model
 
-        static let determineCharacterTurnFromPosition index positionM occupationMap model =
-            let characterModel = GameplayModel.getCharacterByIndex index model
-            if characterModel.CharacterActivityState = NoActivity then
-                let characterPositionM = characterModel.PositionM
-                if Math.arePositionMsAdjacent positionM characterModel.PositionM then
-                    let openDirections = OccupationMap.getOpenDirectionsAtPositionM characterPositionM occupationMap
-                    let direction = vmtod (positionM - characterPositionM)
-                    if Set.contains direction openDirections then
-                        Turn.makeNavigation None characterPositionM direction
-                    else
-                        let opponents = GameplayModel.getCharacterOpponents index model
-                        if List.exists (fun opponent -> opponent.PositionM = positionM) opponents
-                        then
-                            let targetIndex = (GameplayModel.getCharacterAtPositionM positionM model).Index
-                            Turn.makeAttack targetIndex
-                        else NoTurn
-                else
-                    match tryGetNavigationPath index positionM occupationMap model with
-                    | Some navigationPath ->
-                        match navigationPath with
-                        | [] -> NoTurn
-                        | _ ->
-                            let walkDirection = vmtod ((List.head navigationPath).PositionM - characterPositionM)
-                            Turn.makeNavigation (Some navigationPath) characterPositionM walkDirection
-                    | None -> NoTurn
-            else NoTurn
+        static let determineCharacterTurnFromPosition index targetPositionM occupationMap model =
+            let currentPositionM = GameplayModel.getCharacterPositionM index model
+            match Math.arePositionMsAdjacent targetPositionM currentPositionM with
+            | true ->
+                let openDirections = OccupationMap.getOpenDirectionsAtPositionM currentPositionM occupationMap
+                let direction = vmtod (targetPositionM - currentPositionM)
+                let opponents = GameplayModel.getCharacterOpponents index model
+                if Set.contains direction openDirections then
+                    Turn.makeNavigation None currentPositionM direction
+                elif List.exists (fun opponent -> opponent.PositionM = targetPositionM) opponents then
+                    GameplayModel.getCharacterIndexFromPositionM targetPositionM model |> Turn.makeAttack
+                else NoTurn
+            | false ->
+                match tryGetNavigationPath index targetPositionM occupationMap model with
+                | Some navigationPath ->
+                    match navigationPath with
+                    | [] -> NoTurn
+                    | (head :: _) ->
+                        if Map.find head.PositionM occupationMap then CancelTurn // rationale for this unclear; depends on AStar behavior
+                        else
+                            let walkDirection = vmtod (head.PositionM - currentPositionM)
+                            Turn.makeNavigation (Some navigationPath) currentPositionM walkDirection
+                | None -> NoTurn
 
         static let determineCharacterTurnFromDirection index direction occupationMap model =
-            let characterModel = GameplayModel.getCharacterByIndex index model
-            let targetPositionM = characterModel.PositionM + dtovm direction
+            let positionM = GameplayModel.getCharacterPositionM index model
+            let targetPositionM = positionM + dtovm direction
             determineCharacterTurnFromPosition index targetPositionM occupationMap model
         
-        static let determinePlayerTurnFromInput playerInput model world =
-            match model.Player.CharacterState.ControlType with
-            | PlayerControlled ->
-                let fieldMap = Option.get model.FieldMapOpt
-                let enemyPositions = GameplayModel.getEnemyPositions model
-                let occupationMapWithAdjacentEnemies =
-                    OccupationMap.makeFromFieldTilesAndAdjacentCharacters
-                        model.Player.PositionM
-                        fieldMap.FieldTiles
-                        enemyPositions
-                match playerInput with
-                | TouchInput touchPosition ->
-                    let targetPositionM = World.mouseToWorld false touchPosition world |> vftovm
-                    match determineCharacterTurnFromPosition PlayerIndex targetPositionM occupationMapWithAdjacentEnemies model with
-                    | ActionTurn _ as actionTurn -> actionTurn
-                    | NavigationTurn navigationDescriptor as navigationTurn ->
-                        let nextPositionM =
-                            match navigationDescriptor.NavigationPathOpt with
-                            | Some navigationPath -> (List.head navigationPath).PositionM
-                            | None -> navigationDescriptor.WalkDescriptor.NextPositionM                
-                        if Map.find nextPositionM occupationMapWithAdjacentEnemies then CancelTurn
-                        else navigationTurn
-                    | CancelTurn -> CancelTurn
-                    | NoTurn -> NoTurn
-                | DetailInput direction -> determineCharacterTurnFromDirection PlayerIndex direction occupationMapWithAdjacentEnemies model
-                | NoInput -> NoTurn
-            | Chaos ->
-                Log.debug "Invalid ControlType 'Chaos' for player."
-                NoTurn
-            | Uncontrolled -> NoTurn
-
         static let determinePlayerTurnFromNavigationProgress model =
             match model.Player.CharacterActivityState with
             | Action _ -> NoTurn
@@ -567,26 +536,48 @@ module GameplayDispatcherModule =
                 
                 withMsg model TickOngoingRound
 
+            | TryMakePlayerMove playerInput ->
+
+                let fieldMap = Option.get model.FieldMapOpt
+                let enemyPositions = GameplayModel.getEnemyPositions model
+                let occupationMapWithAdjacentEnemies =
+                    OccupationMap.makeFromFieldTilesAndAdjacentCharacters
+                        model.Player.PositionM
+                        fieldMap.FieldTiles
+                        enemyPositions
+                
+                let playerTurn =
+                    match playerInput with
+                    | TouchInput touchPosition ->
+                        let targetPositionM = World.mouseToWorld false touchPosition world |> vftovm
+                        determineCharacterTurnFromPosition PlayerIndex targetPositionM occupationMapWithAdjacentEnemies model
+                    | DetailInput direction -> determineCharacterTurnFromDirection PlayerIndex direction occupationMapWithAdjacentEnemies model
+                    | NoInput -> NoTurn
+
+                match playerTurn with
+                | ActionTurn _
+                | NavigationTurn _ -> withMsg model (TickNewRound playerTurn)
+                | _ -> just model
+
         override this.Command (model, command, _, world) =
             match command with
             | ToggleHaltButton ->
                 let world = Simulants.HudHalt.SetEnabled (isPlayerNavigatingPath model) world
                 just world
-            | HandlePlayerInput input ->
+            | HandlePlayerInput playerInput ->
                 if (GameplayModel.anyTurnsInProgress model) then just world
                 else
                     let world = Simulants.HudSaveGame.SetEnabled false world
-                    let playerTurn = determinePlayerTurnFromInput input model world
-                    match playerTurn with
-                    | NoTurn -> just world
-                    | _ -> withMsg world (TickNewRound playerTurn)
+                    match model.Player.CharacterState.ControlType with
+                    | PlayerControlled -> withMsg world (TryMakePlayerMove playerInput)
+                    | _ -> just world
             | SaveGame gameplay ->
                 World.writeScreenToFile Assets.SaveFilePath gameplay world
                 just world
             | QuitGameplay ->
                 let world = World.destroyLayer Simulants.Scene world
                 just world
-            | RunGameplay ->
+            | RunGameplay -> // Note: kept here to handle game loading once that is re-implemented
                 withMsg world NewGame
             | Tick ->
                 if (GameplayModel.anyTurnsInProgress model) then withMsg world TickOngoingRound
