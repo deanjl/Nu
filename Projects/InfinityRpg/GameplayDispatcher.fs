@@ -59,6 +59,9 @@ module GameplayDispatcherModule =
         static member getEnemyPositions model =
             List.map (fun model -> model.Position) model.Enemies
 
+        static member getCharacterPositionMs model =
+            GameplayModel.getCharacters model |> List.map (fun model -> model.PositionM)
+
         static member getEnemyActivityStates model =
             List.map (fun model -> model.CharacterActivityState) model.Enemies
         
@@ -133,6 +136,15 @@ module GameplayDispatcherModule =
                 let positionM = characterModel.PositionM + dtovm navigationDescriptor.WalkDescriptor.WalkDirection
                 GameplayModel.updatePositionM index positionM model
             | _ -> model
+
+        static member occupationMap indexOpt model = // provide index for adjacent character map
+            let fieldTiles = (Option.get model.FieldMapOpt).FieldTiles
+            let characterPositions = GameplayModel.getCharacterPositionMs model |> List.map (fun positionM -> vmtovf positionM)
+            match indexOpt with
+            | Some index ->
+                let characterPositionM = GameplayModel.getCharacterPositionM index model
+                OccupationMap.makeFromFieldTilesAndAdjacentCharacters characterPositionM fieldTiles characterPositions
+            | None -> OccupationMap.makeFromFieldTilesAndCharacters fieldTiles characterPositions
         
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
@@ -304,11 +316,9 @@ module GameplayDispatcherModule =
             | Navigation navigationDescriptor ->
                 let walkDescriptor = navigationDescriptor.WalkDescriptor
                 if model.Player.Position = vmtovf model.Player.PositionM then
-                    let fieldMap = Option.get model.FieldMapOpt
-                    let enemyPositions = GameplayModel.getEnemyPositions model |> List.toSeq
-                    let occupationMapWithEnemies = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles enemyPositions
+                    let occupationMap = GameplayModel.occupationMap None model
                     let walkDestinationM = walkDescriptor.WalkOriginM + dtovm walkDescriptor.WalkDirection
-                    if Map.find walkDestinationM occupationMapWithEnemies then CancelTurn
+                    if Map.find walkDestinationM occupationMap then CancelTurn
                     else NavigationTurn navigationDescriptor
                 else NoTurn
             | NoActivity -> NoTurn
@@ -506,10 +516,8 @@ module GameplayDispatcherModule =
                 let model = GameplayModel.applyTurn PlayerIndex newPlayerTurn model
                 
                 // (still standing) enemies make theirs
-                let occupationMap =
-                    let fieldMap = Option.get model.FieldMapOpt
-                    let enemyPositions = GameplayModel.getEnemyPositions model |> List.toSeq
-                    OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions newPlayerTurn
+                let occupationMap = GameplayModel.occupationMap None model
+                
                 let enemyTurns = determineEnemyTurns occupationMap model
                 let model = GameplayModel.updateEnemyTurns enemyTurns model
 
@@ -526,20 +534,14 @@ module GameplayDispatcherModule =
 
             | TryMakePlayerMove playerInput ->
 
-                let fieldMap = Option.get model.FieldMapOpt
-                let enemyPositions = GameplayModel.getEnemyPositions model
-                let occupationMapWithAdjacentEnemies =
-                    OccupationMap.makeFromFieldTilesAndAdjacentCharacters
-                        model.Player.PositionM
-                        fieldMap.FieldTiles
-                        enemyPositions
-                
+                let occupationMap = GameplayModel.occupationMap (Some PlayerIndex) model
+            
                 let playerTurn =
                     match playerInput with
                     | TouchInput touchPosition ->
                         let targetPositionM = World.mouseToWorld false touchPosition world |> vftovm
-                        determineCharacterTurnFromPosition PlayerIndex targetPositionM occupationMapWithAdjacentEnemies model
-                    | DetailInput direction -> determineCharacterTurnFromDirection PlayerIndex direction occupationMapWithAdjacentEnemies model
+                        determineCharacterTurnFromPosition PlayerIndex targetPositionM occupationMap model
+                    | DetailInput direction -> determineCharacterTurnFromDirection PlayerIndex direction occupationMap model
                     | NoInput -> NoTurn
 
                 match playerTurn with
