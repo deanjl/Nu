@@ -1,5 +1,6 @@
 ﻿namespace InfinityRpg
 open System
+open System.IO
 open Prime
 open Nu
 open Nu.Declarative
@@ -145,7 +146,7 @@ module GameplayDispatcherModule =
                 let characterPositionM = GameplayModel.getCharacterPositionM index model
                 OccupationMap.makeFromFieldTilesAndAdjacentCharacters characterPositionM fieldTiles characterPositions
             | None -> OccupationMap.makeFromFieldTilesAndCharacters fieldTiles characterPositions
-        
+
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
         | DetailInput of Direction
@@ -153,6 +154,7 @@ module GameplayDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] GameplayMessage =
         | NewGame
+        | LoadGame
         | UpdateActiveCharacters
         | RunCharacterActivation
         | PlayNewRound of Turn
@@ -161,8 +163,8 @@ module GameplayDispatcherModule =
     type [<NoEquality; NoComparison>] GameplayCommand =
         | ToggleHaltButton // TODO: reimplement once game is properly elmified
         | HandlePlayerInput of PlayerInput
-        | SaveGame of Screen
-        | RunGameplay
+        | SaveGame
+        | RunGameplay of bool
         | Tick
         | Nop
 
@@ -433,25 +435,25 @@ module GameplayDispatcherModule =
              Stream.make Simulants.HudDetailDown.DownEvent |> Stream.isSelected Simulants.HudDetailDown => cmd (HandlePlayerInput (DetailInput Downward))
              Stream.make Simulants.HudDetailLeft.DownEvent |> Stream.isSelected Simulants.HudDetailLeft => cmd (HandlePlayerInput (DetailInput Leftward))
              Simulants.Gameplay.UpdateEvent => cmd Tick
-             Simulants.Gameplay.SelectEvent => cmd RunGameplay
-             Simulants.HudSaveGame.ClickEvent =|> fun evt -> cmd (SaveGame evt.Subscriber)]
+             Simulants.TitleNewGame.ClickEvent => cmd (RunGameplay false)
+             Simulants.TitleLoadGame.ClickEvent => cmd (RunGameplay true)
+             Simulants.HudSaveGame.ClickEvent => cmd SaveGame]
 
         override this.Message (model, message, _, world) =
             match message with
+
+            // start a new game
             | NewGame ->
-                // TODO : reimplement and fix game loading
-                // TODO : arrange so new game can be started more than once!
-                
-                // make rand from gameplay
                 let rand = Rand.makeFromSeedState model.ContentRandState
-
-                // make field
                 let fieldMap = createField rand
-
-                // make enemies
                 let enemies = createEnemies fieldMap
-
                 let model = { model with FieldMapOpt = Some fieldMap; Enemies = enemies; Player = CharacterModel.makePlayer }
+                just model
+
+            // load the existing gmae
+            | LoadGame ->
+                let modelStr = File.ReadAllText Assets.SaveFilePath
+                let model = scvalue<GameplayModel> modelStr
                 just model
             
             | UpdateActiveCharacters ->
@@ -559,11 +561,14 @@ module GameplayDispatcherModule =
                     match model.Player.CharacterState.ControlType with
                     | PlayerControlled -> withMsg world (TryMakePlayerMove playerInput)
                     | _ -> just world
-            | SaveGame gameplay ->
-                World.writeScreenToFile Assets.SaveFilePath gameplay world
+            | SaveGame ->
+                let modelStr = scstring model
+                File.WriteAllText (Assets.SaveFilePath, modelStr)
                 just world
-            | RunGameplay -> // Note: kept here to handle game loading once that is re-implemented
-                withMsg world NewGame
+            | RunGameplay loading -> // Note: kept here to handle game loading once that is re-implemented
+                if loading && File.Exists Assets.SaveFilePath
+                then withMsg world LoadGame
+                else withMsg world NewGame
             | Tick ->
                 if (GameplayModel.anyTurnsInProgress model) then withMsg world RunCharacterActivation
                 elif KeyboardState.isKeyDown KeyboardKey.Up then withCmd world (HandlePlayerInput (DetailInput Upward))
