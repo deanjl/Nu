@@ -162,7 +162,6 @@ module GameplayDispatcherModule =
         | ToggleHaltButton // TODO: reimplement once game is properly elmified
         | HandlePlayerInput of PlayerInput
         | SaveGame of Screen
-        | QuitGameplay
         | RunGameplay
         | Tick
         | Nop
@@ -435,8 +434,7 @@ module GameplayDispatcherModule =
              Stream.make Simulants.HudDetailLeft.DownEvent |> Stream.isSelected Simulants.HudDetailLeft => cmd (HandlePlayerInput (DetailInput Leftward))
              Simulants.Gameplay.UpdateEvent => cmd Tick
              Simulants.Gameplay.SelectEvent => cmd RunGameplay
-             Simulants.HudSaveGame.ClickEvent =|> fun evt -> cmd (SaveGame evt.Subscriber)
-             Simulants.Gameplay.DeselectEvent => cmd QuitGameplay]
+             Simulants.HudSaveGame.ClickEvent =|> fun evt -> cmd (SaveGame evt.Subscriber)]
 
         override this.Message (model, message, _, world) =
             match message with
@@ -563,9 +561,6 @@ module GameplayDispatcherModule =
                     | _ -> just world
             | SaveGame gameplay ->
                 World.writeScreenToFile Assets.SaveFilePath gameplay world
-                just world
-            | QuitGameplay ->
-                let world = World.destroyLayer Simulants.Scene world
                 just world
             | RunGameplay -> // Note: kept here to handle game loading once that is re-implemented
                 withMsg world NewGame
