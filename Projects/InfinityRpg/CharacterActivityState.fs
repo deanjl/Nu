@@ -117,3 +117,10 @@ type [<StructuralEquality; NoComparison>] Turn =
 
     static member makeNavigation pathOpt origin direction =
         NavigationTurn (NavigationDescriptor.make pathOpt origin direction)
+
+    static member toCharacterActivityState turn = // static for mapping
+        match turn with
+        | ActionTurn actionDescriptor -> Action actionDescriptor
+        | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
+        | CancelTurn -> NoActivity
+        | NoTurn -> NoActivity

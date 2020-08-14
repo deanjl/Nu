@@ -141,9 +141,9 @@ module GameplayDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] GameplayMessage =
         | NewGame
-        | TickCharacterTurns
-        | TickOngoingRound
-        | TickNewRound of Turn
+        | UpdateActiveCharacters
+        | RunCharacterActivation
+        | PlayNewRound of Turn
         | TryMakePlayerMove of PlayerInput
     
     type [<NoEquality; NoComparison>] GameplayCommand =
@@ -446,7 +446,7 @@ module GameplayDispatcherModule =
                 let model = { model with FieldMapOpt = Some fieldMap; Enemies = enemies; Player = CharacterModel.makePlayer }
                 just model
             
-            | TickCharacterTurns ->
+            | UpdateActiveCharacters ->
                 let time = World.getTickTime world
                 
                 let rec recursion (characters : CharacterIndex list) model =
@@ -468,10 +468,17 @@ module GameplayDispatcherModule =
                 let playerTurn = determinePlayerTurnFromNavigationProgress model
                 match playerTurn with
                 | NoTurn -> just model
-                | _ -> withMsg model (TickNewRound playerTurn)
+                | _ -> withMsg model (PlayNewRound playerTurn)
             
-            | TickOngoingRound ->
+            | RunCharacterActivation ->
                 
+                let model =
+                    if model.Player.Turn = NoTurn then model
+                    else
+                        let activity = Turn.toCharacterActivityState model.Player.Turn
+                        let model = GameplayModel.updateCharacterActivityState PlayerIndex activity model
+                        GameplayModel.updateTurn PlayerIndex NoTurn model
+
                 (* set enemy activities in accordance with the player's current activity.
                 enemy turns must await player action to finish before executing. *)
                 
@@ -481,15 +488,7 @@ module GameplayDispatcherModule =
                         | Action _ -> model
                         | Navigation _ 
                         | NoActivity ->
-                            let enemyActivities =
-                                List.map
-                                    (fun (turn : Turn) ->
-                                        match turn with
-                                        | ActionTurn actionDescriptor -> Action actionDescriptor
-                                        | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
-                                        | CancelTurn -> NoActivity
-                                        | NoTurn -> NoActivity)
-                                    (GameplayModel.getEnemyTurns model)
+                            let enemyActivities = GameplayModel.getEnemyTurns model |> List.map Turn.toCharacterActivityState
                             let model = GameplayModel.updateEnemyActivityStates enemyActivities model
                             let model = GameplayModel.resetEnemyTurns model
                                 
@@ -498,32 +497,21 @@ module GameplayDispatcherModule =
                             else model
                     else model
                                 
-                withMsg model TickCharacterTurns                
+                withMsg model UpdateActiveCharacters                
             
-            | TickNewRound newPlayerTurn ->
+            | PlayNewRound newPlayerTurn ->
                 
-                let newPlayerActivity =
-                    match newPlayerTurn with
-                    | ActionTurn actionDescriptor -> Action actionDescriptor
-                    | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
-                    | CancelTurn -> NoActivity
-                    | NoTurn -> failwith "newPlayerTurn cannot be NoTurn at this point."
-                
-                let model = GameplayModel.updateCharacterActivityState PlayerIndex newPlayerActivity model
-
+                // player makes his move
+                let model = GameplayModel.updateTurn PlayerIndex newPlayerTurn model
                 let model = GameplayModel.applyTurn PlayerIndex newPlayerTurn model
                 
-                let model =
-                    match newPlayerTurn with
-                    | ActionTurn _
-                    | NavigationTurn _ ->
-                        let occupationMap =
-                            let fieldMap = Option.get model.FieldMapOpt
-                            let enemyPositions = GameplayModel.getEnemyPositions model |> List.toSeq
-                            OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions newPlayerTurn
-                        let enemyTurns = determineEnemyTurns occupationMap model
-                        GameplayModel.updateEnemyTurns enemyTurns model
-                    | _ -> model
+                // (still standing) enemies make theirs
+                let occupationMap =
+                    let fieldMap = Option.get model.FieldMapOpt
+                    let enemyPositions = GameplayModel.getEnemyPositions model |> List.toSeq
+                    OccupationMap.makeFromFieldTilesAndCharactersAndDesiredTurn fieldMap.FieldTiles enemyPositions newPlayerTurn
+                let enemyTurns = determineEnemyTurns occupationMap model
+                let model = GameplayModel.updateEnemyTurns enemyTurns model
 
                 let rec recursion (enemies : CharacterIndex list) model =
                     if enemies.Length = 0 then model
@@ -534,7 +522,7 @@ module GameplayDispatcherModule =
                         recursion enemies.Tail model
                 let model = recursion (GameplayModel.getEnemyIndices model) model
                 
-                withMsg model TickOngoingRound
+                withMsg model RunCharacterActivation
 
             | TryMakePlayerMove playerInput ->
 
@@ -556,7 +544,7 @@ module GameplayDispatcherModule =
 
                 match playerTurn with
                 | ActionTurn _
-                | NavigationTurn _ -> withMsg model (TickNewRound playerTurn)
+                | NavigationTurn _ -> withMsg model (PlayNewRound playerTurn)
                 | _ -> just model
 
         override this.Command (model, command, _, world) =
@@ -580,7 +568,7 @@ module GameplayDispatcherModule =
             | RunGameplay -> // Note: kept here to handle game loading once that is re-implemented
                 withMsg world NewGame
             | Tick ->
-                if (GameplayModel.anyTurnsInProgress model) then withMsg world TickOngoingRound
+                if (GameplayModel.anyTurnsInProgress model) then withMsg world RunCharacterActivation
                 elif KeyboardState.isKeyDown KeyboardKey.Up then withCmd world (HandlePlayerInput (DetailInput Upward))
                 elif KeyboardState.isKeyDown KeyboardKey.Right then withCmd world (HandlePlayerInput (DetailInput Rightward))
                 elif KeyboardState.isKeyDown KeyboardKey.Down then withCmd world (HandlePlayerInput (DetailInput Downward))
