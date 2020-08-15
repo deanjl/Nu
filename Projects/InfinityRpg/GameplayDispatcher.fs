@@ -178,18 +178,16 @@ module GameplayDispatcherModule =
         | NoInput
 
     type [<StructuralEquality; NoComparison>] GameplayMessage =
-        | NewGame
-        | LoadGame
         | UpdateActiveCharacters
         | RunCharacterActivation
         | PlayNewRound of Turn
         | TryMakePlayerMove of PlayerInput
+        | StartGameplay
     
     type [<NoEquality; NoComparison>] GameplayCommand =
         | ToggleHaltButton // TODO: reimplement once game is properly elmified
         | HandlePlayerInput of PlayerInput
         | SaveGame
-        | RunGameplay of bool
         | Tick
         | PostTick
         | Nop
@@ -426,28 +424,13 @@ module GameplayDispatcherModule =
              Stream.make Simulants.HudDetailRight.DownEvent |> Stream.isSelected Simulants.HudDetailRight => cmd (HandlePlayerInput (DetailInput Rightward))
              Stream.make Simulants.HudDetailDown.DownEvent |> Stream.isSelected Simulants.HudDetailDown => cmd (HandlePlayerInput (DetailInput Downward))
              Stream.make Simulants.HudDetailLeft.DownEvent |> Stream.isSelected Simulants.HudDetailLeft => cmd (HandlePlayerInput (DetailInput Leftward))
+             Simulants.Gameplay.SelectEvent => msg StartGameplay
              Simulants.Gameplay.UpdateEvent => cmd Tick
              Simulants.Gameplay.PostUpdateEvent => cmd PostTick
-             Simulants.TitleNewGame.ClickEvent => cmd (RunGameplay false)
-             Simulants.TitleLoadGame.ClickEvent => cmd (RunGameplay true)
              Simulants.HudSaveGame.ClickEvent => cmd SaveGame]
 
         override this.Message (model, message, _, world) =
             match message with
-
-            // start a new game
-            | NewGame ->
-                let rand = Rand.makeFromSeedState model.ContentRandState
-                let fieldMap = createField rand
-                let enemies = createEnemies fieldMap
-                let model = { model with FieldMapOpt = Some fieldMap; Enemies = enemies; Player = CharacterModel.makePlayer }
-                just model
-
-            // load the existing gmae
-            | LoadGame ->
-                let modelStr = File.ReadAllText Assets.SaveFilePath
-                let model = scvalue<GameplayModel> modelStr
-                just model
             
             | UpdateActiveCharacters ->
                 let time = World.getTickTime world
@@ -552,6 +535,18 @@ module GameplayDispatcherModule =
                 | NavigationTurn _ -> withMsg model (PlayNewRound playerTurn)
                 | _ -> just model
 
+            | StartGameplay ->
+                if model.ShallLoadGame && File.Exists Assets.SaveFilePath then
+                    let modelStr = File.ReadAllText Assets.SaveFilePath
+                    let model = scvalue<GameplayModel> modelStr
+                    just model
+                else
+                    let rand = Rand.makeFromSeedState model.ContentRandState
+                    let fieldMap = createField rand
+                    let enemies = createEnemies fieldMap
+                    let model = { model with FieldMapOpt = Some fieldMap; Enemies = enemies; Player = CharacterModel.makePlayer }
+                    just model
+
         override this.Command (model, command, _, world) =
             match command with
             | ToggleHaltButton ->
@@ -568,10 +563,6 @@ module GameplayDispatcherModule =
                 let modelStr = scstring model
                 File.WriteAllText (Assets.SaveFilePath, modelStr)
                 just world
-            | RunGameplay loading ->
-                if loading && File.Exists Assets.SaveFilePath
-                then withMsg world LoadGame
-                else withMsg world NewGame
             | Tick ->
                 if (GameplayModel.anyTurnsInProgress model) then withMsg world RunCharacterActivation
                 elif KeyboardState.isKeyDown KeyboardKey.Up then withCmd world (HandlePlayerInput (DetailInput Upward))
@@ -605,22 +596,21 @@ module GameplayDispatcherModule =
                 just world
             | Nop -> just world
 
-        override this.Content (model, screen) =
+        override this.Content (model, _) =
 
-            [Content.layerIfScreenSelected screen (fun _ _ ->
-                Content.layer Simulants.Scene.Name []
+            [Content.layer Simulants.Scene.Name []
 
-                    [Content.entityOpt model (fun model -> model.FieldMapOpt) (fun fieldMap world ->
-                       let fieldMap = fieldMap.Get world
-                       Content.entity<FieldDispatcher> Simulants.Field.Name
-                           [Entity.FieldModel == { FieldMapNp = fieldMap }
-                            Entity.Size == vmtovf fieldMap.FieldSizeM
-                            Entity.Persistent == false])
+                [Content.entityOpt model (fun model -> model.FieldMapOpt) (fun fieldMap world ->
+                   let fieldMap = fieldMap.Get world
+                   Content.entity<FieldDispatcher> Simulants.Field.Name
+                       [Entity.FieldModel == { FieldMapNp = fieldMap }
+                        Entity.Size == vmtovf fieldMap.FieldSizeM
+                        Entity.Persistent == false])
 
-                     Content.entitiesIndexedBy model
-                        (fun model -> model.Enemies) constant
-                        (fun model -> model.Index.getEnemyIndex)
-                        (fun index model _ -> Content.entity<EnemyDispatcher> ("Enemy+" + scstring index) [Entity.CharacterModel <== model])
+                 Content.entitiesIndexedBy model
+                    (fun model -> model.Enemies) constant
+                    (fun model -> model.Index.getEnemyIndex)
+                    (fun index model _ -> Content.entity<EnemyDispatcher> ("Enemy+" + scstring index) [Entity.CharacterModel <== model])
 
-                     Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
-                       [Entity.CharacterModel <== model --> fun model -> model.Player]])]
+                 Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
+                   [Entity.CharacterModel <== model --> fun model -> model.Player]]]
