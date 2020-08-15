@@ -54,7 +54,7 @@ module InfinityDispatcherModule =
                 let gameplayModel = { model.GameplayModel with ShallLoadGame = load }
                 let model = { model with GameplayModel = gameplayModel }
                 withCmd model ShowGameplay
-        
+
         override this.Command (_, command, _, world) =
             let world =
                 match command with

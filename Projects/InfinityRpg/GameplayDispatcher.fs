@@ -94,7 +94,7 @@ module GameplayDispatcherModule =
         static member updateCharacterBy updater index newValue model =
             match index with
             | PlayerIndex -> { model with Player = updater newValue model.Player }
-            | EnemyIndex i as index ->
+            | EnemyIndex _ as index ->
                 let enemies =
                     model.Enemies |>
                     List.map (fun model -> if model.Index = index then updater newValue model else model)
@@ -324,10 +324,10 @@ module GameplayDispatcherModule =
                     match navigationPath with
                     | [] -> NoTurn
                     | (head :: _) ->
-                        if Map.find head.PositionM occupationMap then CancelTurn // rationale for this unclear; depends on AStar behavior
-                        else
+                        if not (Map.find head.PositionM occupationMap) then
                             let walkDirection = vmtod (head.PositionM - currentPositionM)
                             Turn.makeNavigation (Some navigationPath) currentPositionM walkDirection
+                        else CancelTurn // space became occupied
                 | None -> NoTurn
 
         static let determineCharacterTurnFromDirection index direction occupationMap model =
@@ -452,11 +452,11 @@ module GameplayDispatcherModule =
             | RunCharacterActivation ->
                 
                 let model =
-                    if model.Player.Turn = NoTurn then model
-                    else
+                    if model.Player.Turn <> NoTurn then
                         let activity = Turn.toCharacterActivityState model.Player.Turn
                         let model = GameplayModel.updateCharacterActivityState PlayerIndex activity model
                         GameplayModel.updateTurn PlayerIndex NoTurn model
+                    else model
 
                 (* set enemy activities in accordance with the player's current activity.
                 enemy turns must await player action to finish before executing. *)
@@ -553,12 +553,12 @@ module GameplayDispatcherModule =
                 let world = Simulants.HudHalt.SetEnabled (isPlayerNavigatingPath model) world
                 just world
             | HandlePlayerInput playerInput ->
-                if (GameplayModel.anyTurnsInProgress model) then just world
-                else
+                if not (GameplayModel.anyTurnsInProgress model) then
                     let world = Simulants.HudSaveGame.SetEnabled false world
                     match model.Player.CharacterState.ControlType with
                     | PlayerControlled -> withMsg world (TryMakePlayerMove playerInput)
                     | _ -> just world
+                else just world
             | SaveGame ->
                 let modelStr = scstring model
                 File.WriteAllText (Assets.SaveFilePath, modelStr)
