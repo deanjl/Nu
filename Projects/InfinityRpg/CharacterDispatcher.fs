@@ -140,7 +140,7 @@ module CharacterDispatcherModule =
                 World.enqueueRenderMessage
                     (LayeredDescriptorMessage
                         { Depth = entity.GetDepth world
-                          AssetTag = (entity.GetCharacterModel world).CharacterAnimationSheet
+                          AssetTag = AssetTag.generalize (entity.GetCharacterModel world).CharacterAnimationSheet
                           PositionY = (entity.GetPosition world).Y
                           RenderDescriptor =
                             SpriteDescriptor

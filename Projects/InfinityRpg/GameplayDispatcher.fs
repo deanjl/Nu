@@ -166,6 +166,7 @@ module GameplayDispatcherModule =
         | SaveGame
         | RunGameplay of bool
         | Tick
+        | PostTick
         | Nop
 
     type Screen with
@@ -435,6 +436,7 @@ module GameplayDispatcherModule =
              Stream.make Simulants.HudDetailDown.DownEvent |> Stream.isSelected Simulants.HudDetailDown => cmd (HandlePlayerInput (DetailInput Downward))
              Stream.make Simulants.HudDetailLeft.DownEvent |> Stream.isSelected Simulants.HudDetailLeft => cmd (HandlePlayerInput (DetailInput Leftward))
              Simulants.Gameplay.UpdateEvent => cmd Tick
+             Simulants.Gameplay.PostUpdateEvent => cmd PostTick
              Simulants.TitleNewGame.ClickEvent => cmd (RunGameplay false)
              Simulants.TitleLoadGame.ClickEvent => cmd (RunGameplay true)
              Simulants.HudSaveGame.ClickEvent => cmd SaveGame]
@@ -577,6 +579,29 @@ module GameplayDispatcherModule =
                 elif KeyboardState.isKeyDown KeyboardKey.Left then withCmd world (HandlePlayerInput (DetailInput Leftward))
                 elif not (Simulants.HudSaveGame.GetEnabled world) then just (Simulants.HudSaveGame.SetEnabled true world)
                 else just world
+            | PostTick ->
+                let eyeCenter = Simulants.Player.GetPosition world + Simulants.Player.GetSize world * 0.5f
+                let eyeCenter =
+                    if Simulants.Field.Exists world then
+                        let eyeSize = World.getEyeSize world
+                        let eyeCornerNegative = eyeCenter - eyeSize * 0.5f
+                        let eyeCornerPositive = eyeCenter + eyeSize * 0.5f
+                        let fieldCornerNegative = Simulants.Field.GetPosition world
+                        let fieldCornerPositive = Simulants.Field.GetPosition world + Simulants.Field.GetSize world
+                        let fieldBoundsNegative = fieldCornerNegative + eyeSize * 0.5f
+                        let fieldBoundsPositive = fieldCornerPositive - eyeSize * 0.5f
+                        let eyeCenterX =
+                            if eyeCornerNegative.X < fieldCornerNegative.X then fieldBoundsNegative.X
+                            elif eyeCornerPositive.X > fieldCornerPositive.X then fieldBoundsPositive.X
+                            else eyeCenter.X
+                        let eyeCenterY =
+                            if eyeCornerNegative.Y < fieldCornerNegative.Y then fieldBoundsNegative.Y
+                            elif eyeCornerPositive.Y > fieldCornerPositive.Y then fieldBoundsPositive.Y
+                            else eyeCenter.Y
+                        Vector2 (eyeCenterX, eyeCenterY)
+                    else eyeCenter
+                let world = World.setEyeCenter eyeCenter world
+                just world
             | Nop -> just world
 
         override this.Content (model, screen) =

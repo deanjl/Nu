@@ -100,7 +100,7 @@ module FieldDispatcherModule =
                 World.enqueueRenderMessage
                     (LayeredDescriptorMessage
                         { Depth = field.GetDepth world
-                          AssetTag = image
+                          AssetTag = AssetTag.generalize image
                           PositionY = (field.GetPosition world).Y
                           RenderDescriptor = SpritesDescriptor sprites })
 
