@@ -38,10 +38,7 @@ module InfinityDispatcherModule =
             let world = World.hintAudioPackageUse Assets.GameplayPackageName world
 
             // get based
-            let world = base.Register (game, world)
-
-            // do not persist the hud when saving gameplay
-            Simulants.Hud.SetPersistent false world
+            base.Register (game, world)
 
         override this.Channel (_, _) =
             [Simulants.TitleCredits.ClickEvent => cmd ShowCredits
