@@ -109,6 +109,8 @@ type [<StructuralEquality; NoComparison>] Turn =
         | ActionTurn _ -> true
         | _ -> false
 
+    static member isAction (turn : Turn) = turn.IsAction
+    
     static member makeAttack index =
         ActionTurn
             { ActionTicks = 0L

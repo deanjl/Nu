@@ -48,8 +48,20 @@ module GameplayDispatcherModule =
         static member getCharacterIndexFromPositionM positionM model =
             (GameplayModel.getCharacterAtPositionM positionM model).Index
         
-        static member getCharacterPositionM index model =
+        static member getTurn index model =
+            (GameplayModel.getCharacterByIndex index model).Turn
+
+        static member getCharacterState index model =
+            (GameplayModel.getCharacterByIndex index model).CharacterState
+        
+        static member getPositionM index model =
             (GameplayModel.getCharacterByIndex index model).PositionM
+        
+        static member getCharacterActivityState index model =
+            (GameplayModel.getCharacterByIndex index model).CharacterActivityState
+        
+        static member getPosition index model =
+            (GameplayModel.getCharacterByIndex index model).Position
         
         static member getCharacterIndices model =
             GameplayModel.getCharacters model |> List.map (fun model -> model.Index)
@@ -124,8 +136,8 @@ module GameplayDispatcherModule =
             let enemies = List.map (fun model -> CharacterModel.updateTurn NoTurn model) model.Enemies
             { model with Enemies = enemies }
 
-        static member applyTurn index turn model =
-            match turn with
+        static member applyTurn index model =
+            match (GameplayModel.getTurn index model) with
             | ActionTurn actionDescriptor ->
                 let reactorDamage = 4 // NOTE: just hard-coding damage for now
                 let reactorIndex = Option.get actionDescriptor.ActionTargetIndexOpt
@@ -143,9 +155,22 @@ module GameplayDispatcherModule =
             let characterPositions = GameplayModel.getCharacterPositionMs model |> List.map (fun positionM -> vmtovf positionM)
             match indexOpt with
             | Some index ->
-                let characterPositionM = GameplayModel.getCharacterPositionM index model
+                let characterPositionM = GameplayModel.getPositionM index model
                 OccupationMap.makeFromFieldTilesAndAdjacentCharacters characterPositionM fieldTiles characterPositions
             | None -> OccupationMap.makeFromFieldTilesAndCharacters fieldTiles characterPositions
+
+        static member forEachIndex updater indices model =
+            let rec recursion (indices : CharacterIndex list) model =
+                if indices.Length = 0 then model
+                else
+                    let index = indices.Head
+                    let characterModelOpt = GameplayModel.tryGetCharacterByIndex index model
+                    let model =
+                        match characterModelOpt with
+                        | None -> model
+                        | Some _ -> updater index model
+                    recursion indices.Tail model
+            recursion indices model
 
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
@@ -284,7 +309,7 @@ module GameplayDispatcherModule =
             GameplayModel.updateCharacterActivityState index characterActivity model
 
         static let determineCharacterTurnFromPosition index targetPositionM occupationMap model =
-            let currentPositionM = GameplayModel.getCharacterPositionM index model
+            let currentPositionM = GameplayModel.getPositionM index model
             match Math.arePositionMsAdjacent targetPositionM currentPositionM with
             | true ->
                 let openDirections = OccupationMap.getOpenDirectionsAtPositionM currentPositionM occupationMap
@@ -308,7 +333,7 @@ module GameplayDispatcherModule =
                 | None -> NoTurn
 
         static let determineCharacterTurnFromDirection index direction occupationMap model =
-            let positionM = GameplayModel.getCharacterPositionM index model
+            let positionM = GameplayModel.getPositionM index model
             let targetPositionM = positionM + dtovm direction
             determineCharacterTurnFromPosition index targetPositionM occupationMap model
         
@@ -324,40 +349,6 @@ module GameplayDispatcherModule =
                     else NavigationTurn navigationDescriptor
                 else NoTurn
             | NoActivity -> NoTurn
-
-        static let determineEnemyTurn index occupationMap model =
-            let characterModel = GameplayModel.getCharacterByIndex index model
-            match characterModel.CharacterState.ControlType with
-            | PlayerControlled as controlType ->
-                Log.debug ("Invalid ControlType '" + scstring controlType + "' for enemy.")
-                NoTurn
-            | Chaos ->
-                if characterModel.CharacterState.HitPoints <= 0 then NoTurn
-                else
-                    if Math.arePositionMsAdjacent characterModel.PositionM model.Player.PositionM then
-                        Turn.makeAttack PlayerIndex
-                    else
-                        let randResult = Gen.random1 4
-                        let direction = Direction.fromInt randResult
-                        determineCharacterTurnFromDirection index direction occupationMap model
-            | Uncontrolled -> NoTurn
-
-        static let determineEnemyTurns occupationMap model =
-            let (_, enemyTurns, _) =
-                List.foldBack
-                    (fun enemy (occupationMap, enemyTurns, model) ->
-                        let enemyTurn = determineEnemyTurn enemy.Index occupationMap model
-                        let occupationMap = OccupationMap.transferByDesiredTurn enemyTurn enemy.Position occupationMap
-                        (occupationMap, enemyTurn :: enemyTurns, model))
-                    (model.Enemies)
-                    (occupationMap, [], model)
-            
-            // if any action turn is present, all actions except the first are cancelled
-            let desiredEnemyAction = List.exists (fun (turn : Turn) -> turn.IsAction) enemyTurns
-            if desiredEnemyAction then
-                let firstActionIndex = List.tryFindIndex (fun (turn : Turn) -> match turn with ActionTurn _ -> true; | _ -> false) enemyTurns |> Option.get
-                List.mapi (fun index (turn : Turn) -> if index = firstActionIndex then turn else NoTurn ) enemyTurns
-            else enemyTurns
 
         static let walk3 positive current destination =
             let walkSpeed = if positive then Constants.Layout.CharacterWalkSpeed else -Constants.Layout.CharacterWalkSpeed
@@ -461,22 +452,15 @@ module GameplayDispatcherModule =
             | UpdateActiveCharacters ->
                 let time = World.getTickTime world
                 
-                let rec recursion (characters : CharacterIndex list) model =
-                    if characters.Length = 0 then model
-                    else
-                        let index = characters.Head
-                        let characterModelOpt = GameplayModel.tryGetCharacterByIndex index model
-                        let model =
-                            match characterModelOpt with
-                            | None -> model
-                            | Some characterModel ->
-                                match characterModel.CharacterActivityState with
-                                | Action actionDescriptor -> tickAction time index actionDescriptor model
-                                | Navigation navigationDescriptor -> tickNavigation index navigationDescriptor model
-                                | NoActivity -> model
-                        recursion characters.Tail model
-                let model = recursion (GameplayModel.getCharacterIndices model) model
+                let updater index model =
+                    let characterModel = GameplayModel.getCharacterByIndex index model
+                    match characterModel.CharacterActivityState with
+                    | Action actionDescriptor -> tickAction time index actionDescriptor model
+                    | Navigation navigationDescriptor -> tickNavigation index navigationDescriptor model
+                    | NoActivity -> model
 
+                let model = GameplayModel.forEachIndex updater (GameplayModel.getCharacterIndices model) model
+                
                 let playerTurn = determinePlayerTurnFromNavigationProgress model
                 match playerTurn with
                 | NoTurn -> just model
@@ -515,22 +499,39 @@ module GameplayDispatcherModule =
                 
                 // player makes his move
                 let model = GameplayModel.updateTurn PlayerIndex newPlayerTurn model
-                let model = GameplayModel.applyTurn PlayerIndex newPlayerTurn model
+                let model = GameplayModel.applyTurn PlayerIndex model
                 
                 // (still standing) enemies make theirs
-                let occupationMap = GameplayModel.occupationMap None model
+                let turnGenerator index (occupationMap, enemyTurns) =
+                    let enemyPositionM = GameplayModel.getPositionM index model
+                    let characterState = GameplayModel.getCharacterState index model
+                    let enemyTurn =
+                        match characterState.ControlType with
+                        | Chaos ->
+                            if characterState.HitPoints <= 0 then NoTurn
+                            else
+                                if Math.arePositionMsAdjacent enemyPositionM model.Player.PositionM then
+                                    Turn.makeAttack PlayerIndex
+                                else
+                                    let randResult = Gen.random1 4
+                                    let direction = Direction.fromInt randResult
+                                    determineCharacterTurnFromDirection index direction occupationMap model
+                        | _ -> NoTurn
+                    let occupationMap = OccupationMap.transferByDesiredTurn enemyTurn (vmtovf enemyPositionM) occupationMap
+                    (occupationMap, enemyTurn :: enemyTurns)
                 
-                let enemyTurns = determineEnemyTurns occupationMap model
-                let model = GameplayModel.updateEnemyTurns enemyTurns model
+                // if any action turn is present, all actions except the first are cancelled
+                let turnFilter enemyTurns =
+                    if List.exists Turn.isAction enemyTurns then
+                        let firstActionIndex = List.tryFindIndex Turn.isAction enemyTurns |> Option.get
+                        List.mapi (fun index (turn : Turn) -> if index = firstActionIndex then turn else NoTurn ) enemyTurns
+                    else enemyTurns
+                
+                let indices = GameplayModel.getEnemyIndices model
+                let enemyTurns = List.foldBack turnGenerator indices (GameplayModel.occupationMap None model, []) |> snd |> turnFilter
 
-                let rec recursion (enemies : CharacterIndex list) model =
-                    if enemies.Length = 0 then model
-                    else
-                        let index = enemies.Head
-                        let enemyModel = GameplayModel.getCharacterByIndex index model
-                        let model = GameplayModel.applyTurn index enemyModel.Turn model
-                        recursion enemies.Tail model
-                let model = recursion (GameplayModel.getEnemyIndices model) model
+                let model = GameplayModel.updateEnemyTurns enemyTurns model
+                let model = GameplayModel.forEachIndex GameplayModel.applyTurn indices model
                 
                 withMsg model RunCharacterActivation
 
@@ -567,7 +568,7 @@ module GameplayDispatcherModule =
                 let modelStr = scstring model
                 File.WriteAllText (Assets.SaveFilePath, modelStr)
                 just world
-            | RunGameplay loading -> // Note: kept here to handle game loading once that is re-implemented
+            | RunGameplay loading ->
                 if loading && File.Exists Assets.SaveFilePath
                 then withMsg world LoadGame
                 else withMsg world NewGame
