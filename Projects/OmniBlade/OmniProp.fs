@@ -32,7 +32,11 @@ module PropDispatcherModule =
 
         override this.Initializers (model, entity) =
             [entity.Bounds <== model --> fun model -> model.Bounds
-             entity.IsSensor <== model --> fun model -> match model.PropData with Sensor -> true | _ -> false
+             entity.IsSensor <== model --> fun model ->
+                match model.PropData with
+                | Sensor
+                | Portal _ -> true
+                | _ -> false
              entity.BodyType == Static
              entity.LinearDamping == 0.0f
              entity.GravityScale == 0.0f
@@ -98,7 +102,7 @@ module PropDispatcherModule =
                     | Shopkeep shopkeepType ->
                         (None, Assets.CancelImage)
                 [Render
-                    (transform.Depth, transform.Position.Y, image,
+                    (transform.Depth, transform.Position.Y, AssetTag.generalize image,
                      SpriteDescriptor
                         { Transform = transform
                           Offset = Vector2.Zero

@@ -27,12 +27,12 @@ module internal TransformMasks =
 /// Carries transformation data specific to an Entity.
 type [<StructuralEquality; NoComparison; Struct>] Transform =
     { // cache line begin
-      mutable RefCount : int
       mutable Position : Vector2 // NOTE: will become a Vector3 if Nu gets 3D capabilities
       mutable Size : Vector2 // NOTE: will become a Vector3 if Nu gets 3D capabilities
       mutable Rotation : single // NOTE: will become a Vector3 if Nu gets 3D capabilities
       mutable Depth : single // NOTE: will become part of position if Nu gets 3D capabilities
-      mutable Flags : int }
+      mutable Flags : int
+      mutable RefCount : int }
       // cache line end
 
     interface Component with
@@ -52,6 +52,7 @@ type [<StructuralEquality; NoComparison; Struct>] Transform =
     member this.PublishUpdates with get () = this.Flags &&& PublishUpdatesMask <> 0 and set value = this.Flags <- if value then this.Flags ||| PublishUpdatesMask else this.Flags &&& ~~~PublishUpdatesMask
     member this.PublishPostUpdates with get () = this.Flags &&& PublishPostUpdatesMask <> 0 and set value = this.Flags <- if value then this.Flags ||| PublishPostUpdatesMask else this.Flags &&& ~~~PublishPostUpdatesMask
     member this.Persistent with get () = this.Flags &&& PersistentMask <> 0 and set value = this.Flags <- if value then this.Flags ||| PersistentMask else this.Flags &&& ~~~PersistentMask
+    member this.Optimized with get () = ~~~this.Flags &&& OmnipresentMask ||| ~~~this.Flags &&& ImperativeMask ||| this.Flags &&& PublishChangesMask = 0
 
     /// Assign a transform in-place.
     member this.Assign that =
@@ -60,6 +61,14 @@ type [<StructuralEquality; NoComparison; Struct>] Transform =
         this.Rotation <- that.Rotation
         this.Depth <- that.Depth
         this.Flags <- that.Flags
+
+    static member makeEmpty () =
+        { Position = Vector2.Zero
+          Size = Vector2.One
+          Rotation = 0.0f
+          Depth = 0.0f
+          Flags = 0
+          RefCount = 0 }
 
 [<AutoOpen>]
 module Vector2 =

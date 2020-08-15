@@ -26,7 +26,7 @@ module DeclarativeOperators2 =
             Seq.fold (fun world view ->
                 match view with
                 | Render (depth, positionY, assetTag, descriptor) ->
-                    let layeredDescriptor = { Depth = depth; PositionY = positionY; AssetTag = assetTag; RenderDescriptor = descriptor }
+                    let layeredDescriptor = { Depth = depth; PositionY = positionY; AssetTag = AssetTag.generalize assetTag; RenderDescriptor = descriptor }
                     World.enqueueRenderMessage (LayeredDescriptorMessage layeredDescriptor) world
                 | PlaySound (volume, assetTag) -> World.playSound volume assetTag world
                 | PlaySong (fade, volume, assetTag) -> World.playSong fade volume assetTag world
@@ -373,8 +373,10 @@ module ScriptFacetModule =
         override this.Update (entity, world) =
             World.evalWithLogging (entity.GetUpdateScript world) (entity.GetScriptFrame world) entity world |> snd'
 
+#if !DISABLE_ENTITY_POST_UPDATE
         override this.PostUpdate (entity, world) =
             World.evalWithLogging (entity.GetPostUpdateScript world) (entity.GetScriptFrame world) entity world |> snd'
+#endif
 
 [<AutoOpen>]
 module TextFacetModule =
@@ -411,17 +413,17 @@ module TextFacetModule =
             let textStr = text.GetText world
             if text.GetVisible world && not (String.IsNullOrWhiteSpace textStr) then
                 let transform =
-                    { RefCount = 0
-                      Position = text.GetPosition world + text.GetMargins world
+                    { Position = text.GetPosition world + text.GetMargins world
                       Size = text.GetSize world - text.GetMargins world * 2.0f
                       Rotation = 0.0f
                       Depth = text.GetDepth world + 0.5f
-                      Flags = text.GetFlags world }
+                      Flags = text.GetFlags world
+                      RefCount = 0 }
                 World.enqueueRenderMessage
                     (LayeredDescriptorMessage
                         { Depth = transform.Depth
                           PositionY = transform.Position.Y
-                          AssetTag = text.GetFont world
+                          AssetTag = text.GetFont world |> AssetTag.generalize
                           RenderDescriptor =
                             TextDescriptor
                                 { Transform = transform
@@ -795,12 +797,12 @@ module TileMapFacetModule =
                                     let size = Vector2 (tileSize.X * single map.Width, tileSize.Y)
                                     let rotation = tileMap.GetRotation world
                                     let transform =
-                                        { RefCount = 0
-                                          Position = parallaxPosition
+                                        { Position = parallaxPosition
                                           Size = size
                                           Rotation = rotation
                                           Depth = depth
-                                          Flags = tileMap.GetFlags world }
+                                          Flags = tileMap.GetFlags world
+                                          RefCount = 0 }
                                     let image = List.head images // MAGIC_VALUE: I have no idea how to tell which tile set each tile is from...
                                     let tiles =
                                         layer.Tiles |>
@@ -813,7 +815,7 @@ module TileMapFacetModule =
                                             (LayeredDescriptorMessage
                                                 { Depth = transform.Depth
                                                   PositionY = transform.Position.Y
-                                                  AssetTag = image
+                                                  AssetTag = AssetTag.generalize image
                                                   RenderDescriptor =
                                                     TileLayerDescriptor
                                                         { Transform = transform
@@ -1061,7 +1063,7 @@ module StaticSpriteFacetModule =
                     (LayeredDescriptorMessage
                         { Depth = transform.Depth
                           PositionY = transform.Position.Y
-                          AssetTag = entity.GetStaticImage world
+                          AssetTag = entity.GetStaticImage world |> AssetTag.generalize
                           RenderDescriptor =
                             SpriteDescriptor
                                 { Transform = transform
@@ -1132,7 +1134,7 @@ module AnimatedSpriteFacetModule =
                     (LayeredDescriptorMessage
                         { Depth = transform.Depth
                           PositionY = transform.Position.Y
-                          AssetTag = entity.GetAnimationSheet world
+                          AssetTag = entity.GetAnimationSheet world |> AssetTag.generalize
                           RenderDescriptor =
                             SpriteDescriptor
                                 { Transform = transform
@@ -1447,7 +1449,7 @@ module ButtonDispatcherModule =
                     (LayeredDescriptorMessage
                         { Depth = transform.Depth
                           PositionY = transform.Position.Y
-                          AssetTag = image
+                          AssetTag = AssetTag.generalize image
                           RenderDescriptor =
                             SpriteDescriptor
                                 { Transform = transform
@@ -1489,7 +1491,7 @@ module LabelDispatcherModule =
                     (LayeredDescriptorMessage
                         { Depth = transform.Depth
                           PositionY = transform.Position.Y
-                          AssetTag = label.GetLabelImage world
+                          AssetTag = label.GetLabelImage world |> AssetTag.generalize
                           RenderDescriptor =
                             SpriteDescriptor
                                 { Transform = transform
@@ -1534,7 +1536,7 @@ module TextDispatcherModule =
                     (LayeredDescriptorMessage
                         { Depth = transform.Depth
                           PositionY = transform.Position.Y
-                          AssetTag = text.GetBackgroundImage world
+                          AssetTag = text.GetBackgroundImage world |> AssetTag.generalize
                           RenderDescriptor =
                             SpriteDescriptor
                                 { Transform = transform
@@ -1648,7 +1650,7 @@ module ToggleDispatcherModule =
                     (LayeredDescriptorMessage
                         { Depth = transform.Depth
                           PositionY = transform.Position.Y
-                          AssetTag = image
+                          AssetTag = AssetTag.generalize image
                           RenderDescriptor =
                             SpriteDescriptor
                                 { Transform = transform
@@ -1801,26 +1803,26 @@ module FillBarDispatcherModule =
         override this.Actualize (fillBar, world) =
             if fillBar.GetVisible world then
                 let borderSpriteTransform =
-                    { RefCount = 0
-                      Position = fillBar.GetPosition world
+                    { Position = fillBar.GetPosition world
                       Size = fillBar.GetSize world
                       Rotation = 0.0f
                       Depth = fillBar.GetDepth world + 0.5f
-                      Flags = fillBar.GetFlags world }
+                      Flags = fillBar.GetFlags world
+                      RefCount = 0 }
                 let (fillBarSpritePosition, fillBarSpriteSize) = getFillBarSpriteDims fillBar world
                 let fillBarSpriteTransform =
-                    { RefCount = 0
-                      Position = fillBarSpritePosition
+                    { Position = fillBarSpritePosition
                       Size = fillBarSpriteSize
                       Rotation = 0.0f
                       Depth = fillBar.GetDepth world
-                      Flags = fillBar.GetFlags world }
+                      Flags = fillBar.GetFlags world
+                      RefCount = 0 }
                 let fillBarColor = if fillBar.GetEnabled world then Vector4.One else fillBar.GetDisabledColor world
                 World.enqueueRenderMessage
                     (LayeredDescriptorsMessage
                         [|{ Depth = borderSpriteTransform.Depth
                             PositionY = borderSpriteTransform.Position.Y
-                            AssetTag = fillBar.GetBorderImage world
+                            AssetTag = fillBar.GetBorderImage world |> AssetTag.generalize
                             RenderDescriptor =
                                 SpriteDescriptor
                                     { Transform = borderSpriteTransform
@@ -1832,7 +1834,7 @@ module FillBarDispatcherModule =
                                       Flip = FlipNone }}
                           { Depth = fillBarSpriteTransform.Depth
                             PositionY = fillBarSpriteTransform.Position.Y
-                            AssetTag = fillBar.GetFillImage world
+                            AssetTag = fillBar.GetFillImage world |> AssetTag.generalize
                             RenderDescriptor =
                                 SpriteDescriptor
                                     { Transform = fillBarSpriteTransform
@@ -1922,8 +1924,8 @@ module CharacterDispatcherModule =
              define Entity.CharacterFacingLeft false]
 
         override this.Update (entity, world) =
-            // we have to a bit of hackery to remember whether the character is facing left or right
-            // when there is no velocity
+            // we have to use a bit of hackery to remember whether the character is facing left or
+            // right when there is no velocity
             let facingLeft = entity.GetCharacterFacingLeft world
             let velocity = World.getBodyLinearVelocity (entity.GetPhysicsId world) world
             if facingLeft && velocity.X > 1.0f then entity.SetCharacterFacingLeft false world
@@ -1954,7 +1956,7 @@ module CharacterDispatcherModule =
                     (LayeredDescriptorMessage
                         { Depth = transform.Depth
                           PositionY = transform.Position.Y
-                          AssetTag = image
+                          AssetTag = AssetTag.generalize image
                           RenderDescriptor =
                             SpriteDescriptor
                                 { Transform = transform

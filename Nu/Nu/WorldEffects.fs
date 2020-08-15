@@ -488,15 +488,15 @@ module EffectSystem =
         let effectSystem =
             if slice.Enabled then
                 let mutable transform =
-                    { RefCount = 0
-                      Position = slice.Position
+                    { Position = slice.Position
                       Size = slice.Size
                       Rotation = slice.Rotation
                       Depth = slice.Depth
-                      Flags = 0 }
+                      Flags = 0
+                      RefCount = 0 }
                 transform.Absolute <- effectSystem.Absolute
                 let spriteView =
-                    Render (transform.Depth, transform.Position.Y, image,
+                    Render (transform.Depth, transform.Position.Y, AssetTag.generalize image,
                         SpriteDescriptor 
                             { Transform = transform
                               Offset = slice.Offset
@@ -533,15 +533,15 @@ module EffectSystem =
                 if  slice.Enabled &&
                     not (playback = Once && cel >= celCount) then
                     let mutable transform =
-                        { RefCount = 0
-                          Position = slice.Position
+                        { Position = slice.Position
                           Size = slice.Size
                           Rotation = slice.Rotation
                           Depth = slice.Depth
-                          Flags = 0 }
+                          Flags = 0
+                          RefCount = 0 }
                     transform.Absolute <- effectSystem.Absolute
                     let animatedSpriteView =
-                        Render (transform.Depth, transform.Position.Y, image,
+                        Render (transform.Depth, transform.Position.Y, AssetTag.generalize image,
                             SpriteDescriptor
                                { Transform = transform
                                  Offset = slice.Offset
@@ -571,12 +571,12 @@ module EffectSystem =
         let effectSystem =
             if slice.Enabled then
                 let mutable transform =
-                    { RefCount = 0
-                      Position = slice.Position - slice.Size * 0.5f
+                    { Position = slice.Position - slice.Size * 0.5f
                       Size = slice.Size
                       Rotation = slice.Rotation
                       Depth = slice.Depth
-                      Flags = 0 }
+                      Flags = 0
+                      RefCount = 0 }
                 transform.Absolute <- effectSystem.Absolute
                 let spriteView =
                     Render (transform.Depth, transform.Position.Y, font,

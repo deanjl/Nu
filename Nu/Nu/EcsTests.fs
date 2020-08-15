@@ -8,27 +8,58 @@ open Prime
 open Nu
 module EcsTests =
 
-    type [<NoEquality; NoComparison; Struct>] private TransformIntersection =
+    type [<NoEquality; NoComparison; Struct>] Skin =
         { mutable RefCount : int
-          Transform : Transform ComponentRef }
+          mutable Color : Vector4 }
         interface Component with
             member this.RefCount with get () = this.RefCount and set value = this.RefCount <- value
 
-    type private ExampleJunctioned () =
-        inherit SystemJunctioned<TransformIntersection, World>
-            [|typeof<Transform>.Name|]
+    type [<NoEquality; NoComparison; Struct>] Airship =
+        { mutable RefCount : int
+          Transform : Transform ComponentRef
+          Skin : Skin ComponentRef }
+        interface Airship Junction with
+            member this.RefCount with get () = this.RefCount and set value = this.RefCount <- value
+            member this.SystemNames = [|"Transform"; "Skin"|]
+            member this.Junction systems registration ecs = { id this with Transform = ecs.Junction registration systems.[0]; Skin = ecs.Junction registration systems.[1] }
+            member this.Disjunction systems entityId ecs = ecs.Disjunction<Transform> entityId systems.[0]; ecs.Disjunction<Skin> entityId systems.[1]
 
-        override this.Junction junctions entityId _ ecs =
-            { RefCount = 0
-              Transform = ecs.Junction<Transform, World> junctions entityId }
+    let example (world : World) =
 
-        override this.Disjunction junctions entityId _ ecs =
-            ecs.Disjunction<Transform, World> junctions entityId
+        // create our ecs
+        let ecs = Ecs<World> ()
 
-        override this.ProcessUpdate _ world =
-            for i = 0 to this.Components.Length - 1 do
-                let comp = &this.Components.[i]
-                let transform = &comp.Transform.Value
-                transform.Enabled <- false
-                transform.Absolute <- false
-            world
+        // create and register our transform system
+        let transformSystem = ecs.RegisterSystem (SystemCorrelated<Transform, World> ())
+
+        // create and register our skin system
+        let skinSystem = ecs.RegisterSystem (SystemCorrelated<Skin, World> ())
+
+        // create and register our airship system
+        let airshipSystem = ecs.RegisterSystem (SystemJunctioned<Airship, World> ())
+
+        // define our airship system's update behavior
+        let subscriptionId = ecs.Subscribe EcsEvents.Update (fun _ _ _ world ->
+            let comps = airshipSystem.Components
+            for i in 0 .. comps.Length do
+                let comp = &comps.[i]
+                if  comp.RefCount > 0 then
+                    comp.Transform.Index.Enabled <- i % 2 = 0
+                    comp.Skin.Index.Color.Z <- 0.5f
+            world)
+
+        // create and register our airship
+        let airshipId = ecs.RegisterJunctioned Unchecked.defaultof<Airship> airshipSystem.Name (Alloc Gen.id)
+
+        // change some airship properties
+        let airship = ecs.IndexJunctioned<Airship> airshipSystem.Name airshipId
+        airship.Index.Transform.Index.Position.X <- 0.5f
+        airship.Index.Skin.Index.Color.X <- 0.1f
+
+        // for non-junctioned entities, you can alternatively construct and use a much slower entity reference
+        let airshipRef = ecs.GetEntityRef airshipId
+        //airshipRef.Index<Transform>().Position.Y <- 5.0f
+        //airshipRef.Index<Skin>().Color.Y <- 1.0f
+
+        // invoke update behavior
+        ecs.Publish EcsEvents.Update () ecs.GlobalSystem world

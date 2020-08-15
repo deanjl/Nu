@@ -11,9 +11,10 @@ open OmniBlade
 module OmniField =
 
     type [<NoComparison>] FieldMessage =
-        | Interact
         | UpdateAvatar of AvatarModel
         | UpdateDialog
+        | TouchPortal
+        | Interact
 
     type [<NoComparison>] FieldCommand =
         | PlaySound of int64 * single * AssetTag<Sound>
@@ -60,7 +61,7 @@ module OmniField =
                     if Set.contains (Opened chestId) advents then None
                     else Some "Open"
                 | Door _ -> Some "Open"
-                | Portal -> None
+                | Portal -> Some "Enter"
                 | Switch -> Some "Use"
                 | Sensor -> None
                 | Npc _ -> Some "Talk"
@@ -93,6 +94,9 @@ module OmniField =
                             Some { dialog with DialogProgress = dialog.DialogProgress + increment }
                          | None -> None)
                         model
+                just model
+
+            | TouchPortal ->
                 just model
 
             | Interact ->
@@ -138,7 +142,10 @@ module OmniField =
                         | Portal -> just model
                         | Switch -> just model
                         | Sensor -> just model
-                        | Npc (npcType, direction, dialog) -> just model
+                        | Npc (_, _, dialog) ->
+                            let dialogForm = { DialogForm = DialogLarge; DialogText = dialog; DialogProgress = 0 }
+                            let model = FieldModel.updateDialogOpt (constant (Some dialogForm)) model
+                            just model
                         | Shopkeep shopkeepType -> just model
                     | None -> just model
 
@@ -165,7 +172,7 @@ module OmniField =
                      Entity.TileMapAsset <== model --> fun model ->
                         match Map.tryFind model.FieldType data.Value.Fields with
                         | Some fieldData -> fieldData.FieldTileMap
-                        | None -> Assets.DebugFieldTileMap
+                        | None -> Assets.DebugRoomTileMap
                      Entity.TileLayerClearance == 10.0f]
 
                  // avatar
@@ -180,7 +187,7 @@ module OmniField =
                  // interact button
                  Content.button Simulants.FieldInteract.Name
                     [Entity.Size == v2Dup 92.0f
-                     Entity.Position == v2 360.0f 160.0f
+                     Entity.Position == v2 360.0f -252.0f
                      Entity.Depth == Constants.Field.GuiDepth
                      Entity.Visible <== model ->> fun model world ->
                         let interactionOpt = tryGetInteraction model.DialogOpt model.Advents model.Avatar world
@@ -198,8 +205,8 @@ module OmniField =
                         | Some dialog ->
                             match dialog.DialogForm with
                             | DialogThin -> v4Bounds (v2 -448.0f 128.0f) (v2 896.0f 112.0f)
-                            | DialogMedium -> v4Bounds (v2 -448.0f 128.0f) (v2 640.0f 320.0f)
-                            | DialogLarge -> v4Bounds (v2 -448.0f 128.0f) (v2 896.0f 320.0f)
+                            | DialogMedium -> v4Bounds (v2 -448.0f 0.0f) (v2 640.0f 256.0f)
+                            | DialogLarge -> v4Bounds (v2 -448.0f 0.0f) (v2 896.0f 256.0f)
                         | None -> v4Zero
                      Entity.BackgroundImage <== model --> fun model ->
                         match model.DialogOpt with
@@ -212,7 +219,7 @@ module OmniField =
                      Entity.Text <== model --> fun model ->
                         match model.DialogOpt with
                         | Some dialog ->
-                            let text = String.Join ("\n", dialog.DialogText)
+                            let text = String.Join (" ", dialog.DialogText)
                             let textToShow = String.tryTake dialog.DialogProgress text
                             textToShow
                         | None -> ""

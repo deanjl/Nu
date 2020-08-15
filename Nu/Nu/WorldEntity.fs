@@ -83,16 +83,35 @@ module WorldEntityModule =
         member this.GetId world = World.getEntityId this world
         member this.Id = lensReadOnly Property? Id this.GetId this
 
-        member this.GetStaticData<'a> world = World.getEntityStaticData<'a> this world
-        member this.SetStaticData<'a> value world = World.setEntityStaticData<'a> value this world
-        member this.UpdateStaticData<'a> updater world = this.SetStaticData<'a> (updater this.GetStaticData<'a> world) world
-        member this.StaticData<'a> () = lens Property? StaticData this.GetStaticData<'a> this.SetStaticData<'a> this
-
         member this.ChangeEvent propertyName = Events.Change propertyName --> this
         member this.RegisterEvent = Events.Register --> this
         member this.UnregisteringEvent = Events.Unregistering --> this
         member this.UpdateEvent = Events.Update --> this
+#if !DISABLE_ENTITY_POST_UPDATE
         member this.PostUpdateEvent = Events.PostUpdate --> this
+#endif
+
+        /// The state of an entity.
+        /// The only place this accessor should be used is in performance-sensitive code.
+        /// Otherwise, you should get and set the required entity properties via the Entity interface.
+        member this.State world =
+            let entityState = World.getEntityState this world
+#if DEBUG
+            if not entityState.Optimized then failwith "Can get the entity state of an entity only if it is Optimized (Imperative, Omnipresent, and not PublishChanges)."
+#endif
+            entityState
+
+        /// The copied state of an entity.
+        /// The only place this accessor should be used is in performance-sensitive code.
+        /// Otherwise, you should get and set the required entity properties via the Entity interface.
+        member this.StateReadOnly world =
+            world |> World.getEntityState this |> EntityState.copy
+
+        member this.Optimize world =
+            let world = this.SetImperative true world
+            let world = this.SetOmnipresent true world
+            let world = this.SetPublishChanges false world
+            world
 
         /// Set the transform of an entity snapped to the give position and rotation snaps.
         member this.SetTransformSnapped positionSnap rotationSnap transform world =
@@ -224,6 +243,7 @@ module WorldEntityModule =
                 World.publishPlus () entity.UpdateEventCached eventTrace Simulants.Game false world
             else world
 
+#if !DISABLE_ENTITY_POST_UPDATE
         static member internal postUpdateEntity (entity : Entity) world =
             let dispatcher = entity.GetDispatcher world
             let facets = entity.GetFacets world
@@ -236,6 +256,7 @@ module WorldEntityModule =
                 let eventTrace = EventTrace.record "World" "postUpdateEntity" EventTrace.empty
                 World.publishPlus () entity.PostUpdateEventCached eventTrace Simulants.Game false world
             else world
+#endif
 
         static member internal actualizeEntity (entity : Entity) world =
             let dispatcher = entity.GetDispatcher world
@@ -402,4 +423,5 @@ type Entity =
 
     /// Provides a full view of all the properties of an entity. Useful for debugging such
     /// as with the Watch feature in Visual Studio.
-    static member view entity world = World.viewEntityProperties entity world
+    static member view entity world = World.viewEntityProperties entity world   
+        

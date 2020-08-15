@@ -5,8 +5,8 @@ namespace Debug
 open System
 module internal World =
 
-    /// The value of the world currently chosen for debugging in an IDE. Not to be used for anything else.
 #if DEBUG
+    let mutable internal Frozen = 0
     let mutable internal Chosen = obj ()
 #endif
     let mutable internal viewGame = fun (_ : obj) -> Array.create 0 (String.Empty, obj ())
@@ -17,7 +17,9 @@ module internal World =
 namespace Nu
 open System
 open System.Collections.Generic
+#if DEBUG
 open System.Diagnostics
+#endif
 open TiledSharp
 open Prime
 open Nu
@@ -310,7 +312,6 @@ module WorldTypes =
              Define? Depth 0.0f
              Define? Omnipresent false
              Define? Absolute false
-             Define? StaticData { DesignerType = typeof<string>; DesignerValue = "" }
              Define? Model { DesignerType = typeof<unit>; DesignerValue = () }
              Define? Overflow Vector2.Zero
              Define? Imperative false
@@ -334,9 +335,11 @@ module WorldTypes =
         abstract Update : Entity * World -> World
         default this.Update (_, world) = world
 
+#if !DISABLE_ENTITY_POST_UPDATE
         /// Post-update an entity.
         abstract PostUpdate : Entity * World -> World
         default this.PostUpdate (_, world) = world
+#endif
 
         /// Actualize an entity.
         abstract Actualize : Entity * World -> World
@@ -377,9 +380,11 @@ module WorldTypes =
         abstract Update : Entity * World -> World
         default this.Update (_, world) = world
 
+#if !DISABLE_ENTITY_POST_UPDATE
         /// Post-update a facet.
         abstract PostUpdate : Entity * World -> World
         default this.PostUpdate (_, world) = world
+#endif
 
         /// Actualize a facet.
         abstract Actualize : Entity * World -> World
@@ -399,10 +404,7 @@ module WorldTypes =
             abstract member GetXtension : unit -> Xtension
             end
 
-    /// Hosts the ongoing state of a game. The end-user of this engine should never touch this
-    /// type, and it's public _only_ to make [<CLIMutable>] work.
-    /// NOTE: The properties here have duplicated representations in WorldModuleGame that exist
-    /// for performance that must be kept in sync.
+    /// Hosts the ongoing state of a game.
     and [<NoEquality; NoComparison; CLIMutable>] GameState =
         { Dispatcher : GameDispatcher
           Xtension : Xtension
@@ -464,12 +466,9 @@ module WorldTypes =
 
         /// Copy a game such as when, say, you need it to be mutated with reflection but you need to preserve persistence.
         static member copy this =
-            { this with GameState.Id = this.Id }
+            { this with GameState.Dispatcher = this.Dispatcher }
 
-    /// Hosts the ongoing state of a screen. The end-user of this engine should never touch this
-    /// type, and it's public _only_ to make [<CLIMutable>] work.
-    /// NOTE: The properties here have duplicated representations in WorldModuleScreen that exist
-    /// for performance that must be kept in sync.
+    /// Hosts the ongoing state of a screen.
     and [<NoEquality; NoComparison; CLIMutable>] ScreenState =
         { Dispatcher : ScreenDispatcher
           Xtension : Xtension
@@ -534,12 +533,9 @@ module WorldTypes =
 
         /// Copy a screen such as when, say, you need it to be mutated with reflection but you need to preserve persistence.
         static member copy this =
-            { this with ScreenState.Id = this.Id }
+            { this with ScreenState.Dispatcher = this.Dispatcher }
     
-    /// Hosts the ongoing state of a layer. The end-user of this engine should never touch this
-    /// type, and it's public _only_ to make [<CLIMutable>] work.
-    /// NOTE: The properties here have duplicated representations in WorldModuleLayer that exist
-    /// for performance that must be kept in sync.
+    /// Hosts the ongoing state of a layer.
     and [<NoEquality; NoComparison; CLIMutable>] LayerState =
         { Dispatcher : LayerDispatcher
           Xtension : Xtension
@@ -596,19 +592,16 @@ module WorldTypes =
 
         /// Copy a layer such as when, say, you need it to be mutated with reflection but you need to preserve persistence.
         static member copy this =
-            { this with LayerState.Id = this.Id }
+            { this with LayerState.Dispatcher = this.Dispatcher }
 
-    /// Hosts the ongoing state of an entity. The end-user of this engine should never touch this
-    /// type, and it's public _only_ to make [<CLIMutable>] work.
-    /// OPTIMIZATION: Booleans are packed into the Transform's Flags field.
+    /// Hosts the ongoing state of an entity.
     and [<NoEquality; NoComparison; CLIMutable>] EntityState =
         { // cache line 1
-          mutable Transform : Transform
-          // cache line 2
           Dispatcher : EntityDispatcher
+          mutable Transform : Transform
+          // cache line 2 start at second-to-last field of Transform
           mutable Facets : Facet array
           mutable Xtension : Xtension
-          mutable StaticData : DesignerProperty
           mutable Model : DesignerProperty
           mutable Overflow : Vector2
           mutable OverlayNameOpt : string option
@@ -626,16 +619,15 @@ module WorldTypes =
         static member make nameOpt overlayNameOpt (dispatcher : EntityDispatcher) =
             let (id, name) = Gen.idAndNameIf nameOpt
             { Transform =
-                { RefCount = 0
-                  Position = Vector2.Zero
+                { Position = Vector2.Zero
                   Size = Constants.Engine.DefaultEntitySize
                   Rotation = 0.0f
                   Depth = 0.0f
-                  Flags = 0b100011000000 }
+                  Flags = 0b100011000000
+                  RefCount = 0 }
               Dispatcher = dispatcher
               Facets = [||]
               Xtension = Xtension.makeSafe ()
-              StaticData = { DesignerType = typeof<string>; DesignerValue = "" }
               Model = { DesignerType = typeof<unit>; DesignerValue = () }
               Overflow = Vector2.Zero
               OverlayNameOpt = overlayNameOpt
@@ -690,15 +682,15 @@ module WorldTypes =
 
         /// Copy an entity such as when, say, you need it to be mutated with reflection but you need to preserve persistence.
         static member copy (entityState : EntityState) =
-            { entityState with EntityState.Id = entityState.Id }
+            { entityState with EntityState.Dispatcher = entityState.Dispatcher }
 
         // Member properties; only for use by internal reflection facilities.
         member this.Position with get () = this.Transform.Position and set value = this.Transform.Position <- value
         member this.Size with get () = this.Transform.Size and set value = this.Transform.Size <- value
         member this.Rotation with get () = this.Transform.Rotation and set value = this.Transform.Rotation <- value
         member this.Depth with get () = this.Transform.Depth and set value = this.Transform.Depth <- value
-        member this.Dirty with get () = this.Transform.Dirty and set value = this.Transform.Dirty <- value
-        member this.Invalidated with get () = this.Transform.Invalidated and set value = this.Transform.Invalidated <- value
+        member internal this.Dirty with get () = this.Transform.Dirty and set value = this.Transform.Dirty <- value
+        member internal this.Invalidated with get () = this.Transform.Invalidated and set value = this.Transform.Invalidated <- value
         member this.Omnipresent with get () = this.Transform.Omnipresent and set value = this.Transform.Omnipresent <- value
         member this.Absolute with get () = this.Transform.Absolute and set value = this.Transform.Absolute <- value
         member this.Imperative with get () = this.Transform.Imperative and set value = this.Transform.Imperative <- value
@@ -709,6 +701,7 @@ module WorldTypes =
         member this.PublishUpdates with get () = this.Transform.PublishUpdates and set value = this.Transform.PublishUpdates <- value
         member this.PublishPostUpdates with get () = this.Transform.PublishPostUpdates and set value = this.Transform.PublishPostUpdates <- value
         member this.Persistent with get () = this.Transform.Persistent and set value = this.Transform.Persistent <- value
+        member this.Optimized with get () = this.Transform.Optimized
 
     /// The game type that hosts the various screens used to navigate through a game.
     and Game (gameAddress) =
@@ -908,9 +901,11 @@ module WorldTypes =
             let entityNames = Address.getNames entityAddress
             rtoa<unit> [|"Update"; "Event"; entityNames.[0]; entityNames.[1]; entityNames.[2]|]
 
+#if !DISABLE_ENTITY_POST_UPDATE
         let postUpdateEvent =
             let entityNames = Address.getNames entityAddress
             rtoa<unit> [|"PostUpdate"; "Event"; entityNames.[0]; entityNames.[1]; entityNames.[2]|]
+#endif
 
         let mutable entityStateOpt =
             Unchecked.defaultof<EntityState>
@@ -936,8 +931,10 @@ module WorldTypes =
         /// The address of the entity's update event.
         member this.UpdateEventCached = updateEvent
 
+#if !DISABLE_ENTITY_POST_UPDATE
         /// The address of the entity's post-update event.
         member this.PostUpdateEventCached = postUpdateEvent
+#endif
 
         /// The cached entity state for imperative entities.
         member this.EntityStateOpt
@@ -1001,6 +998,12 @@ module WorldTypes =
           UpdateEntityInEntityTree : bool -> bool -> Vector4 -> Entity -> World -> World -> World
           RebuildEntityTree : World -> Entity SpatialTree }
 
+    /// The subsystems encapsulated by the engine.
+    and [<ReferenceEquality; NoComparison>] internal Subsystems =
+        { PhysicsEngine : PhysicsEngine
+          Renderer : Renderer
+          AudioPlayer : AudioPlayer }
+
     /// The world, in a functional programming sense. Hosts the game object, the dependencies needed
     /// to implement a game, messages to by consumed by the various engine sub-systems, and general
     /// configuration data.
@@ -1024,7 +1027,7 @@ module WorldTypes =
               GameState : GameState
               AmbientState : World AmbientState
               // cache line end
-              Subsystems : World Subsystems
+              Subsystems : Subsystems
               ScreenDirectory : UMap<string, KeyValuePair<Screen Address, UMap<string, KeyValuePair<Layer Address, UMap<string, Entity Address>>>>>
               Dispatchers : Dispatchers
               ScriptingEnv : Scripting.Env
@@ -1072,6 +1075,7 @@ module WorldTypes =
             member this.UpdateEventSystemDelegateHook updater =
                 let this = { this with EventSystemDelegate = updater this.EventSystemDelegate }
 #if DEBUG
+                if Debug.World.Frozen > 0 then failwith "Invalid operation on a frozen world."
                 Debug.World.Chosen <- this
 #endif
                 this
@@ -1090,6 +1094,7 @@ module WorldTypes =
                     | :? GlobalSimulantGeneralized -> EventSystem.publishEvent<'a, 'p, Simulant, World> simulant publisher eventData eventAddress eventTrace subscription world
                     | _ -> failwithumf ()
 #if DEBUG
+                if Debug.World.Frozen > 0 then failwith "Invalid operation on a frozen world."
                 Debug.World.Chosen <- world
 #endif
                 (handling, world)
@@ -1128,6 +1133,28 @@ module WorldTypes =
                 | ("Simulant", Scripting.String _) | ("Simulant", Scripting.Keyword _) -> None // TODO: P1: see if this should be failwithumf or a violation instead.
                 | (_, _) -> None
 
+        interface Freezable with
+
+            member this.Frozen with get () =
+#if DEBUG
+                Debug.World.Frozen > 0
+#else
+                false
+#endif
+
+            member this.Freeze () =
+#if DEBUG
+                Debug.World.Frozen <- inc Debug.World.Frozen
+#endif
+                ()
+
+            member this.Thaw () =
+#if DEBUG
+                Debug.World.Frozen <- dec Debug.World.Frozen
+                if Debug.World.Frozen < 0 then failwith "World Freeze and Thaw operation mismatch."
+#endif
+                ()
+
         override this.ToString () =
             ""
 
@@ -1154,7 +1181,7 @@ module WorldTypes =
 
         /// Make the Ecs for each screen.
         abstract MakeEcs : unit -> World Ecs
-        default this.MakeEcs () = Ecs ()
+        default this.MakeEcs () = Ecs<World> ()
 
         /// A call-back at the beginning of each frame.
         abstract PreFrame : World -> World
