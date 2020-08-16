@@ -9,15 +9,13 @@ open InfinityRpg
 module InfinityDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] InfinityModel =
-        { GameplayModel : GameplayModel}
-    
-    type InfinityMessage =
-        | SetLoad of bool
+        { GameplayModel : GameplayModel }
     
     type InfinityCommand =
         | ShowTitle
         | ShowCredits
         | ShowGameplay
+        | SetShallLoadGame of bool
         | ExitGame
 
     type Game with
@@ -27,7 +25,7 @@ module InfinityDispatcherModule =
         member this.InfinityModel = this.Model<InfinityModel> ()
     
     type InfinityDispatcher () =
-        inherit GameDispatcher<InfinityModel, InfinityMessage, InfinityCommand> ({ GameplayModel = GameplayModel.initial })
+        inherit GameDispatcher<InfinityModel, unit, InfinityCommand> ({ GameplayModel = GameplayModel.initial })
 
         override this.Register (game, world) =
 
@@ -42,27 +40,19 @@ module InfinityDispatcherModule =
 
         override this.Channel (_, _) =
             [Simulants.TitleCredits.ClickEvent => cmd ShowCredits
-             Simulants.TitleNewGame.ClickEvent => msg (SetLoad false)
-             Simulants.TitleLoadGame.ClickEvent => msg (SetLoad true)
+             Simulants.TitleNewGame.ClickEvent => cmd (SetShallLoadGame false)
+             Simulants.TitleLoadGame.ClickEvent => cmd (SetShallLoadGame true)
              Simulants.TitleExit.ClickEvent => cmd ExitGame
              Simulants.CreditsBack.ClickEvent => cmd ShowTitle
              Simulants.HudBack.ClickEvent => cmd ShowTitle]
 
-        override this.Message (model, message, _, _) =
-            match message with
-            | SetLoad load ->
-                let gameplayModel = { model.GameplayModel with ShallLoadGame = load }
-                let model = { model with GameplayModel = gameplayModel }
-                withCmd model ShowGameplay
-
         override this.Command (_, command, _, world) =
-            let world =
-                match command with
-                | ShowTitle -> World.transitionScreen Simulants.Title world
-                | ShowCredits -> World.transitionScreen Simulants.Credits world
-                | ShowGameplay -> World.transitionScreen Simulants.Gameplay world
-                | ExitGame -> World.exit world
-            just world
+            match command with
+            | ShowTitle -> World.transitionScreen Simulants.Title world |> just
+            | ShowCredits -> World.transitionScreen Simulants.Credits world |> just
+            | ShowGameplay -> World.transitionScreen Simulants.Gameplay world |> just
+            | SetShallLoadGame shallLoadGame -> Simulants.Gameplay.GameplayModel.Update (fun model -> { model with ShallLoadGame = shallLoadGame }) world |> flip withCmd ShowGameplay
+            | ExitGame -> World.exit world |> just
 
         override this.Content (model, _) =
             [Content.screen Simulants.Splash.Name (Splash (Constants.InfinityRpg.DissolveDescriptor, Constants.InfinityRpg.SplashData, Simulants.Title)) [] []
