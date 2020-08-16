@@ -141,9 +141,13 @@ module GameplayDispatcherModule =
             | ActionTurn actionDescriptor ->
                 let reactorDamage = 4 // NOTE: just hard-coding damage for now
                 let reactorIndex = Option.get actionDescriptor.ActionTargetIndexOpt
-                let reactorModel = GameplayModel.getCharacterByIndex reactorIndex model
-                let reactorState = reactorModel.CharacterState
-                GameplayModel.updateCharacterState reactorIndex { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
+                let reactorTurn = GameplayModel.getTurn reactorIndex model
+                let reactorState = GameplayModel.getCharacterState reactorIndex model
+                let model = GameplayModel.updateCharacterState reactorIndex { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
+                match reactorTurn with
+                | NavigationTurn navigationDescriptor ->
+                    GameplayModel.updateTurn reactorIndex (NavigationTurn navigationDescriptor.CancelNavigation) model
+                | _ -> model
             | NavigationTurn navigationDescriptor ->
                 let characterModel = GameplayModel.getCharacterByIndex index model
                 let positionM = characterModel.PositionM + dtovm navigationDescriptor.WalkDescriptor.WalkDirection
@@ -294,18 +298,6 @@ module GameplayDispatcherModule =
             | null -> None
             | navigationPath -> Some (navigationPath |> List.ofSeq |> List.rev |> List.tail)
 
-        static let isPlayerNavigatingPath model =
-            model.Player.CharacterActivityState.IsNavigatingPath
-
-        static let cancelNavigation index model =
-            let characterModel = GameplayModel.getCharacterByIndex index model
-            let characterActivity =
-                match characterModel.CharacterActivityState with
-                | Action _ as action -> action
-                | NoActivity -> NoActivity
-                | Navigation navDescriptor -> Navigation { navDescriptor with NavigationPathOpt = None }
-            GameplayModel.updateCharacterActivityState index characterActivity model
-
         static let determineCharacterTurnFromPosition index targetPositionM occupationMap model =
             let currentPositionM = GameplayModel.getPositionM index model
             match Math.arePositionMsAdjacent targetPositionM currentPositionM with
@@ -451,6 +443,7 @@ module GameplayDispatcherModule =
             
             | RunCharacterActivation ->
                 
+                // player's turn is converted to activity at the beginning of the round, activating the observable playback of his move
                 let model =
                     if model.Player.Turn <> NoTurn then
                         let activity = Turn.toCharacterActivityState model.Player.Turn
@@ -458,9 +451,7 @@ module GameplayDispatcherModule =
                         GameplayModel.updateTurn PlayerIndex NoTurn model
                     else model
 
-                (* set enemy activities in accordance with the player's current activity.
-                enemy turns must await player action to finish before executing. *)
-                
+                // enemies are so activated at the same time during player movement, or after player's action has finished playback
                 let model =
                     if (GameplayModel.enemyTurnsPending model) then
                         match model.Player.CharacterActivityState with
@@ -469,11 +460,7 @@ module GameplayDispatcherModule =
                         | NoActivity ->
                             let enemyActivities = GameplayModel.getEnemyTurns model |> List.map Turn.toCharacterActivityState
                             let model = GameplayModel.updateEnemyActivityStates enemyActivities model
-                            let model = GameplayModel.resetEnemyTurns model
-                                
-                            if List.exists (fun (state : CharacterActivityState) -> state.IsActing) (GameplayModel.getEnemyActivityStates model) then
-                                cancelNavigation PlayerIndex model
-                            else model
+                            GameplayModel.resetEnemyTurns model
                     else model
                                 
                 withMsg model UpdateActiveCharacters                
@@ -550,7 +537,7 @@ module GameplayDispatcherModule =
         override this.Command (model, command, _, world) =
             match command with
             | ToggleHaltButton ->
-                let world = Simulants.HudHalt.SetEnabled (isPlayerNavigatingPath model) world
+                let world = Simulants.HudHalt.SetEnabled (model.Player.CharacterActivityState.IsNavigatingPath) world
                 just world
             | HandlePlayerInput playerInput ->
                 if not (GameplayModel.anyTurnsInProgress model) then
@@ -571,7 +558,7 @@ module GameplayDispatcherModule =
                 elif KeyboardState.isKeyDown KeyboardKey.Left then withCmd world (HandlePlayerInput (DetailInput Leftward))
                 elif not (Simulants.HudSaveGame.GetEnabled world) then just (Simulants.HudSaveGame.SetEnabled true world)
                 else just world
-            | PostTick ->
+            | PostTick -> // Note: it appears a slight camera offset has been introduced with this code migration
                 let eyeCenter = Simulants.Player.GetPosition world + Simulants.Player.GetSize world * 0.5f
                 let eyeCenter =
                     if Simulants.Field.Exists world then

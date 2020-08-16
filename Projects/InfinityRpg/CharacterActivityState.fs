@@ -59,6 +59,9 @@ type [<StructuralEquality; NoComparison>] NavigationDescriptor =
 
     member this.NextPosition =
         this.NextPositionI |> vitovf
+    
+    member this.CancelNavigation =
+        { this with NavigationPathOpt = None }
 
     static member make pathOpt origin direction =
         { WalkDescriptor = WalkDescriptor.make origin direction
