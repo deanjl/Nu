@@ -182,6 +182,7 @@ module GameplayDispatcherModule =
         | NoInput
 
     type [<StructuralEquality; NoComparison>] GameplayMessage =
+        | TryContinueNavigation
         | UpdateActiveCharacters
         | RunCharacterActivation
         | PlayNewRound of Turn
@@ -327,19 +328,6 @@ module GameplayDispatcherModule =
             let targetPositionM = positionM + dtovm direction
             determineCharacterTurnFromPosition index targetPositionM occupationMap model
         
-        static let determinePlayerTurnFromNavigationProgress model =
-            match model.Player.CharacterActivityState with
-            | Action _ -> NoTurn
-            | Navigation navigationDescriptor ->
-                let walkDescriptor = navigationDescriptor.WalkDescriptor
-                if model.Player.Position = vmtovf model.Player.PositionM then
-                    let occupationMap = GameplayModel.occupationMap None model
-                    let walkDestinationM = walkDescriptor.WalkOriginM + dtovm walkDescriptor.WalkDirection
-                    if Map.find walkDestinationM occupationMap then CancelTurn
-                    else NavigationTurn navigationDescriptor
-                else NoTurn
-            | NoActivity -> NoTurn
-
         static let walk3 positive current destination =
             let walkSpeed = if positive then Constants.Layout.CharacterWalkSpeed else -Constants.Layout.CharacterWalkSpeed
             let next = current + walkSpeed
@@ -367,16 +355,9 @@ module GameplayDispatcherModule =
             match walkState with
             | WalkFinished ->
                 match navigationDescriptor.NavigationPathOpt with
-                | Some [] -> failwith "NavigationPath should never be empty here."
-                | Some (_ :: []) ->
-                    GameplayModel.updateCharacterActivityState index NoActivity model
-                | Some (currentNode :: navigationPath) ->
-                    let characterModel = GameplayModel.getCharacterByIndex index model
-                    let walkDirection = vmtod ((List.head navigationPath).PositionM - currentNode.PositionM)
-                    let navigationDescriptor = NavigationDescriptor.make (Some navigationPath) characterModel.PositionM walkDirection
-                    GameplayModel.updateCharacterActivityState index (Navigation navigationDescriptor) model
-                | None ->
-                    GameplayModel.updateCharacterActivityState index NoActivity model
+                | None
+                | Some (_ :: []) -> GameplayModel.updateCharacterActivityState index NoActivity model
+                | _ -> model
             | WalkContinuing -> model
 
         static let tickAction time index actionDescriptor model =
@@ -424,6 +405,29 @@ module GameplayDispatcherModule =
         override this.Message (model, message, _, world) =
             match message with
             
+            | TryContinueNavigation ->
+                let currentPositionM = model.Player.PositionM
+                let playerTurn =
+                    if model.Player.Position = vmtovf currentPositionM then
+                        match model.Player.CharacterActivityState with
+                        | Navigation navigationDescriptor ->
+                            match navigationDescriptor.NavigationPathOpt with
+                            | Some (currentNode :: navigationPath) ->
+                                let targetPositionM = (List.head navigationPath).PositionM
+                                let occupationMap = GameplayModel.occupationMap None model
+                                if not (Map.find targetPositionM occupationMap) then
+                                    let walkDirection = vmtod (targetPositionM - currentPositionM)
+                                    let navigationDescriptor = NavigationDescriptor.make (Some navigationPath) currentPositionM walkDirection
+                                    NavigationTurn navigationDescriptor
+                                else CancelTurn
+                            | _ -> failwith "at this point navigation path should exist with length > 1"
+                        | _ -> NoTurn
+                    else NoTurn
+
+                match playerTurn with
+                | NoTurn -> just model
+                | _ -> withMsg model (PlayNewRound playerTurn)
+            
             | UpdateActiveCharacters ->
                 let time = World.getTickTime world
                 
@@ -436,10 +440,7 @@ module GameplayDispatcherModule =
 
                 let model = GameplayModel.forEachIndex updater (GameplayModel.getCharacterIndices model) model
                 
-                let playerTurn = determinePlayerTurnFromNavigationProgress model
-                match playerTurn with
-                | NoTurn -> just model
-                | _ -> withMsg model (PlayNewRound playerTurn)
+                withMsg model TryContinueNavigation
             
             | RunCharacterActivation ->
                 
