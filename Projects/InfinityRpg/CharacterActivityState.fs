@@ -72,8 +72,11 @@ type [<StructuralEquality; NoComparison>] ActionDescriptor =
       ActionTargetIndexOpt : CharacterIndex option
       ActionDataName : string }
 
-    member this.ComputeActionDirection currentPosition targetPositionM =
+    static member computeActionDirection currentPosition targetPositionM =
         targetPositionM - vftovm currentPosition |> vmtod
+
+    member this.Inc =
+        { this with ActionTicks = inc this.ActionTicks }
 
 type [<StructuralEquality; NoComparison>] CharacterActivityState =
     | Action of ActionDescriptor

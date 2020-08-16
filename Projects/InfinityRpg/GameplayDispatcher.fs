@@ -59,6 +59,9 @@ module GameplayDispatcherModule =
         
         static member getCharacterActivityState index model =
             (GameplayModel.getCharacterByIndex index model).CharacterActivityState
+
+        static member getCharacterAnimationState index model =
+            (GameplayModel.getCharacterByIndex index model).CharacterAnimationState
         
         static member getPosition index model =
             (GameplayModel.getCharacterByIndex index model).Position
@@ -270,20 +273,6 @@ module GameplayDispatcherModule =
                     [0 .. enemyCount - 1]
             models
 
-        static let getCharacterAnimationStateByActionBegin tickTime characterPosition characterAnimationState (actionDescriptor : ActionDescriptor) model =
-            let targetIndex = Option.get actionDescriptor.ActionTargetIndexOpt
-            let targetPositionM = (GameplayModel.getCharacterByIndex targetIndex model).PositionM
-            let direction = actionDescriptor.ComputeActionDirection characterPosition targetPositionM
-            { characterAnimationState with
-                Direction = direction
-                AnimationType = CharacterAnimationActing
-                StartTime = tickTime }
-
-        static let getCharacterAnimationStateByActionEnd tickTime characterAnimationState =
-            { characterAnimationState with
-                AnimationType = CharacterAnimationFacing
-                StartTime = tickTime }
-
         static let tryGetNavigationPath index positionM occupationMap model =
             let characterModel = GameplayModel.getCharacterByIndex index model
             let nodes = OccupationMap.makeNavigationNodes occupationMap
@@ -344,52 +333,6 @@ module GameplayDispatcherModule =
             | Downward -> let (newY, arrival) = walk3 false position.Y walkDestination.Y in (Vector2 (position.X, newY), arrival)
             | Leftward -> let (newX, arrival) = walk3 false position.X walkDestination.X in (Vector2 (newX, position.Y), arrival)
         
-        static let tickNavigation index navigationDescriptor model =
-            let characterModel = GameplayModel.getCharacterByIndex index model
-            let walkDescriptor = navigationDescriptor.WalkDescriptor
-            let (newPosition, walkState) = walk walkDescriptor characterModel.Position
-            let characterAnimationState = { characterModel.CharacterAnimationState with Direction = walkDescriptor.WalkDirection }
-            let model = GameplayModel.updateCharacterAnimationState index characterAnimationState model
-            let model = GameplayModel.updatePosition index newPosition model
-
-            match walkState with
-            | WalkFinished ->
-                match navigationDescriptor.NavigationPathOpt with
-                | None
-                | Some (_ :: []) -> GameplayModel.updateCharacterActivityState index NoActivity model
-                | _ -> model
-            | WalkContinuing -> model
-
-        static let tickAction time index actionDescriptor model =
-            let characterModel = GameplayModel.getCharacterByIndex index model
-            let actionTicks = actionDescriptor.ActionTicks
-            let reactorIndex = Option.get actionDescriptor.ActionTargetIndexOpt
-            let reactorModel = GameplayModel.getCharacterByIndex reactorIndex model
-            let reactorState = reactorModel.CharacterState
-            let characterAnimationState = characterModel.CharacterAnimationState
-            let actionInc = Action { actionDescriptor with ActionTicks = inc actionTicks }
-
-            if actionTicks = 0L then
-                let newAnimation = getCharacterAnimationStateByActionBegin time characterModel.Position characterAnimationState actionDescriptor model
-                let model = GameplayModel.updateCharacterAnimationState index newAnimation model
-                GameplayModel.updateCharacterActivityState index actionInc model
-            elif actionTicks = (Constants.InfinityRpg.CharacterAnimationActingDelay * 2L) then
-                let model = GameplayModel.updateCharacterActivityState index actionInc model
-                if reactorState.HitPoints <= 0 then
-                    let characterAnimationState = reactorModel.CharacterAnimationState
-                    GameplayModel.updateCharacterAnimationState reactorIndex { characterAnimationState with AnimationType = CharacterAnimationSlain } model
-                else model
-            elif actionTicks = Constants.InfinityRpg.ActionTicksMax then
-                let newAnimation = getCharacterAnimationStateByActionEnd time characterAnimationState
-                let model = GameplayModel.updateCharacterAnimationState index newAnimation model
-                let model = GameplayModel.updateCharacterActivityState index NoActivity model
-                if reactorState.HitPoints <= 0 then
-                    match reactorIndex with
-                    | PlayerIndex -> GameplayModel.updateCharacterState reactorIndex {reactorState with ControlType = Uncontrolled} model // TODO: reimplement screen transition
-                    | EnemyIndex _ -> GameplayModel.removeEnemy reactorIndex model
-                else model
-            else GameplayModel.updateCharacterActivityState index actionInc model
-        
         override this.Channel (_, _) =
             [//Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
              Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSelected Simulants.HudFeeler =|> fun evt -> cmd (HandlePlayerInput (TouchInput evt.Data))
@@ -429,13 +372,54 @@ module GameplayDispatcherModule =
                 | _ -> withMsg model (PlayNewRound playerTurn)
             
             | UpdateActiveCharacters ->
-                let time = World.getTickTime world
                 
                 let updater index model =
-                    let characterModel = GameplayModel.getCharacterByIndex index model
-                    match characterModel.CharacterActivityState with
-                    | Action actionDescriptor -> tickAction time index actionDescriptor model
-                    | Navigation navigationDescriptor -> tickNavigation index navigationDescriptor model
+                    let characterPosition = GameplayModel.getPosition index model
+                    let characterAnimationState = GameplayModel.getCharacterAnimationState index model
+                    let characterActivityState = GameplayModel.getCharacterActivityState index model
+
+                    match characterActivityState with
+                    | Action actionDescriptor ->
+                        let reactorIndex = Option.get actionDescriptor.ActionTargetIndexOpt
+                        let reactorState = GameplayModel.getCharacterState reactorIndex model
+                        let time = World.getTickTime world
+                        
+                        let model = // mostly battle animation control
+                            match actionDescriptor.ActionTicks with
+                            | x when x = 0L ->
+                                let direction = ActionDescriptor.computeActionDirection characterPosition (GameplayModel.getPositionM reactorIndex model)
+                                GameplayModel.updateCharacterAnimationState index (CharacterAnimationState.makeAction time direction) model
+                            | x when x = Constants.InfinityRpg.ReactionTick ->
+                                if reactorState.HitPoints <= 0 then
+                                    let reactorCharacterAnimationState = GameplayModel.getCharacterAnimationState reactorIndex model
+                                    GameplayModel.updateCharacterAnimationState reactorIndex reactorCharacterAnimationState.Slain model
+                                else model
+                            | x when x = Constants.InfinityRpg.ActionTicksMax ->
+                                let model = GameplayModel.updateCharacterAnimationState index (characterAnimationState.Facing time) model
+                                if reactorState.HitPoints <= 0 then
+                                    match reactorIndex with
+                                    | PlayerIndex -> GameplayModel.updateCharacterState reactorIndex {reactorState with ControlType = Uncontrolled} model // TODO: reimplement screen transition
+                                    | EnemyIndex _ -> GameplayModel.removeEnemy reactorIndex model
+                                else model
+                            | _ -> model
+
+                        if actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
+                            GameplayModel.updateCharacterActivityState index NoActivity model
+                        else GameplayModel.updateCharacterActivityState index (Action actionDescriptor.Inc) model
+                    | Navigation navigationDescriptor ->
+                        
+                        let walkDescriptor = navigationDescriptor.WalkDescriptor
+                        let (newPosition, walkState) = walk walkDescriptor characterPosition
+                        let model = GameplayModel.updateCharacterAnimationState index (characterAnimationState.UpdateDirection walkDescriptor.WalkDirection) model
+                        let model = GameplayModel.updatePosition index newPosition model
+
+                        match walkState with
+                        | WalkFinished ->
+                            match navigationDescriptor.NavigationPathOpt with
+                            | None
+                            | Some (_ :: []) -> GameplayModel.updateCharacterActivityState index NoActivity model
+                            | _ -> model
+                        | WalkContinuing -> model
                     | NoActivity -> model
 
                 let model = GameplayModel.forEachIndex updater (GameplayModel.getCharacterIndices model) model

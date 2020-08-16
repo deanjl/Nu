@@ -35,4 +35,5 @@ module Constants =
         let AttackName = "Attack"
         let CharacterAnimationFacingDelay = 16L
         let CharacterAnimationActingDelay = 24L
+        let ReactionTick = CharacterAnimationActingDelay * 2L
         let ActionTicksMax = CharacterAnimationActingDelay * 3L
