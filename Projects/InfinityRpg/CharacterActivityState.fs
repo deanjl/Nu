@@ -132,3 +132,10 @@ type [<StructuralEquality; NoComparison>] Turn =
         | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
         | CancelTurn -> NoActivity
         | NoTurn -> NoActivity
+
+type TurnStatus =
+    | TurnPending
+    | TurnBeginning
+    | TurnProgressing
+    | TurnFinishing
+    | Idle
