@@ -75,27 +75,26 @@ module GameplayDispatcherModule =
         static member getEnemyIndices model =
             List.map (fun model -> model.Index) model.Enemies
         
-        static member getEnemyPositions model =
-            List.map (fun model -> model.Position) model.Enemies
-
+        static member getEnemyTurns model =
+            List.map (fun model -> model.Turn) model.Enemies
+        
         static member getCharacterPositionMs model =
             GameplayModel.getCharacters model |> List.map (fun model -> model.PositionM)
 
+        static member getCharacterTurnStati model =
+            GameplayModel.getCharacters model |> List.map (fun model -> model.TurnStatus)
+        
         static member getEnemyActivityStates model =
             List.map (fun model -> model.CharacterActivityState) model.Enemies
         
         static member getCharacterActivityStates model =
             model.Player.CharacterActivityState :: (GameplayModel.getEnemyActivityStates model)
         
-        static member getEnemyTurns model =
-            List.map (fun model -> model.Turn) model.Enemies
-
-        static member enemyTurnsPending model =
-            GameplayModel.getEnemyTurns model |> List.exists (fun turn -> turn <> NoTurn)
+        static member getEnemyPositions model =
+            List.map (fun model -> model.Position) model.Enemies
         
         static member anyTurnsInProgress model =
-            GameplayModel.getCharacterActivityStates model |> List.exists (fun state -> state <> NoActivity) ||
-            GameplayModel.enemyTurnsPending model
+            GameplayModel.getCharacterTurnStati model |> List.exists (fun turnStatus -> turnStatus <> Idle)
         
         static member updateCharacterBy updater index newValue model =
             match index with
@@ -375,9 +374,15 @@ module GameplayDispatcherModule =
                         | _ -> NoTurn
                     else NoTurn
 
+                let model =
+                    if playerTurn = CancelTurn then
+                        GameplayModel.updateTurnStatus PlayerIndex Idle model
+                    else model
+                
                 match playerTurn with
-                | NoTurn -> just model
-                | _ -> withMsg model (PlayNewRound playerTurn)
+                | ActionTurn _
+                | NavigationTurn _ -> withMsg model (PlayNewRound playerTurn)
+                | _ -> just model
             
             | FinishTurns indices ->
                 let updater index model =
@@ -406,7 +411,7 @@ module GameplayDispatcherModule =
                                 let model = GameplayModel.updateCharacterActivityState index NoActivity model
                                 GameplayModel.updateTurnStatus index Idle model
                             | _ -> model
-                        | _ -> model
+                        | _ -> failwith "TurnStatus is TurnFinishing; CharacterActivityState should not be NoActivity"
                     | _ -> failwith "non-finishing turns should be filtered out by this point"
 
                 let model = GameplayModel.forEachIndex updater indices model
@@ -440,7 +445,7 @@ module GameplayDispatcherModule =
                             match walkState with
                             | WalkFinished -> GameplayModel.updateTurnStatus index TurnFinishing model
                             | WalkContinuing -> model
-                        | NoActivity -> model
+                        | NoActivity -> failwith "TurnStatus is TurnProgressing; CharacterActivityState should not be NoActivity"
                     | _ -> model
 
                 let model = GameplayModel.forEachIndex updater indices model
@@ -463,7 +468,7 @@ module GameplayDispatcherModule =
                                 CharacterAnimationState.makeAction (World.getTickTime world) direction
                             | Navigation navigationDescriptor ->
                                 characterAnimationState.UpdateDirection navigationDescriptor.WalkDescriptor.WalkDirection
-                            | _ -> characterAnimationState
+                            | _ -> failwith "TurnStatus is TurnBeginning; CharacterActivityState should not be NoActivity"
                         let model = GameplayModel.updateCharacterAnimationState index characterAnimationState model
                         GameplayModel.updateTurnStatus index TurnProgressing model // "TurnProgressing" for normal animation; "TurnFinishing" for roguelike mode
                     | _ -> model
@@ -476,7 +481,7 @@ module GameplayDispatcherModule =
                 
                 // player's turn is converted to activity at the beginning of the round, activating the observable playback of his move
                 let model =
-                    if model.Player.Turn <> NoTurn then
+                    if model.Player.TurnStatus = TurnPending then
                         let activity = Turn.toCharacterActivityState model.Player.Turn
                         let model = GameplayModel.updateTurnStatus PlayerIndex TurnBeginning model
                         let model = GameplayModel.updateCharacterActivityState PlayerIndex activity model
@@ -486,7 +491,7 @@ module GameplayDispatcherModule =
                 // enemies are so activated at the same time during player movement, or after player's action has finished playback
                 let indices = GameplayModel.getEnemyIndices model |> List.filter (fun x -> (GameplayModel.getTurnStatus x model) <> Idle)
                 let model =
-                    if (GameplayModel.enemyTurnsPending model) then
+                    if (List.exists (fun x -> (GameplayModel.getTurnStatus x model) = TurnPending) indices) then
                         match model.Player.CharacterActivityState with
                         | Action _ -> model
                         | Navigation _ 
@@ -543,7 +548,7 @@ module GameplayDispatcherModule =
                 let enemyTurns = List.foldBack turnGenerator indices (GameplayModel.occupationMap None model, []) |> snd |> turnFilter
 
                 let model = GameplayModel.updateEnemyTurns enemyTurns model
-                let model = GameplayModel.forEachIndex (fun index model -> GameplayModel.updateTurnStatus index TurnPending model) indices model
+                let model = GameplayModel.forEachIndex (fun index model -> if Turn.toCharacterActivityState (GameplayModel.getTurn index model) <> NoActivity then GameplayModel.updateTurnStatus index TurnPending model else model) indices model
                 let model = GameplayModel.forEachIndex GameplayModel.applyTurn indices model
                 
                 withMsg model RunCharacterActivation
