@@ -9,8 +9,32 @@ open InfinityRpg
 [<AutoOpen>]
 module GameplayDispatcherModule =
 
+    type SingleRoundMove =
+        | Step
+        | Attack
+
+    type MultiRoundMove = // must be reducible to SingleRoundMoves e.g. Travel = { Step, Step ...}
+        | Travel
+
+    type Move =
+        | SingleRoundMove of SingleRoundMove
+        | MultiRoundMove of MultiRoundMove
+
+    type MoveModeler =
+        { PassableCoordinates : Vector2i list
+          CharacterCoordinates : Map<CharacterIndex, Vector2i>
+          LatestSingleMoves : Map<CharacterIndex, SingleRoundMove>
+          CurrentMultiMoves : Map<CharacterIndex, MultiRoundMove> }
+
+        static member empty =
+            { PassableCoordinates = []
+              CharacterCoordinates = Map.empty
+              LatestSingleMoves = Map.empty
+              CurrentMultiMoves = Map.empty }
+    
     type [<StructuralEquality; NoComparison>] GameplayModel =
-        { ContentRandState : uint64
+        { MoveModeler : MoveModeler
+          ContentRandState : uint64
           ShallLoadGame : bool
           FieldMapOpt : FieldMap option
           Enemies : CharacterModel list
@@ -19,7 +43,8 @@ module GameplayDispatcherModule =
         static member initial =
             let sysrandom = System.Random ()
             let contentSeedState = uint64 (sysrandom.Next ())
-            { ContentRandState = contentSeedState
+            { MoveModeler = MoveModeler.empty
+              ContentRandState = contentSeedState
               ShallLoadGame = false
               FieldMapOpt = None
               Enemies = []
