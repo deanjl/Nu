@@ -31,6 +31,10 @@ module GameplayDispatcherModule =
               CharacterCoordinates = Map.empty
               LatestSingleMoves = Map.empty
               CurrentMultiMoves = Map.empty }
+
+        static member make fieldMap =
+            let passableCoordinates = fieldMap.FieldTiles |> Map.filter (fun _ fieldTile -> fieldTile.TileType = Passable) |> Map.toKeyList
+            { MoveModeler.empty with PassableCoordinates = passableCoordinates }                    
     
     type [<StructuralEquality; NoComparison>] GameplayModel =
         { MoveModeler : MoveModeler
@@ -208,6 +212,10 @@ module GameplayDispatcherModule =
                         | Some _ -> updater index model
                     recursion indices.Tail model
             recursion indices model
+
+        static member addFieldMap fieldMap model =
+            let moveModeler = MoveModeler.make fieldMap
+            { model with MoveModeler = moveModeler; FieldMapOpt = Some fieldMap }
 
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
@@ -601,10 +609,10 @@ module GameplayDispatcherModule =
                     let model = scvalue<GameplayModel> modelStr
                     just model
                 else
-                    let rand = Rand.makeFromSeedState model.ContentRandState
-                    let fieldMap = createField rand
-                    let enemies = createEnemies fieldMap
-                    let model = { model with FieldMapOpt = Some fieldMap; Enemies = enemies; Player = CharacterModel.makePlayer }
+                    let fieldMap = Rand.makeFromSeedState model.ContentRandState |> createField
+                    let model = GameplayModel.addFieldMap fieldMap model
+                    let enemies = createEnemies (Option.get model.FieldMapOpt)
+                    let model = { model with Enemies = enemies; Player = CharacterModel.makePlayer }
                     just model
 
         override this.Command (model, command, _, world) =
