@@ -32,6 +32,15 @@ module GameplayDispatcherModule =
               LatestSingleMoves = Map.empty
               CurrentMultiMoves = Map.empty }
 
+        member this.AvailableCoordinates =
+            let occupiedCoordinates = Map.toValueSeq this.CharacterCoordinates
+            List.except occupiedCoordinates this.PassableCoordinates
+
+        member this.AddCharacter index coordinates =
+            if List.exists (fun x -> x = coordinates) this.AvailableCoordinates then
+                { this with CharacterCoordinates = this.CharacterCoordinates.Add(index, coordinates) }
+            else failwith "character placement failed; coordinates unavailable"
+        
         static member make fieldMap =
             let passableCoordinates = fieldMap.FieldTiles |> Map.filter (fun _ fieldTile -> fieldTile.TileType = Passable) |> Map.toKeyList
             { MoveModeler.empty with PassableCoordinates = passableCoordinates }                    
