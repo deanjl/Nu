@@ -226,6 +226,27 @@ module GameplayDispatcherModule =
             let moveModeler = MoveModeler.make fieldMap
             { model with MoveModeler = moveModeler; FieldMapOpt = Some fieldMap }
 
+        static member makePlayer model =
+            let coordinates = Vector2i.Zero
+            let moveModeler = model.MoveModeler.AddCharacter PlayerIndex coordinates
+            let playerModel = CharacterModel.makePlayer coordinates
+            { model with MoveModeler = moveModeler; Player = playerModel }
+
+        static member makeEnemy index model =
+            let availableCoordinates = model.MoveModeler.AvailableCoordinates
+            let coordinates = availableCoordinates.Item(Gen.random1 availableCoordinates.Length)
+            let moveModeler = model.MoveModeler.AddCharacter index coordinates
+            let enemyModel = CharacterModel.makeEnemy index coordinates
+            { model with MoveModeler = moveModeler; Enemies = enemyModel :: model.Enemies }
+
+        static member makeEnemies quantity model =
+            let quantity = quantity - 1
+            let rec recursion count model =
+                let model = GameplayModel.makeEnemy (EnemyIndex count) model
+                if count = quantity then model
+                else recursion (count + 1) model
+            recursion 0 model
+
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
         | DetailInput of Direction
@@ -306,21 +327,6 @@ module GameplayDispatcherModule =
                   FieldTiles = fieldTiles
                   FieldTileSheet = Assets.FieldTileSheetImage }
             fieldMap
-
-        static let createEnemies fieldMap =
-            let randResult = Gen.random1 5
-            let enemyCount = randResult + 5
-            let (models, _) =
-                List.fold
-                    (fun (models, coords) index ->
-                        let availableCoordinates = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles coords |> Map.filter (fun _ occupied -> occupied = false) |> Map.toKeyList |> List.toArray
-                        let randResult = Gen.random1 availableCoordinates.Length
-                        let enemyCoordinates = availableCoordinates.[randResult]
-                        let model = CharacterModel.makeEnemy index enemyCoordinates
-                        (model :: models, (vmtovf enemyCoordinates) :: coords))
-                    ([], [])
-                    [0 .. enemyCount - 1]
-            models
 
         static let tryGetNavigationPath index positionM occupationMap model =
             let characterModel = GameplayModel.getCharacterByIndex index model
@@ -620,8 +626,8 @@ module GameplayDispatcherModule =
                 else
                     let fieldMap = Rand.makeFromSeedState model.ContentRandState |> createField
                     let model = GameplayModel.addFieldMap fieldMap model
-                    let enemies = createEnemies (Option.get model.FieldMapOpt)
-                    let model = { model with Enemies = enemies; Player = CharacterModel.makePlayer }
+                    let model = GameplayModel.makePlayer model
+                    let model = GameplayModel.makeEnemies (5 + (Gen.random1 5)) model
                     just model
 
         override this.Command (model, command, _, world) =
@@ -690,5 +696,5 @@ module GameplayDispatcherModule =
                         (fun model -> model.Index.getEnemyIndex)
                         (fun index model _ -> Content.entity<EnemyDispatcher> ("Enemy+" + scstring index) [Entity.CharacterModel <== model])
 
-                     Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
+                     Content.entity<PlayerDispatcher> Simulants.Player.Name
                        [Entity.CharacterModel <== model --> fun model -> model.Player]])]

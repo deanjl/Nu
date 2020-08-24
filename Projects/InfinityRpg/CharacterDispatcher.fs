@@ -57,14 +57,17 @@ module CharacterDispatcherModule =
         static member updatePosition newValue (model : CharacterModel) =
             { model with Position = newValue }
         
-        static member makePlayer =
+        static member makePlayer positionM =
             let characterState = { CharacterState.empty with HitPoints = 30; ControlType = PlayerControlled }
-            CharacterModel.updateCharacterState characterState CharacterModel.initial
+            { CharacterModel.initial with
+                CharacterState = characterState
+                PositionM = positionM
+                Position = vmtovf positionM }
 
         static member makeEnemy index positionM =
             let characterState = { CharacterState.empty with HitPoints = 10; ControlType = Chaos }
             { CharacterModel.initial with
-                Index = EnemyIndex index
+                Index = index
                 CharacterState = characterState
                 PositionM = positionM
                 CharacterAnimationSheet = Assets.GoopyImage
