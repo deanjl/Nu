@@ -38,15 +38,15 @@ module GameplayDispatcherModule =
 
         member this.AddCharacter index coordinates =
             if List.exists (fun x -> x = coordinates) this.AvailableCoordinates then
-                { this with CharacterCoordinates = this.CharacterCoordinates |> Map.add index coordinates }
+                { this with CharacterCoordinates = Map.add index coordinates this.CharacterCoordinates }
             else failwith "character placement failed; coordinates unavailable"
 
         member this.RemoveCharacter index =
-            { this with CharacterCoordinates = this.CharacterCoordinates |> Map.remove index }
+            { this with CharacterCoordinates = Map.remove index this.CharacterCoordinates }
         
         member this.RelocateCharacter index coordinates =
             if List.exists (fun x -> x = coordinates) this.AvailableCoordinates then
-                let characterCoordinates = this.CharacterCoordinates |> Map.remove index |> Map.add index coordinates // because Map.change doesn't work for some reason
+                let characterCoordinates = Map.add index coordinates this.CharacterCoordinates
                 { this with CharacterCoordinates = characterCoordinates }
             else failwith "character relocation failed; coordinates unavailable"
         
