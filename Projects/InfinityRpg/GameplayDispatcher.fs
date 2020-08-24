@@ -38,8 +38,17 @@ module GameplayDispatcherModule =
 
         member this.AddCharacter index coordinates =
             if List.exists (fun x -> x = coordinates) this.AvailableCoordinates then
-                { this with CharacterCoordinates = this.CharacterCoordinates.Add(index, coordinates) }
+                { this with CharacterCoordinates = this.CharacterCoordinates |> Map.add index coordinates }
             else failwith "character placement failed; coordinates unavailable"
+
+        member this.RemoveCharacter index =
+            { this with CharacterCoordinates = this.CharacterCoordinates |> Map.remove index }
+        
+        member this.RelocateCharacter index coordinates =
+            if List.exists (fun x -> x = coordinates) this.AvailableCoordinates then
+                let characterCoordinates = this.CharacterCoordinates |> Map.remove index |> Map.add index coordinates // because Map.change doesn't work for some reason
+                { this with CharacterCoordinates = characterCoordinates }
+            else failwith "character relocation failed; coordinates unavailable"
         
         static member make fieldMap =
             let passableCoordinates = fieldMap.FieldTiles |> Map.filter (fun _ fieldTile -> fieldTile.TileType = Passable) |> Map.toKeyList
@@ -166,7 +175,8 @@ module GameplayDispatcherModule =
         
         static member removeEnemy index model =
             let enemies = List.filter (fun model -> model.Index <> index) model.Enemies
-            { model with Enemies = enemies }
+            let moveModeler = model.MoveModeler.RemoveCharacter index
+            { model with MoveModeler = moveModeler; Enemies = enemies }
 
         static member updateEnemiesBy updater newValues model =
             let enemies = List.map2 (fun newValue model -> updater newValue model) newValues model.Enemies
@@ -197,6 +207,7 @@ module GameplayDispatcherModule =
             | NavigationTurn navigationDescriptor ->
                 let characterModel = GameplayModel.getCharacterByIndex index model
                 let positionM = characterModel.PositionM + dtovm navigationDescriptor.WalkDescriptor.WalkDirection
+                let model = { model with MoveModeler = model.MoveModeler.RelocateCharacter index positionM }
                 GameplayModel.updatePositionM index positionM model
             | _ -> model
 
@@ -245,7 +256,8 @@ module GameplayDispatcherModule =
                 let model = GameplayModel.makeEnemy (EnemyIndex count) model
                 if count = quantity then model
                 else recursion (count + 1) model
-            recursion 0 model
+            let model = recursion 0 model
+            { model with Enemies = List.rev model.Enemies } // enemy indices in ascending order because enemy turns must be applied in the same order as they are determined
 
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
@@ -567,7 +579,7 @@ module GameplayDispatcherModule =
                 let model = GameplayModel.applyTurn PlayerIndex model
                 
                 // (still standing) enemies make theirs
-                let turnGenerator index (occupationMap, enemyTurns) =
+                let turnGenerator (occupationMap, enemyTurns) index =
                     let enemyPositionM = GameplayModel.getPositionM index model
                     let characterState = GameplayModel.getCharacterState index model
                     let enemyTurn =
@@ -593,7 +605,7 @@ module GameplayDispatcherModule =
                     else enemyTurns
                 
                 let indices = GameplayModel.getEnemyIndices model
-                let enemyTurns = List.foldBack turnGenerator indices (GameplayModel.occupationMap None model, []) |> snd |> turnFilter
+                let enemyTurns = List.fold turnGenerator (GameplayModel.occupationMap None model, []) indices |> snd |> turnFilter |> List.rev
 
                 let model = GameplayModel.updateEnemyTurns enemyTurns model
                 let model = GameplayModel.forEachIndex (fun index model -> if Turn.toCharacterActivityState (GameplayModel.getTurn index model) <> NoActivity then GameplayModel.updateTurnStatus index TurnPending model else model) indices model
@@ -627,7 +639,7 @@ module GameplayDispatcherModule =
                     let fieldMap = Rand.makeFromSeedState model.ContentRandState |> createField
                     let model = GameplayModel.addFieldMap fieldMap model
                     let model = GameplayModel.makePlayer model
-                    let model = GameplayModel.makeEnemies (5 + (Gen.random1 5)) model
+                    let model = GameplayModel.makeEnemies 9 model
                     just model
 
         override this.Command (model, command, _, world) =
