@@ -375,21 +375,21 @@ module GameplayDispatcherModule =
                 let direction = vmtod (targetPositionM - currentPositionM)
                 let opponents = GameplayModel.getCharacterOpponents index model
                 if Set.contains direction openDirections then
-                    Turn.makeNavigation None currentPositionM direction
+                    Some (SingleRoundMove (Step direction))
                 elif List.exists (fun opponent -> opponent.PositionM = targetPositionM) opponents then
-                    GameplayModel.getCharacterIndexFromPositionM targetPositionM model |> Turn.makeAttack
-                else NoTurn
+                    let targetIndex = GameplayModel.getCharacterIndexFromPositionM targetPositionM model
+                    Some (SingleRoundMove (Attack targetIndex))
+                else None
             | false ->
                 match tryGetNavigationPath index targetPositionM occupationMap model with
                 | Some navigationPath ->
                     match navigationPath with
-                    | [] -> NoTurn
+                    | [] -> None
                     | (head :: _) ->
                         if not (Map.find head.PositionM occupationMap) then
-                            let walkDirection = vmtod (head.PositionM - currentPositionM)
-                            Turn.makeNavigation (Some navigationPath) currentPositionM walkDirection
-                        else CancelTurn // space became occupied
-                | None -> NoTurn
+                            Some (MultiRoundMove (Travel navigationPath))
+                        else None // space became occupied
+                | None -> None
 
         static let determineCharacterTurnFromDirection index direction occupationMap model =
             let positionM = GameplayModel.getPositionM index model
@@ -594,18 +594,22 @@ module GameplayDispatcherModule =
                 let turnGenerator (occupationMap, enemyTurns) index =
                     let enemyPositionM = GameplayModel.getPositionM index model
                     let characterState = GameplayModel.getCharacterState index model
-                    let enemyTurn =
+                    let enemyMoveOpt =
                         match characterState.ControlType with
                         | Chaos ->
-                            if characterState.HitPoints <= 0 then NoTurn
+                            if characterState.HitPoints <= 0 then None
                             else
                                 if Math.arePositionMsAdjacent enemyPositionM model.Player.PositionM then
-                                    Turn.makeAttack PlayerIndex
+                                    Some (SingleRoundMove (Attack PlayerIndex))
                                 else
                                     let randResult = Gen.random1 4
                                     let direction = Direction.fromInt randResult
                                     determineCharacterTurnFromDirection index direction occupationMap model
-                        | _ -> NoTurn
+                        | _ -> None
+                    let enemyTurn =
+                        match enemyMoveOpt with
+                        | Some move -> move.MakeTurn enemyPositionM
+                        | None -> NoTurn
                     let occupationMap = OccupationMap.transferByDesiredTurn enemyTurn (vmtovf enemyPositionM) occupationMap
                     (occupationMap, enemyTurn :: enemyTurns)
                 
@@ -629,14 +633,19 @@ module GameplayDispatcherModule =
 
                 let occupationMap = GameplayModel.occupationMap (Some PlayerIndex) model
             
-                let playerTurn =
+                let playerMoveOpt =
                     match playerInput with
                     | TouchInput touchPosition ->
                         let targetPositionM = World.mouseToWorld false touchPosition world |> vftovm
                         determineCharacterTurnFromPosition PlayerIndex targetPositionM occupationMap model
                     | DetailInput direction -> determineCharacterTurnFromDirection PlayerIndex direction occupationMap model
-                    | NoInput -> NoTurn
+                    | NoInput -> None
 
+                let playerTurn =
+                    match playerMoveOpt with
+                    | Some move -> GameplayModel.getPositionM PlayerIndex model |> move.MakeTurn
+                    | None -> NoTurn
+                
                 match playerTurn with
                 | ActionTurn _
                 | NavigationTurn _ -> withMsg model (PlayNewRound playerTurn)
