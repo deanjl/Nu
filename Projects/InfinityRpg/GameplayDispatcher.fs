@@ -10,15 +10,27 @@ open InfinityRpg
 module GameplayDispatcherModule =
 
     type SingleRoundMove =
-        | Step
-        | Attack
+        | Step of Direction
+        | Attack of CharacterIndex
 
     type MultiRoundMove = // must be reducible to SingleRoundMoves e.g. Travel = { Step, Step ...}
-        | Travel
+        | Travel of NavigationNode list
 
     type Move =
         | SingleRoundMove of SingleRoundMove
         | MultiRoundMove of MultiRoundMove
+
+        member this.MakeTurn positionM =
+            match this with
+            | SingleRoundMove singleRoundMove ->
+                match singleRoundMove with
+                | Step direction -> Turn.makeNavigation None positionM direction
+                | Attack index -> Turn.makeAttack index
+            | MultiRoundMove multiRoundMove ->
+                match multiRoundMove with
+                | Travel path ->
+                    let direction = vmtod (path.Head.PositionM - positionM)
+                    Turn.makeNavigation (Some path) positionM direction
 
     type MoveModeler =
         { PassableCoordinates : Vector2i list
