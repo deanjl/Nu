@@ -217,8 +217,8 @@ module GameplayDispatcherModule =
                     GameplayModel.updateTurn reactorIndex (NavigationTurn navigationDescriptor.CancelNavigation) model
                 | _ -> model
             | NavigationTurn navigationDescriptor ->
-                let characterModel = GameplayModel.getCharacterByIndex index model
-                let positionM = characterModel.PositionM + dtovm navigationDescriptor.WalkDescriptor.WalkDirection
+                let currentPositionM = GameplayModel.getPositionM index model
+                let positionM = currentPositionM + dtovm navigationDescriptor.WalkDescriptor.WalkDirection
                 let model = { model with MoveModeler = model.MoveModeler.RelocateCharacter index positionM }
                 GameplayModel.updatePositionM index positionM model
             | _ -> model
@@ -282,7 +282,7 @@ module GameplayDispatcherModule =
         | ProgressTurns of CharacterIndex list
         | BeginTurns of CharacterIndex list
         | RunCharacterActivation
-        | PlayNewRound of Turn
+        | PlayNewRound of Move
         | TryMakePlayerMove of PlayerInput
         | StartGameplay
     
@@ -367,7 +367,7 @@ module GameplayDispatcherModule =
             | null -> None
             | navigationPath -> Some (navigationPath |> List.ofSeq |> List.rev |> List.tail)
 
-        static let determineCharacterTurnFromPosition index targetPositionM occupationMap model =
+        static let tryMakeMoveFromPosition index targetPositionM occupationMap model =
             let currentPositionM = GameplayModel.getPositionM index model
             match Math.arePositionMsAdjacent targetPositionM currentPositionM with
             | true ->
@@ -391,10 +391,10 @@ module GameplayDispatcherModule =
                         else None // space became occupied
                 | None -> None
 
-        static let determineCharacterTurnFromDirection index direction occupationMap model =
+        static let tryMakeMoveFromDirection index direction occupationMap model =
             let positionM = GameplayModel.getPositionM index model
             let targetPositionM = positionM + dtovm direction
-            determineCharacterTurnFromPosition index targetPositionM occupationMap model
+            tryMakeMoveFromPosition index targetPositionM occupationMap model
         
         static let walk3 positive current destination =
             let walkSpeed = if positive then Constants.Layout.CharacterWalkSpeed else -Constants.Layout.CharacterWalkSpeed
@@ -428,32 +428,46 @@ module GameplayDispatcherModule =
             match message with
             
             | TryContinueNavigation ->
-                let currentPositionM = model.Player.PositionM
-                let playerTurn =
-                    if model.Player.Position = vmtovf currentPositionM then
+                let playerMoveOpt =
+                    match model.Player.TurnStatus with
+                    | TurnFinishing ->
                         match model.Player.CharacterActivityState with
                         | Navigation navigationDescriptor ->
                             match navigationDescriptor.NavigationPathOpt with
-                            | Some (currentNode :: navigationPath) ->
+                            | Some (_ :: navigationPath) ->
                                 let targetPositionM = (List.head navigationPath).PositionM
                                 let occupationMap = GameplayModel.occupationMap None model
                                 if not (Map.find targetPositionM occupationMap) then
-                                    let walkDirection = vmtod (targetPositionM - currentPositionM)
-                                    let navigationDescriptor = NavigationDescriptor.make (Some navigationPath) currentPositionM walkDirection
-                                    NavigationTurn navigationDescriptor
-                                else CancelTurn
+                                    Some (MultiRoundMove (Travel navigationPath))
+                                else None
                             | _ -> failwith "at this point navigation path should exist with length > 1"
-                        | _ -> NoTurn
-                    else NoTurn
-
-                let model =
-                    if playerTurn = CancelTurn then
-                        GameplayModel.updateTurnStatus PlayerIndex Idle model
-                    else model
+                        | _ -> failwith "CharacterActivityState should be Navigation at this point"
+                    | _ -> None
+(*
+                let playerTurn =
+                    match playerMoveOpt with
+                    | Some move -> GameplayModel.getPositionM PlayerIndex model |> move.MakeTurn
+                    | None -> NoTurn
                 
-                match playerTurn with
-                | ActionTurn _
-                | NavigationTurn _ -> withMsg model (PlayNewRound playerTurn)
+                let model =
+                    match playerMoveOpt with
+                    | None -> model
+                    | Some move ->
+                        match move with
+                        | SingleRoundMove _ -> model
+                        | MultiRoundMove multiRoundMove ->
+                            match multiRoundMove with
+                            | Travel (head :: _) ->
+                                let model = { model with MoveModeler = model.MoveModeler.RelocateCharacter PlayerIndex head.PositionM }
+                                GameplayModel.updatePositionM PlayerIndex head.PositionM model
+  *)              
+                let model =
+                    match model.Player.TurnStatus with
+                    | TurnFinishing -> GameplayModel.updateTurnStatus PlayerIndex Idle model
+                    | _ -> model
+                
+                match playerMoveOpt with
+                | Some move -> withMsg model (PlayNewRound move)
                 | _ -> just model
             
             | FinishTurns indices ->
@@ -583,12 +597,32 @@ module GameplayDispatcherModule =
                 
                 withMsg model (BeginTurns indices)
             
-            | PlayNewRound newPlayerTurn ->
+            | PlayNewRound playerMove ->
                 
                 // player makes his move
-                let model = GameplayModel.updateTurn PlayerIndex newPlayerTurn model
+                
+                let playerTurn = GameplayModel.getPositionM PlayerIndex model |> playerMove.MakeTurn
+                
+                let model =
+                    match playerMove with
+                    | SingleRoundMove singleRoundMove ->
+                        match singleRoundMove with
+                        | Step direction ->
+                            let positionM = (GameplayModel.getPositionM PlayerIndex model) + dtovm direction
+                            let model = { model with MoveModeler = model.MoveModeler.RelocateCharacter PlayerIndex positionM }
+                            GameplayModel.updatePositionM PlayerIndex positionM model
+                        | Attack index ->
+                            let reactorDamage = 4 // NOTE: just hard-coding damage for now
+                            let reactorState = GameplayModel.getCharacterState index model
+                            GameplayModel.updateCharacterState index { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
+                    | MultiRoundMove multiRoundMove ->
+                        match multiRoundMove with
+                        | Travel (head :: _) ->
+                            let model = { model with MoveModeler = model.MoveModeler.RelocateCharacter PlayerIndex head.PositionM }
+                            GameplayModel.updatePositionM PlayerIndex head.PositionM model
+                
+                let model = GameplayModel.updateTurn PlayerIndex playerTurn model
                 let model = GameplayModel.updateTurnStatus PlayerIndex TurnPending model
-                let model = GameplayModel.applyTurn PlayerIndex model
                 
                 // (still standing) enemies make theirs
                 let turnGenerator (occupationMap, enemyTurns) index =
@@ -604,7 +638,7 @@ module GameplayDispatcherModule =
                                 else
                                     let randResult = Gen.random1 4
                                     let direction = Direction.fromInt randResult
-                                    determineCharacterTurnFromDirection index direction occupationMap model
+                                    tryMakeMoveFromDirection index direction occupationMap model
                         | _ -> None
                     let enemyTurn =
                         match enemyMoveOpt with
@@ -637,18 +671,12 @@ module GameplayDispatcherModule =
                     match playerInput with
                     | TouchInput touchPosition ->
                         let targetPositionM = World.mouseToWorld false touchPosition world |> vftovm
-                        determineCharacterTurnFromPosition PlayerIndex targetPositionM occupationMap model
-                    | DetailInput direction -> determineCharacterTurnFromDirection PlayerIndex direction occupationMap model
+                        tryMakeMoveFromPosition PlayerIndex targetPositionM occupationMap model
+                    | DetailInput direction -> tryMakeMoveFromDirection PlayerIndex direction occupationMap model
                     | NoInput -> None
 
-                let playerTurn =
-                    match playerMoveOpt with
-                    | Some move -> GameplayModel.getPositionM PlayerIndex model |> move.MakeTurn
-                    | None -> NoTurn
-                
-                match playerTurn with
-                | ActionTurn _
-                | NavigationTurn _ -> withMsg model (PlayNewRound playerTurn)
+                match playerMoveOpt with
+                | Some move -> withMsg model (PlayNewRound move)
                 | _ -> just model
 
             | StartGameplay ->
