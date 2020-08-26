@@ -443,24 +443,7 @@ module GameplayDispatcherModule =
                             | _ -> failwith "at this point navigation path should exist with length > 1"
                         | _ -> failwith "CharacterActivityState should be Navigation at this point"
                     | _ -> None
-(*
-                let playerTurn =
-                    match playerMoveOpt with
-                    | Some move -> GameplayModel.getPositionM PlayerIndex model |> move.MakeTurn
-                    | None -> NoTurn
-                
-                let model =
-                    match playerMoveOpt with
-                    | None -> model
-                    | Some move ->
-                        match move with
-                        | SingleRoundMove _ -> model
-                        | MultiRoundMove multiRoundMove ->
-                            match multiRoundMove with
-                            | Travel (head :: _) ->
-                                let model = { model with MoveModeler = model.MoveModeler.RelocateCharacter PlayerIndex head.PositionM }
-                                GameplayModel.updatePositionM PlayerIndex head.PositionM model
-  *)              
+             
                 let model =
                     match model.Player.TurnStatus with
                     | TurnFinishing -> GameplayModel.updateTurnStatus PlayerIndex Idle model
