@@ -608,37 +608,51 @@ module GameplayDispatcherModule =
                 let model = GameplayModel.updateTurnStatus PlayerIndex TurnPending model
                 
                 // (still standing) enemies make theirs
-                let turnGenerator (occupationMap, enemyTurns) index =
-                    let enemyPositionM = GameplayModel.getPositionM index model
-                    let characterState = GameplayModel.getCharacterState index model
-                    let enemyMoveOpt =
-                        match characterState.ControlType with
-                        | Chaos ->
-                            if characterState.HitPoints <= 0 then None
-                            else
-                                if Math.arePositionMsAdjacent enemyPositionM model.Player.PositionM then
-                                    Some (SingleRoundMove (Attack PlayerIndex))
-                                else
-                                    let randResult = Gen.random1 4
-                                    let direction = Direction.fromInt randResult
-                                    tryMakeMoveFromDirection index direction occupationMap model
-                        | _ -> None
-                    let enemyTurn =
-                        match enemyMoveOpt with
-                        | Some move -> move.MakeTurn enemyPositionM
-                        | None -> NoTurn
-                    let occupationMap = OccupationMap.transferByDesiredTurn enemyTurn (vmtovf enemyPositionM) occupationMap
-                    (occupationMap, enemyTurn :: enemyTurns)
-                
                 // if any action turn is present, all actions except the first are cancelled
-                let turnFilter enemyTurns =
-                    if List.exists Turn.isAction enemyTurns then
-                        let firstActionIndex = List.tryFindIndex Turn.isAction enemyTurns |> Option.get
-                        List.mapi (fun index (turn : Turn) -> if index = firstActionIndex then turn else NoTurn ) enemyTurns
-                    else enemyTurns
                 
                 let indices = GameplayModel.getEnemyIndices model
-                let enemyTurns = List.fold turnGenerator (GameplayModel.occupationMap None model, []) indices |> snd |> turnFilter |> List.rev
+                
+                let turnGenerator =
+                    match List.tryFind (fun x -> Math.arePositionMsAdjacent (GameplayModel.getPositionM x model) model.Player.PositionM) indices with
+                    | Some attackerIndex ->
+                        (fun (occupationMap, enemyTurns) index ->
+                            let enemyPositionM = GameplayModel.getPositionM index model
+                            let characterState = GameplayModel.getCharacterState index model
+                            let enemyMoveOpt =
+                                match characterState.ControlType with
+                                | Chaos ->
+                                    if characterState.HitPoints <= 0 then None
+                                    else
+                                        if index = attackerIndex then
+                                            Some (SingleRoundMove (Attack PlayerIndex))
+                                        else None
+                                | _ -> None
+                            let enemyTurn =
+                                match enemyMoveOpt with
+                                | Some move -> move.MakeTurn enemyPositionM
+                                | None -> NoTurn
+                            (occupationMap, enemyTurn :: enemyTurns))
+                    | None ->
+                        (fun (occupationMap, enemyTurns) index ->
+                            let enemyPositionM = GameplayModel.getPositionM index model
+                            let characterState = GameplayModel.getCharacterState index model
+                            let enemyMoveOpt =
+                                match characterState.ControlType with
+                                | Chaos ->
+                                    if characterState.HitPoints <= 0 then None
+                                    else
+                                        let randResult = Gen.random1 4
+                                        let direction = Direction.fromInt randResult
+                                        tryMakeMoveFromDirection index direction occupationMap model
+                                | _ -> None
+                            let enemyTurn =
+                                match enemyMoveOpt with
+                                | Some move -> move.MakeTurn enemyPositionM
+                                | None -> NoTurn
+                            let occupationMap = OccupationMap.transferByDesiredTurn enemyTurn (vmtovf enemyPositionM) occupationMap
+                            (occupationMap, enemyTurn :: enemyTurns))
+
+                let enemyTurns = List.fold turnGenerator (GameplayModel.occupationMap None model, []) indices |> snd |> List.rev
 
                 let model = GameplayModel.updateEnemyTurns enemyTurns model
                 let model = GameplayModel.forEachIndex (fun index model -> if Turn.toCharacterActivityState (GameplayModel.getTurn index model) <> NoActivity then GameplayModel.updateTurnStatus index TurnPending model else model) indices model
