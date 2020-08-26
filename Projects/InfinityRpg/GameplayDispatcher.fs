@@ -652,7 +652,11 @@ module GameplayDispatcherModule =
                                     | Attack reactorIndex ->
                                         let reactorDamage = 4 // NOTE: just hard-coding damage for now
                                         let reactorState = GameplayModel.getCharacterState reactorIndex model
-                                        GameplayModel.updateCharacterState reactorIndex { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
+                                        let model = GameplayModel.updateCharacterState reactorIndex { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
+                                        match GameplayModel.getTurn reactorIndex model with
+                                        | NavigationTurn navigationDescriptor ->
+                                            GameplayModel.updateTurn reactorIndex (NavigationTurn navigationDescriptor.CancelNavigation) model
+                                        | _ -> model
                                 | _ -> failwith "enemy not yet capable of multiround move"
                             | None -> model
                         
