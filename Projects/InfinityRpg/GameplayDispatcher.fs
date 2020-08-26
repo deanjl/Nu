@@ -367,7 +367,8 @@ module GameplayDispatcherModule =
             | null -> None
             | navigationPath -> Some (navigationPath |> List.ofSeq |> List.rev |> List.tail)
 
-        static let tryMakeMoveFromPosition index targetPositionM occupationMap model =
+        static let tryMakeMoveFromPosition index targetPositionM model =
+            let occupationMap = GameplayModel.occupationMap None model
             let currentPositionM = GameplayModel.getPositionM index model
             match Math.arePositionMsAdjacent targetPositionM currentPositionM with
             | true ->
@@ -381,6 +382,7 @@ module GameplayDispatcherModule =
                     Some (SingleRoundMove (Attack targetIndex))
                 else None
             | false ->
+                let occupationMap = GameplayModel.occupationMap (Some PlayerIndex) model
                 match tryGetNavigationPath index targetPositionM occupationMap model with
                 | Some navigationPath ->
                     match navigationPath with
@@ -391,10 +393,10 @@ module GameplayDispatcherModule =
                         else None // space became occupied
                 | None -> None
 
-        static let tryMakeMoveFromDirection index direction occupationMap model =
+        static let tryMakeMoveFromDirection index direction model =
             let positionM = GameplayModel.getPositionM index model
             let targetPositionM = positionM + dtovm direction
-            tryMakeMoveFromPosition index targetPositionM occupationMap model
+            tryMakeMoveFromPosition index targetPositionM model
         
         static let walk3 positive current destination =
             let walkSpeed = if positive then Constants.Layout.CharacterWalkSpeed else -Constants.Layout.CharacterWalkSpeed
@@ -611,65 +613,66 @@ module GameplayDispatcherModule =
                 // if any action turn is present, all actions except the first are cancelled
                 
                 let indices = GameplayModel.getEnemyIndices model
-                
-                let turnGenerator =
-                    match List.tryFind (fun x -> Math.arePositionMsAdjacent (GameplayModel.getPositionM x model) model.Player.PositionM) indices with
-                    | Some attackerIndex ->
-                        (fun (occupationMap, enemyTurns) index ->
-                            let enemyPositionM = GameplayModel.getPositionM index model
-                            let characterState = GameplayModel.getCharacterState index model
-                            let enemyMoveOpt =
-                                match characterState.ControlType with
-                                | Chaos ->
-                                    if characterState.HitPoints <= 0 then None
-                                    else
+                let attackerOpt = List.tryFind (fun x -> Math.arePositionMsAdjacent (GameplayModel.getPositionM x model) model.Player.PositionM) indices
+
+                let updater =
+                    (fun index model ->
+                        let enemyPositionM = GameplayModel.getPositionM index model
+                        let characterState = GameplayModel.getCharacterState index model
+                        let enemyMoveOpt =
+                            match characterState.ControlType with
+                            | Chaos ->
+                                if characterState.HitPoints > 0 then
+                                    match attackerOpt with
+                                    | Some attackerIndex ->
                                         if index = attackerIndex then
                                             Some (SingleRoundMove (Attack PlayerIndex))
                                         else None
-                                | _ -> None
-                            let enemyTurn =
-                                match enemyMoveOpt with
-                                | Some move -> move.MakeTurn enemyPositionM
-                                | None -> NoTurn
-                            (occupationMap, enemyTurn :: enemyTurns))
-                    | None ->
-                        (fun (occupationMap, enemyTurns) index ->
-                            let enemyPositionM = GameplayModel.getPositionM index model
-                            let characterState = GameplayModel.getCharacterState index model
-                            let enemyMoveOpt =
-                                match characterState.ControlType with
-                                | Chaos ->
-                                    if characterState.HitPoints <= 0 then None
-                                    else
-                                        let randResult = Gen.random1 4
-                                        let direction = Direction.fromInt randResult
-                                        tryMakeMoveFromDirection index direction occupationMap model
-                                | _ -> None
-                            let enemyTurn =
-                                match enemyMoveOpt with
-                                | Some move -> move.MakeTurn enemyPositionM
-                                | None -> NoTurn
-                            let occupationMap = OccupationMap.transferByDesiredTurn enemyTurn (vmtovf enemyPositionM) occupationMap
-                            (occupationMap, enemyTurn :: enemyTurns))
+                                    | None ->
+                                        let direction = Gen.random1 4 |> Direction.fromInt
+                                        tryMakeMoveFromDirection index direction model
+                                else None
+                            | _ -> None
+                        
+                        let enemyTurn =
+                            match enemyMoveOpt with
+                            | Some move -> move.MakeTurn enemyPositionM
+                            | None -> NoTurn
+                        
+                        let model =
+                            match enemyMoveOpt with
+                            | Some move ->
+                                match move with
+                                | SingleRoundMove singleRoundMove ->
+                                    match singleRoundMove with
+                                    | Step direction ->
+                                        let positionM = (GameplayModel.getPositionM index model) + dtovm direction
+                                        let model = { model with MoveModeler = model.MoveModeler.RelocateCharacter index positionM }
+                                        GameplayModel.updatePositionM index positionM model
+                                    | Attack reactorIndex ->
+                                        let reactorDamage = 4 // NOTE: just hard-coding damage for now
+                                        let reactorState = GameplayModel.getCharacterState reactorIndex model
+                                        GameplayModel.updateCharacterState reactorIndex { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
+                                | _ -> failwith "enemy not yet capable of multiround move"
+                            | None -> model
+                        
+                        let model = GameplayModel.updateTurn index enemyTurn model
+                        if Turn.toCharacterActivityState enemyTurn <> NoActivity then
+                            GameplayModel.updateTurnStatus index TurnPending model
+                        else model)
 
-                let enemyTurns = List.fold turnGenerator (GameplayModel.occupationMap None model, []) indices |> snd |> List.rev
+                let model = GameplayModel.forEachIndex updater indices model
 
-                let model = GameplayModel.updateEnemyTurns enemyTurns model
-                let model = GameplayModel.forEachIndex (fun index model -> if Turn.toCharacterActivityState (GameplayModel.getTurn index model) <> NoActivity then GameplayModel.updateTurnStatus index TurnPending model else model) indices model
-                let model = GameplayModel.forEachIndex GameplayModel.applyTurn indices model
-                
                 withMsg model RunCharacterActivation
 
             | TryMakePlayerMove playerInput ->
 
-                let occupationMap = GameplayModel.occupationMap (Some PlayerIndex) model
-            
                 let playerMoveOpt =
                     match playerInput with
                     | TouchInput touchPosition ->
                         let targetPositionM = World.mouseToWorld false touchPosition world |> vftovm
-                        tryMakeMoveFromPosition PlayerIndex targetPositionM occupationMap model
-                    | DetailInput direction -> tryMakeMoveFromDirection PlayerIndex direction occupationMap model
+                        tryMakeMoveFromPosition PlayerIndex targetPositionM model
+                    | DetailInput direction -> tryMakeMoveFromDirection PlayerIndex direction model
                     | NoInput -> None
 
                 match playerMoveOpt with
