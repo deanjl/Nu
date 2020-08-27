@@ -48,6 +48,9 @@ module GameplayDispatcherModule =
             let occupiedCoordinates = Map.toValueSeq this.CharacterCoordinates
             List.except occupiedCoordinates this.PassableCoordinates
 
+        member this.OpenDirections coordinates =
+            List.filter (fun d -> List.exists (fun x -> x = (coordinates + (dtovm d))) this.AvailableCoordinates) [Upward; Rightward; Downward; Leftward]
+        
         member this.AddCharacter index coordinates =
             if List.exists (fun x -> x = coordinates) this.AvailableCoordinates then
                 { this with CharacterCoordinates = Map.add index coordinates this.CharacterCoordinates }
@@ -197,15 +200,6 @@ module GameplayDispatcherModule =
             let enemies = List.map (fun model -> CharacterModel.updateTurn NoTurn model) model.Enemies
             { model with Enemies = enemies }
 
-        static member occupationMap indexOpt model = // provide index for adjacent character map
-            let fieldTiles = (Option.get model.FieldMapOpt).FieldTiles
-            let characterPositions = Map.toValueList model.MoveModeler.CharacterCoordinates |> List.map (fun positionM -> vmtovf positionM)
-            match indexOpt with
-            | Some index ->
-                let characterPositionM = GameplayModel.getCoordinates index model
-                OccupationMap.makeFromFieldTilesAndAdjacentCharacters characterPositionM fieldTiles characterPositions
-            | None -> OccupationMap.makeFromFieldTilesAndCharacters fieldTiles characterPositions
-
         static member forEachIndex updater indices model =
             let rec recursion (indices : CharacterIndex list) model =
                 if indices.Length = 0 then model
@@ -338,10 +332,14 @@ module GameplayDispatcherModule =
                   FieldTileSheet = Assets.FieldTileSheetImage }
             fieldMap
 
-        static let tryGetNavigationPath index positionM occupationMap model =
+        static let tryGetNavigationPath index positionM model =
+            let fieldTiles = (Option.get model.FieldMapOpt).FieldTiles
+            let characterPositions = Map.toValueList model.MoveModeler.CharacterCoordinates |> List.map (fun positionM -> vmtovf positionM)
+            let currentPositionM = GameplayModel.getCoordinates PlayerIndex model
+            let occupationMap = OccupationMap.makeFromFieldTilesAndAdjacentCharacters currentPositionM fieldTiles characterPositions
             let nodes = OccupationMap.makeNavigationNodes occupationMap
             let goalNode = Map.find positionM nodes
-            let currentNode = Map.find (GameplayModel.getCoordinates index model) nodes
+            let currentNode = Map.find currentPositionM nodes
             let navigationPathOpt =
                 AStar.FindPath (
                     currentNode,
@@ -353,29 +351,24 @@ module GameplayDispatcherModule =
             | navigationPath -> Some (navigationPath |> List.ofSeq |> List.rev |> List.tail)
 
         static let tryMakeMoveFromPosition index targetPositionM model =
-            let occupationMap = GameplayModel.occupationMap None model
             let currentPositionM = GameplayModel.getCoordinates index model
             match Math.arePositionMsAdjacent targetPositionM currentPositionM with
             | true ->
-                let openDirections = OccupationMap.getOpenDirectionsAtPositionM currentPositionM occupationMap
+                let openDirections = model.MoveModeler.OpenDirections currentPositionM
                 let direction = vmtod (targetPositionM - currentPositionM)
                 let opponents = GameplayModel.getOpponentIndices index model
-                if Set.contains direction openDirections then
+                if List.exists (fun x -> x = direction) openDirections then
                     Some (SingleRoundMove (Step direction))
                 elif List.exists (fun index -> (GameplayModel.getCoordinates index model) = targetPositionM) opponents then
                     let targetIndex = GameplayModel.getIndexByCoordinates targetPositionM model
                     Some (SingleRoundMove (Attack targetIndex))
                 else None
             | false ->
-                let occupationMap = GameplayModel.occupationMap (Some PlayerIndex) model
-                match tryGetNavigationPath index targetPositionM occupationMap model with
+                match tryGetNavigationPath index targetPositionM model with
                 | Some navigationPath ->
                     match navigationPath with
                     | [] -> None
-                    | (head :: _) ->
-                        if not (Map.find head.PositionM occupationMap) then
-                            Some (MultiRoundMove (Travel navigationPath))
-                        else None // space became occupied
+                    | (head :: _) -> Some (MultiRoundMove (Travel navigationPath))
                 | None -> None
 
         static let tryMakeMoveFromDirection index direction model =
@@ -423,8 +416,7 @@ module GameplayDispatcherModule =
                             match navigationDescriptor.NavigationPathOpt with
                             | Some (_ :: navigationPath) ->
                                 let targetPositionM = (List.head navigationPath).PositionM
-                                let occupationMap = GameplayModel.occupationMap None model
-                                if not (Map.find targetPositionM occupationMap) then
+                                if List.exists (fun x -> x = targetPositionM) model.MoveModeler.AvailableCoordinates then
                                     Some (MultiRoundMove (Travel navigationPath))
                                 else None
                             | _ -> failwith "at this point navigation path should exist with length > 1"
