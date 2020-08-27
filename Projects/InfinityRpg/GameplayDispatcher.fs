@@ -62,6 +62,17 @@ module GameplayDispatcherModule =
                 { this with CharacterCoordinates = characterCoordinates }
             else failwith "character relocation failed; coordinates unavailable"
         
+        member this.AddSingleMove index move =
+            { this with LatestSingleMoves = Map.add index move this.LatestSingleMoves }
+
+        member this.AddMultiMove index move =
+            { this with CurrentMultiMoves = Map.add index move this.CurrentMultiMoves }
+
+        member this.AddMove index move =
+            match move with
+            | SingleRoundMove move -> this.AddSingleMove index move
+            | MultiRoundMove move -> this.AddMultiMove index move
+        
         static member make fieldMap =
             let passableCoordinates = fieldMap.FieldTiles |> Map.filter (fun _ fieldTile -> fieldTile.TileType = Passable) |> Map.toKeyList
             { MoveModeler.empty with PassableCoordinates = passableCoordinates }                    
@@ -245,6 +256,13 @@ module GameplayDispatcherModule =
                     recursion indices.Tail model
             recursion indices model
 
+        static member relocateCharacter index coordinates model =
+            let model = GameplayModel.updatePositionM index coordinates model
+            { model with MoveModeler = model.MoveModeler.RelocateCharacter index coordinates }
+
+        static member addMove index move model =
+            { model with MoveModeler = model.MoveModeler.AddMove index move }
+        
         static member addFieldMap fieldMap model =
             let moveModeler = MoveModeler.make fieldMap
             { model with MoveModeler = moveModeler; FieldMapOpt = Some fieldMap }
@@ -586,6 +604,7 @@ module GameplayDispatcherModule =
                 
                 // player makes his move
                 
+                let model = GameplayModel.addMove PlayerIndex playerMove model
                 let playerTurn = GameplayModel.getPositionM PlayerIndex model |> playerMove.MakeTurn
                 
                 let model =
@@ -594,8 +613,7 @@ module GameplayDispatcherModule =
                         match singleRoundMove with
                         | Step direction ->
                             let positionM = (GameplayModel.getPositionM PlayerIndex model) + dtovm direction
-                            let model = { model with MoveModeler = model.MoveModeler.RelocateCharacter PlayerIndex positionM }
-                            GameplayModel.updatePositionM PlayerIndex positionM model
+                            GameplayModel.relocateCharacter PlayerIndex positionM model
                         | Attack index ->
                             let reactorDamage = 4 // NOTE: just hard-coding damage for now
                             let reactorState = GameplayModel.getCharacterState index model
@@ -603,8 +621,7 @@ module GameplayDispatcherModule =
                     | MultiRoundMove multiRoundMove ->
                         match multiRoundMove with
                         | Travel (head :: _) ->
-                            let model = { model with MoveModeler = model.MoveModeler.RelocateCharacter PlayerIndex head.PositionM }
-                            GameplayModel.updatePositionM PlayerIndex head.PositionM model
+                            GameplayModel.relocateCharacter PlayerIndex head.PositionM model
                 
                 let model = GameplayModel.updateTurn PlayerIndex playerTurn model
                 let model = GameplayModel.updateTurnStatus PlayerIndex TurnPending model
@@ -634,6 +651,11 @@ module GameplayDispatcherModule =
                                 else None
                             | _ -> None
                         
+                        let model =
+                            match enemyMoveOpt with
+                            | Some move -> GameplayModel.addMove index move model
+                            | None -> model
+                        
                         let enemyTurn =
                             match enemyMoveOpt with
                             | Some move -> move.MakeTurn enemyPositionM
@@ -647,8 +669,7 @@ module GameplayDispatcherModule =
                                     match singleRoundMove with
                                     | Step direction ->
                                         let positionM = (GameplayModel.getPositionM index model) + dtovm direction
-                                        let model = { model with MoveModeler = model.MoveModeler.RelocateCharacter index positionM }
-                                        GameplayModel.updatePositionM index positionM model
+                                        GameplayModel.relocateCharacter index positionM model
                                     | Attack reactorIndex ->
                                         let reactorDamage = 4 // NOTE: just hard-coding damage for now
                                         let reactorState = GameplayModel.getCharacterState reactorIndex model
