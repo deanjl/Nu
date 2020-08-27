@@ -104,11 +104,6 @@ module GameplayDispatcherModule =
         static member getCharacterByIndex index model =
             GameplayModel.tryGetCharacterByIndex index model |> Option.get
 
-        static member getCharacterOpponents index model =
-            match index with
-            | PlayerIndex -> model.Enemies
-            | _ -> [model.Player]
-        
         static member getTurn index model =
             (GameplayModel.getCharacterByIndex index model).Turn
 
@@ -132,6 +127,11 @@ module GameplayDispatcherModule =
         
         static member getEnemyIndices model =
             List.map (fun model -> model.Index) model.Enemies
+
+        static member getOpponentIndices index model =
+            match index with
+            | PlayerIndex -> GameplayModel.getEnemyIndices model
+            | _ -> [PlayerIndex]
         
         static member getEnemyTurns model =
             List.map (fun model -> model.Turn) model.Enemies
@@ -165,9 +165,6 @@ module GameplayDispatcherModule =
 
         static member updateCharacterState index newValue model =
             GameplayModel.updateCharacterBy CharacterModel.updateCharacterState index newValue model
-        
-        static member updatePositionM index newValue model =
-            GameplayModel.updateCharacterBy CharacterModel.updatePositionM index newValue model
         
         static member updateTurnStatus index newValue model =
             GameplayModel.updateCharacterBy CharacterModel.updateTurnStatus index newValue model
@@ -229,7 +226,6 @@ module GameplayDispatcherModule =
             Map.findKey (fun _ x -> x = coordinates) model.MoveModeler.CharacterCoordinates
         
         static member relocateCharacter index coordinates model =
-            let model = GameplayModel.updatePositionM index coordinates model
             { model with MoveModeler = model.MoveModeler.RelocateCharacter index coordinates }
 
         static member addMove index move model =
@@ -343,10 +339,9 @@ module GameplayDispatcherModule =
             fieldMap
 
         static let tryGetNavigationPath index positionM occupationMap model =
-            let characterModel = GameplayModel.getCharacterByIndex index model
             let nodes = OccupationMap.makeNavigationNodes occupationMap
             let goalNode = Map.find positionM nodes
-            let currentNode = Map.find characterModel.PositionM nodes
+            let currentNode = Map.find (GameplayModel.getCoordinates index model) nodes
             let navigationPathOpt =
                 AStar.FindPath (
                     currentNode,
@@ -364,10 +359,10 @@ module GameplayDispatcherModule =
             | true ->
                 let openDirections = OccupationMap.getOpenDirectionsAtPositionM currentPositionM occupationMap
                 let direction = vmtod (targetPositionM - currentPositionM)
-                let opponents = GameplayModel.getCharacterOpponents index model
+                let opponents = GameplayModel.getOpponentIndices index model
                 if Set.contains direction openDirections then
                     Some (SingleRoundMove (Step direction))
-                elif List.exists (fun opponent -> opponent.PositionM = targetPositionM) opponents then
+                elif List.exists (fun index -> (GameplayModel.getCoordinates index model) = targetPositionM) opponents then
                     let targetIndex = GameplayModel.getIndexByCoordinates targetPositionM model
                     Some (SingleRoundMove (Attack targetIndex))
                 else None
@@ -602,7 +597,7 @@ module GameplayDispatcherModule =
                 // if any action turn is present, all actions except the first are cancelled
                 
                 let indices = GameplayModel.getEnemyIndices model
-                let attackerOpt = List.tryFind (fun x -> Math.arePositionMsAdjacent (GameplayModel.getCoordinates x model) model.Player.PositionM) indices
+                let attackerOpt = List.tryFind (fun x -> Math.arePositionMsAdjacent (GameplayModel.getCoordinates x model) (GameplayModel.getCoordinates PlayerIndex model)) indices
 
                 let updater =
                     (fun index model ->

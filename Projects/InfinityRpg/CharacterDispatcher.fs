@@ -9,16 +9,9 @@ open InfinityRpg
 module CharacterDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] CharacterModel =
-        { 
-          // gameplay logic data
-        
-          Index : CharacterIndex
+        { Index : CharacterIndex
           Turn : Turn
           CharacterState : CharacterState
-          PositionM : Vector2i
-          
-          // "puppet show" data
-          
           TurnStatus : TurnStatus
           CharacterActivityState : CharacterActivityState
           CharacterAnimationState : CharacterAnimationState
@@ -29,7 +22,6 @@ module CharacterDispatcherModule =
             { Index = PlayerIndex
               Turn = NoTurn
               CharacterState = CharacterState.empty
-              PositionM = Vector2i.Zero
               TurnStatus = Idle
               CharacterActivityState = NoActivity
               CharacterAnimationState = CharacterAnimationState.initial
@@ -42,9 +34,6 @@ module CharacterDispatcherModule =
         static member updateCharacterState newValue (model : CharacterModel) =
             { model with CharacterState = newValue }
         
-        static member updatePositionM newValue (model : CharacterModel) =
-            { model with PositionM = newValue }
-
         static member updateTurnStatus newValue (model : CharacterModel) =
             { model with TurnStatus = newValue }
         
@@ -61,7 +50,6 @@ module CharacterDispatcherModule =
             let characterState = { CharacterState.empty with HitPoints = 30; ControlType = PlayerControlled }
             { CharacterModel.initial with
                 CharacterState = characterState
-                PositionM = positionM
                 Position = vmtovf positionM }
 
         static member makeEnemy index positionM =
@@ -69,7 +57,6 @@ module CharacterDispatcherModule =
             { CharacterModel.initial with
                 Index = index
                 CharacterState = characterState
-                PositionM = positionM
                 CharacterAnimationSheet = Assets.GoopyImage
                 Position = vmtovf positionM }
     
