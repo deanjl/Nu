@@ -109,23 +109,11 @@ module GameplayDispatcherModule =
             | PlayerIndex -> model.Enemies
             | _ -> [model.Player]
         
-        static member tryGetCharacterAtPositionM positionM model =
-            GameplayModel.getCharacters model |> List.tryFind (fun model -> model.PositionM = positionM)
-
-        static member getCharacterAtPositionM positionM model =
-            GameplayModel.tryGetCharacterAtPositionM positionM model |> Option.get
-
-        static member getCharacterIndexFromPositionM positionM model =
-            (GameplayModel.getCharacterAtPositionM positionM model).Index
-        
         static member getTurn index model =
             (GameplayModel.getCharacterByIndex index model).Turn
 
         static member getCharacterState index model =
             (GameplayModel.getCharacterByIndex index model).CharacterState
-        
-        static member getPositionM index model =
-            (GameplayModel.getCharacterByIndex index model).PositionM
         
         static member getTurnStatus index model =
             (GameplayModel.getCharacterByIndex index model).TurnStatus
@@ -148,9 +136,6 @@ module GameplayDispatcherModule =
         static member getEnemyTurns model =
             List.map (fun model -> model.Turn) model.Enemies
         
-        static member getCharacterPositionMs model =
-            GameplayModel.getCharacters model |> List.map (fun model -> model.PositionM)
-
         static member getCharacterTurnStati model =
             GameplayModel.getCharacters model |> List.map (fun model -> model.TurnStatus)
         
@@ -215,31 +200,12 @@ module GameplayDispatcherModule =
             let enemies = List.map (fun model -> CharacterModel.updateTurn NoTurn model) model.Enemies
             { model with Enemies = enemies }
 
-        static member applyTurn index model =
-            match (GameplayModel.getTurn index model) with
-            | ActionTurn actionDescriptor ->
-                let reactorDamage = 4 // NOTE: just hard-coding damage for now
-                let reactorIndex = Option.get actionDescriptor.ActionTargetIndexOpt
-                let reactorTurn = GameplayModel.getTurn reactorIndex model
-                let reactorState = GameplayModel.getCharacterState reactorIndex model
-                let model = GameplayModel.updateCharacterState reactorIndex { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
-                match reactorTurn with
-                | NavigationTurn navigationDescriptor ->
-                    GameplayModel.updateTurn reactorIndex (NavigationTurn navigationDescriptor.CancelNavigation) model
-                | _ -> model
-            | NavigationTurn navigationDescriptor ->
-                let currentPositionM = GameplayModel.getPositionM index model
-                let positionM = currentPositionM + dtovm navigationDescriptor.WalkDescriptor.WalkDirection
-                let model = { model with MoveModeler = model.MoveModeler.RelocateCharacter index positionM }
-                GameplayModel.updatePositionM index positionM model
-            | _ -> model
-
         static member occupationMap indexOpt model = // provide index for adjacent character map
             let fieldTiles = (Option.get model.FieldMapOpt).FieldTiles
-            let characterPositions = GameplayModel.getCharacterPositionMs model |> List.map (fun positionM -> vmtovf positionM)
+            let characterPositions = Map.toValueList model.MoveModeler.CharacterCoordinates |> List.map (fun positionM -> vmtovf positionM)
             match indexOpt with
             | Some index ->
-                let characterPositionM = GameplayModel.getPositionM index model
+                let characterPositionM = GameplayModel.getCoordinates index model
                 OccupationMap.makeFromFieldTilesAndAdjacentCharacters characterPositionM fieldTiles characterPositions
             | None -> OccupationMap.makeFromFieldTilesAndCharacters fieldTiles characterPositions
 
@@ -256,6 +222,12 @@ module GameplayDispatcherModule =
                     recursion indices.Tail model
             recursion indices model
 
+        static member getCoordinates index model =
+            model.MoveModeler.CharacterCoordinates.[index]
+
+        static member getIndexByCoordinates coordinates model =
+            Map.findKey (fun _ x -> x = coordinates) model.MoveModeler.CharacterCoordinates
+        
         static member relocateCharacter index coordinates model =
             let model = GameplayModel.updatePositionM index coordinates model
             { model with MoveModeler = model.MoveModeler.RelocateCharacter index coordinates }
@@ -387,7 +359,7 @@ module GameplayDispatcherModule =
 
         static let tryMakeMoveFromPosition index targetPositionM model =
             let occupationMap = GameplayModel.occupationMap None model
-            let currentPositionM = GameplayModel.getPositionM index model
+            let currentPositionM = GameplayModel.getCoordinates index model
             match Math.arePositionMsAdjacent targetPositionM currentPositionM with
             | true ->
                 let openDirections = OccupationMap.getOpenDirectionsAtPositionM currentPositionM occupationMap
@@ -396,7 +368,7 @@ module GameplayDispatcherModule =
                 if Set.contains direction openDirections then
                     Some (SingleRoundMove (Step direction))
                 elif List.exists (fun opponent -> opponent.PositionM = targetPositionM) opponents then
-                    let targetIndex = GameplayModel.getCharacterIndexFromPositionM targetPositionM model
+                    let targetIndex = GameplayModel.getIndexByCoordinates targetPositionM model
                     Some (SingleRoundMove (Attack targetIndex))
                 else None
             | false ->
@@ -412,7 +384,7 @@ module GameplayDispatcherModule =
                 | None -> None
 
         static let tryMakeMoveFromDirection index direction model =
-            let positionM = GameplayModel.getPositionM index model
+            let positionM = GameplayModel.getCoordinates index model
             let targetPositionM = positionM + dtovm direction
             tryMakeMoveFromPosition index targetPositionM model
         
@@ -492,7 +464,7 @@ module GameplayDispatcherModule =
                                 | EnemyIndex _ -> GameplayModel.removeEnemy reactorIndex model
                             else model
                         | Navigation navigationDescriptor ->
-                            let position = GameplayModel.getPositionM index model |> vmtovf
+                            let position = GameplayModel.getCoordinates index model |> vmtovf
                             let model = GameplayModel.updatePosition index position model
                             match navigationDescriptor.NavigationPathOpt with
                             | None
@@ -553,7 +525,7 @@ module GameplayDispatcherModule =
                             | Action actionDescriptor ->
                                 let reactorIndex = Option.get actionDescriptor.ActionTargetIndexOpt
                                 let characterPosition = GameplayModel.getPosition index model
-                                let direction = ActionDescriptor.computeActionDirection characterPosition (GameplayModel.getPositionM reactorIndex model)
+                                let direction = ActionDescriptor.computeActionDirection characterPosition (GameplayModel.getCoordinates reactorIndex model)
                                 CharacterAnimationState.makeAction (World.getTickTime world) direction
                             | Navigation navigationDescriptor ->
                                 characterAnimationState.UpdateDirection navigationDescriptor.WalkDescriptor.WalkDirection
@@ -605,14 +577,14 @@ module GameplayDispatcherModule =
                 // player makes his move
                 
                 let model = GameplayModel.addMove PlayerIndex playerMove model
-                let playerTurn = GameplayModel.getPositionM PlayerIndex model |> playerMove.MakeTurn
+                let playerTurn = GameplayModel.getCoordinates PlayerIndex model |> playerMove.MakeTurn
                 
                 let model =
                     match playerMove with
                     | SingleRoundMove singleRoundMove ->
                         match singleRoundMove with
                         | Step direction ->
-                            let positionM = (GameplayModel.getPositionM PlayerIndex model) + dtovm direction
+                            let positionM = (GameplayModel.getCoordinates PlayerIndex model) + dtovm direction
                             GameplayModel.relocateCharacter PlayerIndex positionM model
                         | Attack index ->
                             let reactorDamage = 4 // NOTE: just hard-coding damage for now
@@ -630,11 +602,11 @@ module GameplayDispatcherModule =
                 // if any action turn is present, all actions except the first are cancelled
                 
                 let indices = GameplayModel.getEnemyIndices model
-                let attackerOpt = List.tryFind (fun x -> Math.arePositionMsAdjacent (GameplayModel.getPositionM x model) model.Player.PositionM) indices
+                let attackerOpt = List.tryFind (fun x -> Math.arePositionMsAdjacent (GameplayModel.getCoordinates x model) model.Player.PositionM) indices
 
                 let updater =
                     (fun index model ->
-                        let enemyPositionM = GameplayModel.getPositionM index model
+                        let enemyPositionM = GameplayModel.getCoordinates index model
                         let characterState = GameplayModel.getCharacterState index model
                         let enemyMoveOpt =
                             match characterState.ControlType with
@@ -668,7 +640,7 @@ module GameplayDispatcherModule =
                                 | SingleRoundMove singleRoundMove ->
                                     match singleRoundMove with
                                     | Step direction ->
-                                        let positionM = (GameplayModel.getPositionM index model) + dtovm direction
+                                        let positionM = (GameplayModel.getCoordinates index model) + dtovm direction
                                         GameplayModel.relocateCharacter index positionM model
                                     | Attack reactorIndex ->
                                         let reactorDamage = 4 // NOTE: just hard-coding damage for now
