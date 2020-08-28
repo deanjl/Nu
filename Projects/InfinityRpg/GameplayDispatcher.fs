@@ -352,32 +352,6 @@ module GameplayDispatcherModule =
             | null -> None
             | navigationPath -> Some (navigationPath |> List.ofSeq |> List.rev |> List.tail)
 
-        static let tryMakeMoveFromPosition index targetPositionM model =
-            let currentPositionM = GameplayModel.getCoordinates index model
-            match Math.arePositionMsAdjacent targetPositionM currentPositionM with
-            | true ->
-                let openDirections = model.MoveModeler.OpenDirections currentPositionM
-                let direction = vmtod (targetPositionM - currentPositionM)
-                let opponents = GameplayModel.getOpponentIndices index model
-                if List.exists (fun x -> x = direction) openDirections then
-                    Some (SingleRoundMove (Step direction))
-                elif List.exists (fun index -> (GameplayModel.getCoordinates index model) = targetPositionM) opponents then
-                    let targetIndex = GameplayModel.getIndexByCoordinates targetPositionM model
-                    Some (SingleRoundMove (Attack targetIndex))
-                else None
-            | false ->
-                match tryGetNavigationPath index targetPositionM model with
-                | Some navigationPath ->
-                    match navigationPath with
-                    | [] -> None
-                    | (head :: _) -> Some (MultiRoundMove (Travel navigationPath))
-                | None -> None
-
-        static let tryMakeMoveFromDirection index direction model =
-            let positionM = GameplayModel.getCoordinates index model
-            let targetPositionM = positionM + dtovm direction
-            tryMakeMoveFromPosition index targetPositionM model
-        
         static let walk3 positive current destination =
             let walkSpeed = if positive then Constants.Layout.CharacterWalkSpeed else -Constants.Layout.CharacterWalkSpeed
             let next = current + walkSpeed
@@ -587,7 +561,7 @@ module GameplayDispatcherModule =
 
                 let updater =
                     (fun index model ->
-                        let enemyPositionM = GameplayModel.getCoordinates index model
+                        let enemyCoordinates = GameplayModel.getCoordinates index model
                         let characterState = GameplayModel.getCharacterState index model
                         let enemyMoveOpt =
                             match characterState.ControlType with
@@ -599,8 +573,11 @@ module GameplayDispatcherModule =
                                             Some (SingleRoundMove (Attack PlayerIndex))
                                         else None
                                     | None ->
+                                        let openDirections = model.MoveModeler.OpenDirections enemyCoordinates
                                         let direction = Gen.random1 4 |> Direction.fromInt
-                                        tryMakeMoveFromDirection index direction model
+                                        if List.exists (fun x -> x = direction) openDirections then
+                                            Some (SingleRoundMove (Step direction))
+                                        else None
                                 else None
                             | _ -> None
                         
@@ -630,14 +607,37 @@ module GameplayDispatcherModule =
 
             | TryMakePlayerMove playerInput ->
 
-                let playerMoveOpt =
+                let currentCoordinates = GameplayModel.getCoordinates PlayerIndex model
+                
+                let targetCoordinatesOpt =
                     match playerInput with
-                    | TouchInput touchPosition ->
-                        let targetPositionM = World.mouseToWorld false touchPosition world |> vftovm
-                        tryMakeMoveFromPosition PlayerIndex targetPositionM model
-                    | DetailInput direction -> tryMakeMoveFromDirection PlayerIndex direction model
+                    | TouchInput touchPosition -> Some (World.mouseToWorld false touchPosition world |> vftovm)
+                    | DetailInput direction -> Some (currentCoordinates + dtovm direction)
                     | NoInput -> None
 
+                let playerMoveOpt =
+                    match targetCoordinatesOpt with
+                    | Some coordinates ->
+                        match Math.arePositionMsAdjacent coordinates currentCoordinates with
+                        | true ->
+                            let openDirections = model.MoveModeler.OpenDirections currentCoordinates
+                            let direction = vmtod (coordinates - currentCoordinates)
+                            let opponents = GameplayModel.getOpponentIndices PlayerIndex model
+                            if List.exists (fun x -> x = direction) openDirections then
+                                Some (SingleRoundMove (Step direction))
+                            elif List.exists (fun index -> (GameplayModel.getCoordinates index model) = coordinates) opponents then
+                                let targetIndex = GameplayModel.getIndexByCoordinates coordinates model
+                                Some (SingleRoundMove (Attack targetIndex))
+                            else None
+                        | false ->
+                            match tryGetNavigationPath PlayerIndex coordinates model with
+                            | Some navigationPath ->
+                                match navigationPath with
+                                | [] -> None
+                                | _ -> Some (MultiRoundMove (Travel navigationPath))
+                            | None -> None
+                    | None -> None
+                
                 match playerMoveOpt with
                 | Some move -> withMsg model (PlayNewRound move)
                 | _ -> just model
