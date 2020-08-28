@@ -125,9 +125,6 @@ module GameplayDispatcherModule =
         static member getPosition index model =
             (GameplayModel.getCharacterByIndex index model).Position
         
-        static member getCharacterIndices model =
-            GameplayModel.getCharacters model |> List.map (fun model -> model.Index)
-        
         static member getEnemyIndices model =
             List.map (fun model -> model.Index) model.Enemies
 
@@ -141,15 +138,6 @@ module GameplayDispatcherModule =
         
         static member getCharacterTurnStati model =
             GameplayModel.getCharacters model |> List.map (fun model -> model.TurnStatus)
-        
-        static member getEnemyActivityStates model =
-            List.map (fun model -> model.CharacterActivityState) model.Enemies
-        
-        static member getCharacterActivityStates model =
-            model.Player.CharacterActivityState :: (GameplayModel.getEnemyActivityStates model)
-        
-        static member getEnemyPositions model =
-            List.map (fun model -> model.Position) model.Enemies
         
         static member anyTurnsInProgress model =
             GameplayModel.getCharacterTurnStati model |> List.exists (fun turnStatus -> turnStatus <> Idle)
@@ -193,9 +181,6 @@ module GameplayDispatcherModule =
         static member updateEnemyActivityStates newValues model =
             GameplayModel.updateEnemiesBy CharacterModel.updateCharacterActivityState newValues model
 
-        static member updateEnemyTurns newValues model =
-            GameplayModel.updateEnemiesBy CharacterModel.updateTurn newValues model
-
         static member forEachIndex updater indices model =
             let rec recursion (indices : CharacterIndex list) model =
                 if indices.Length = 0 then model
@@ -226,6 +211,31 @@ module GameplayDispatcherModule =
             let model = GameplayModel.updateTurn index turn model
             let model = GameplayModel.updateTurnStatus index TurnPending model
             { model with MoveModeler = model.MoveModeler.AddMove index move }
+        
+        static member finishMove index model =
+            let model = GameplayModel.updateTurn index NoTurn model
+            let model = GameplayModel.updateCharacterActivityState index NoActivity model
+            GameplayModel.updateTurnStatus index Idle model
+        
+        static member applyStep index direction model =
+            let coordinates = (GameplayModel.getCoordinates index model) + dtovm direction
+            GameplayModel.relocateCharacter index coordinates model
+        
+        static member applyAttack reactorIndex model =
+            let reactorDamage = 4 // NOTE: just hard-coding damage for now
+            let reactorState = GameplayModel.getCharacterState reactorIndex model
+            GameplayModel.updateCharacterState reactorIndex { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
+        
+        static member stopTraveler reactorIndex model =
+            match GameplayModel.getTurn reactorIndex model with
+            | NavigationTurn navigationDescriptor ->
+                GameplayModel.updateTurn reactorIndex (NavigationTurn navigationDescriptor.CancelNavigation) model
+            | _ -> model
+        
+        static member activateCharacter index model =
+            let activity = GameplayModel.getTurn index model |> Turn.toCharacterActivityState
+            let model = GameplayModel.updateCharacterActivityState index activity model
+            GameplayModel.updateTurnStatus PlayerIndex TurnBeginning model
         
         static member addFieldMap fieldMap model =
             let moveModeler = MoveModeler.make fieldMap
@@ -410,14 +420,10 @@ module GameplayDispatcherModule =
                     | TurnFinishing ->
                         match GameplayModel.getCharacterActivityState index model with
                         | Action actionDescriptor ->
+                            let model = GameplayModel.finishMove index model
                             let reactorIndex = Option.get actionDescriptor.ActionTargetIndexOpt
                             let reactorState = GameplayModel.getCharacterState reactorIndex model
                             let characterAnimationState = GameplayModel.getCharacterAnimationState index model
-
-                            let model = GameplayModel.updateTurn index NoTurn model
-                            let model = GameplayModel.updateCharacterActivityState index NoActivity model
-                            let model = GameplayModel.updateTurnStatus index Idle model
-
                             let model = GameplayModel.updateCharacterAnimationState index (characterAnimationState.Facing (World.getTickTime world)) model
                             if reactorState.HitPoints <= 0 then
                                 match reactorIndex with
@@ -429,10 +435,7 @@ module GameplayDispatcherModule =
                             let model = GameplayModel.updatePosition index position model
                             match navigationDescriptor.NavigationPathOpt with
                             | None
-                            | Some (_ :: []) ->
-                                let model = GameplayModel.updateTurn index NoTurn model
-                                let model = GameplayModel.updateCharacterActivityState index NoActivity model
-                                GameplayModel.updateTurnStatus index Idle model
+                            | Some (_ :: []) -> GameplayModel.finishMove index model
                             | _ -> model
                         | _ -> failwith "TurnStatus is TurnFinishing; CharacterActivityState should not be NoActivity"
                     | _ -> failwith "non-finishing turns should be filtered out by this point"
@@ -505,9 +508,7 @@ module GameplayDispatcherModule =
                 // player's turn is converted to activity at the beginning of the round, activating the observable playback of his move
                 let model =
                     if model.Player.TurnStatus = TurnPending then
-                        let activity = Turn.toCharacterActivityState model.Player.Turn
-                        let model = GameplayModel.updateTurnStatus PlayerIndex TurnBeginning model
-                        GameplayModel.updateCharacterActivityState PlayerIndex activity model
+                        GameplayModel.activateCharacter PlayerIndex model
                     else model
 
                 // enemies are so activated at the same time during player movement, or after player's action has finished playback
@@ -517,7 +518,7 @@ module GameplayDispatcherModule =
                         match model.Player.CharacterActivityState with
                         | Action _ -> model
                         | Navigation _ 
-                        | NoActivity ->
+                        | NoActivity -> // TODO: find out why using activateCharacter here triggered "turn status is TurnBeginning..." exception
                             let enemyActivities = GameplayModel.getEnemyTurns model |> List.map Turn.toCharacterActivityState
                             let model = GameplayModel.forEachIndex (fun index model -> GameplayModel.updateTurnStatus index TurnBeginning model) indices model
                             GameplayModel.updateEnemyActivityStates enemyActivities model
@@ -542,17 +543,11 @@ module GameplayDispatcherModule =
                     match playerMove with
                     | SingleRoundMove singleRoundMove ->
                         match singleRoundMove with
-                        | Step direction ->
-                            let positionM = (GameplayModel.getCoordinates PlayerIndex model) + dtovm direction
-                            GameplayModel.relocateCharacter PlayerIndex positionM model
-                        | Attack index ->
-                            let reactorDamage = 4 // NOTE: just hard-coding damage for now
-                            let reactorState = GameplayModel.getCharacterState index model
-                            GameplayModel.updateCharacterState index { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
+                        | Step direction -> GameplayModel.applyStep PlayerIndex direction model
+                        | Attack reactorIndex -> GameplayModel.applyAttack reactorIndex model
                     | MultiRoundMove multiRoundMove ->
                         match multiRoundMove with
-                        | Travel (head :: _) ->
-                            GameplayModel.relocateCharacter PlayerIndex head.PositionM model
+                        | Travel (head :: _) -> GameplayModel.relocateCharacter PlayerIndex head.PositionM model
                 
                 // (still standing) enemies make theirs
                 
@@ -561,7 +556,6 @@ module GameplayDispatcherModule =
 
                 let updater =
                     (fun index model ->
-                        let enemyCoordinates = GameplayModel.getCoordinates index model
                         let characterState = GameplayModel.getCharacterState index model
                         let enemyMoveOpt =
                             match characterState.ControlType with
@@ -573,7 +567,7 @@ module GameplayDispatcherModule =
                                             Some (SingleRoundMove (Attack PlayerIndex))
                                         else None
                                     | None ->
-                                        let openDirections = model.MoveModeler.OpenDirections enemyCoordinates
+                                        let openDirections = GameplayModel.getCoordinates index model |> model.MoveModeler.OpenDirections
                                         let direction = Gen.random1 4 |> Direction.fromInt
                                         if List.exists (fun x -> x = direction) openDirections then
                                             Some (SingleRoundMove (Step direction))
@@ -587,17 +581,10 @@ module GameplayDispatcherModule =
                             match move with
                             | SingleRoundMove singleRoundMove ->
                                 match singleRoundMove with
-                                | Step direction ->
-                                    let positionM = (GameplayModel.getCoordinates index model) + dtovm direction
-                                    GameplayModel.relocateCharacter index positionM model
+                                | Step direction -> GameplayModel.applyStep index direction model
                                 | Attack reactorIndex ->
-                                    let reactorDamage = 4 // NOTE: just hard-coding damage for now
-                                    let reactorState = GameplayModel.getCharacterState reactorIndex model
-                                    let model = GameplayModel.updateCharacterState reactorIndex { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
-                                    match GameplayModel.getTurn reactorIndex model with
-                                    | NavigationTurn navigationDescriptor ->
-                                        GameplayModel.updateTurn reactorIndex (NavigationTurn navigationDescriptor.CancelNavigation) model
-                                    | _ -> model
+                                    let model = GameplayModel.applyAttack reactorIndex model
+                                    GameplayModel.stopTraveler reactorIndex model
                             | _ -> failwith "enemy not yet capable of multiround move"
                         | None -> model)
                         
