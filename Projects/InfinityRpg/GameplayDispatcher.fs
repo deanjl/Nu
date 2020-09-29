@@ -9,6 +9,36 @@ open InfinityRpg
 [<AutoOpen>]
 module GameplayDispatcherModule =
 
+    type FieldMapUnit =
+        { RandSeed : uint64
+          OffsetCount : Vector2i
+          IsHorizontal : bool
+          PathStart : Vector2i
+          PathEnd : Vector2i }
+
+        member this.ToFieldMap =
+            let rand = Rand.makeFromSeedState this.RandSeed
+            FieldMap.make Assets.FieldTileSheetImage this.OffsetCount Constants.Layout.FieldUnitSizeM [(this.PathStart, this.PathEnd)] rand |> fst
+
+        static member make fieldMapUnitOpt =
+            let sysrandom = System.Random ()
+            let randSeed = uint64 (sysrandom.Next ())
+            let randResult = Gen.random1 (Constants.Layout.FieldUnitSizeM.X - 4) // assumes X and Y are equal
+            let pathEnd = if randResult % 2 = 0 then Vector2i (randResult + 2, Constants.Layout.FieldUnitSizeM.Y - 2) else Vector2i (Constants.Layout.FieldUnitSizeM.X - 2, randResult + 2)
+            let (offsetCount, pathStart) =
+                match fieldMapUnitOpt with
+                | Some fieldMapUnit ->
+                    match fieldMapUnit.IsHorizontal with
+                    | true -> (fieldMapUnit.OffsetCount + Vector2i.Right, Vector2i (1, fieldMapUnit.PathEnd.Y))
+                    | false -> (fieldMapUnit.OffsetCount + Vector2i.Up, Vector2i (fieldMapUnit.PathEnd.X, 1))
+                | None -> (Vector2i.Zero, Vector2i.One)
+            
+            { RandSeed = randSeed
+              OffsetCount = offsetCount
+              IsHorizontal = pathEnd.X > pathEnd.Y
+              PathStart = pathStart
+              PathEnd = pathEnd }
+    
     type SingleRoundMove =
         | Step of Direction
         | Attack of CharacterIndex
@@ -81,7 +111,8 @@ module GameplayDispatcherModule =
             { MoveModeler.empty with PassableCoordinates = passableCoordinates }                    
     
     type [<StructuralEquality; NoComparison>] GameplayModel =
-        { MoveModeler : MoveModeler
+        { FieldMapUnit : FieldMapUnit
+          MoveModeler : MoveModeler
           ContentRandState : uint64
           ShallLoadGame : bool
           FieldMapOpt : FieldMap option
@@ -91,7 +122,8 @@ module GameplayDispatcherModule =
         static member initial =
             let sysrandom = System.Random ()
             let contentSeedState = uint64 (sysrandom.Next ())
-            { MoveModeler = MoveModeler.empty
+            { FieldMapUnit = FieldMapUnit.make None
+              MoveModeler = MoveModeler.empty
               ContentRandState = contentSeedState
               ShallLoadGame = false
               FieldMapOpt = None
@@ -296,53 +328,6 @@ module GameplayDispatcherModule =
 
     type GameplayDispatcher () =
         inherit ScreenDispatcher<GameplayModel, GameplayMessage, GameplayCommand> (GameplayModel.initial)
-
-        static let determinePathEnd rand =
-            let (randResult, rand) = Rand.nextIntUnder (Constants.Layout.FieldUnitSizeM.X - 4) rand // assumes X and Y are equal
-            let pathEnd = if randResult % 2 = 0 then Vector2i (randResult + 2, Constants.Layout.FieldUnitSizeM.Y - 2) else Vector2i (Constants.Layout.FieldUnitSizeM.X - 2, randResult + 2)
-            (pathEnd, rand)
-
-        static let makeFieldUnit (fieldUnitOpt, rand) =
-            let (pathEnd, rand) = determinePathEnd rand
-            let (offsetCount, pathStart) =
-                match fieldUnitOpt with
-                | Some fieldUnit ->
-                    match fieldUnit.IsHorizontal with
-                    | true -> (fieldUnit.OffsetCount + Vector2i.Right, Vector2i (1, fieldUnit.PathEnd.Y))
-                    | false -> (fieldUnit.OffsetCount + Vector2i.Up, Vector2i (fieldUnit.PathEnd.X, 1))
-                | None -> (Vector2i.Zero, Vector2i.One)
-            let fieldUnit =
-                { OffsetCount = offsetCount
-                  IsHorizontal = pathEnd.X > pathEnd.Y
-                  PathStart = pathStart
-                  PathEnd = pathEnd }
-            (fieldUnit, rand)
-
-        static let fieldUnitToFieldTiles (fieldUnit, rand) =
-            let offsetM = Vector2i.Multiply (fieldUnit.OffsetCount, Constants.Layout.FieldUnitSizeM)
-            let pathEdgesM = [(offsetM + fieldUnit.PathStart, offsetM + fieldUnit.PathEnd)]
-            let (fieldMap, rand) = FieldMap.make Assets.FieldTileSheetImage offsetM Constants.Layout.FieldUnitSizeM pathEdgesM rand
-            (fieldMap.FieldTiles, rand)
-
-        static let createField rand =
-            let extentions = 0
-            let fieldUnitTuples =
-                List.fold
-                    (fun (fieldUnitTuples : (FieldUnit * Rand) list) _ ->
-                        let lastFieldUnitTuple = fieldUnitTuples.Head
-                        let lastFieldUnitTupleWithOpt = (Some (fst lastFieldUnitTuple), snd lastFieldUnitTuple)
-                        let fieldUnitTuple = makeFieldUnit lastFieldUnitTupleWithOpt
-                        fieldUnitTuple :: fieldUnitTuples)
-                    [makeFieldUnit (None, rand)]
-                    [0 .. extentions - 1]
-            let offsetCount = (fst fieldUnitTuples.Head).OffsetCount
-            let fieldTilesTupleList = List.map (fun fieldUnitTuple -> fieldUnitToFieldTiles fieldUnitTuple) fieldUnitTuples
-            let fieldTiles = List.map (fun fieldTiles -> fst fieldTiles) fieldTilesTupleList |> List.reduce (fun concat fieldTiles -> concat @@ fieldTiles)
-            let fieldMap = 
-                { FieldSizeM = Constants.Layout.FieldUnitSizeM + Vector2i.Multiply (offsetCount, Constants.Layout.FieldUnitSizeM)
-                  FieldTiles = fieldTiles
-                  FieldTileSheet = Assets.FieldTileSheetImage }
-            fieldMap
 
         static let tryGetNavigationPath index positionM model =
             let fieldTiles = (Option.get model.FieldMapOpt).FieldTiles
@@ -635,7 +620,7 @@ module GameplayDispatcherModule =
                     let model = scvalue<GameplayModel> modelStr
                     just model
                 else
-                    let fieldMap = Rand.makeFromSeedState model.ContentRandState |> createField
+                    let fieldMap = model.FieldMapUnit.ToFieldMap
                     let model = GameplayModel.addFieldMap fieldMap model
                     let model = GameplayModel.makePlayer model
                     let model = GameplayModel.makeEnemies 9 model
