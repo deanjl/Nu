@@ -210,20 +210,20 @@ module WorldModuleEntity =
             let transform = entityState.Transform
             match transform.Rotation with
             | 0.0f ->
-                let boundsOverflow = Math.makeBoundsOverflow transform.Position transform.Size entityState.Overflow
+                let boundsOverflow = v4BoundsOverflow transform.Position transform.Size entityState.Overflow
                 boundsOverflow // no need to transform when unrotated
             | _ ->
-                let boundsOverflow = Math.makeBoundsOverflow transform.Position transform.Size entityState.Overflow
+                let boundsOverflow = v4BoundsOverflow transform.Position transform.Size entityState.Overflow
                 let position = boundsOverflow.Xy
-                let size = Vector2 (boundsOverflow.Z, boundsOverflow.W) - position
+                let size = boundsOverflow.Zw
                 let center = position + size * 0.5f
                 let corner = position + size
                 let centerToCorner = corner - center
                 let quaternion = Quaternion.FromAxisAngle (Vector3.UnitZ, Constants.Math.DegreesToRadiansF * 45.0f)
-                let newSizeOver2 = Vector2 (Vector2.Transform (centerToCorner, quaternion)).Y
+                let newSizeOver2 = v2Dup (Vector2.Transform (centerToCorner, quaternion)).Y
                 let newPosition = center - newSizeOver2
                 let newSize = newSizeOver2 * 2.0f
-                Vector4 (newPosition.X, newPosition.Y, newPosition.X + newSize.X, newPosition.Y + newSize.Y)
+                v4Bounds newPosition newSize
 
         static member internal getEntityImperative entity world =
             (World.getEntityState entity world).Imperative
@@ -293,6 +293,7 @@ module WorldModuleEntity =
         static member internal getEntityPublishUpdates entity world = (World.getEntityState entity world).PublishUpdates
         static member internal getEntityPublishPostUpdates entity world = (World.getEntityState entity world).PublishPostUpdates
         static member internal getEntityPersistent entity world = (World.getEntityState entity world).Persistent
+        static member internal getEntityOptimized entity world = (World.getEntityState entity world).Optimized
         static member internal getEntityOverflow entity world = (World.getEntityState entity world).Overflow
         static member internal getEntityOverlayNameOpt entity world = (World.getEntityState entity world).OverlayNameOpt
         static member internal getEntityFacetNames entity world = (World.getEntityState entity world).FacetNames
@@ -300,10 +301,10 @@ module WorldModuleEntity =
         static member internal getEntityCreationTimeStamp entity world = (World.getEntityState entity world).CreationTimeStamp
         static member internal getEntityName entity world = (World.getEntityState entity world).Name
         static member internal getEntityId entity world = (World.getEntityState entity world).Id
-        static member internal setEntityPosition value entity world = World.updateEntityStatePlus (fun entityState -> if value <> entityState.Transform.Position then Some (if entityState.Imperative then entityState.Transform.Position <- value; entityState else { entityState with Transform = { entityState.Transform with Position = value }}) else None) false false Property? Position value entity world
-        static member internal setEntitySize value entity world = World.updateEntityStatePlus (fun entityState -> if value <> entityState.Transform.Size then Some (if entityState.Imperative then entityState.Transform.Size <- value; entityState else { entityState with Transform = { entityState.Transform with Size = value }}) else None) false false Property? Size value entity world
-        static member internal setEntityRotation value entity world = World.updateEntityStatePlus (fun entityState -> if value <> entityState.Transform.Rotation then Some (if entityState.Imperative then entityState.Transform.Rotation <- value; entityState else { entityState with Transform = { entityState.Transform with Rotation = value }}) else None) false false Property? Rotation value entity world
-        static member internal setEntityDepth value entity world = World.updateEntityState (fun entityState -> if value <> entityState.Transform.Depth then Some (if entityState.Imperative then entityState.Transform.Depth <- value; entityState else { entityState with Transform = { entityState.Transform with Depth = value }}) else None) false false Property? Depth value entity world
+        static member internal setEntityPosition value entity world = let mutable transform = World.getEntityTransform entity world in if value <> transform.Position then World.setEntityTransform (transform.Position <- value; transform) entity world else world
+        static member internal setEntitySize value entity world = let mutable transform = World.getEntityTransform entity world in if value <> transform.Size then World.setEntityTransform (transform.Size <- value; transform) entity world else world
+        static member internal setEntityRotation value entity world = let mutable transform = World.getEntityTransform entity world in if value <> transform.Rotation then World.setEntityTransform (transform.Rotation <- value; transform) entity world else world
+        static member internal setEntityDepth value entity world = let mutable transform = World.getEntityTransform entity world in if value <> transform.Depth then World.setEntityTransform (transform.Depth <- value; transform) entity world else world
         static member internal setEntityOmnipresent value entity world = World.updateEntityStatePlus (fun entityState -> if value <> entityState.Omnipresent then Some (if entityState.Imperative then entityState.Omnipresent <- value; entityState else (let entityState = EntityState.copy entityState in entityState.Omnipresent <- value; entityState)) else None) false false Property? Omnipresent value entity world
         static member internal setEntityAbsolute value entity world = World.updateEntityStatePlus (fun entityState -> if value <> entityState.Absolute then Some (if entityState.Imperative then entityState.Absolute <- value; entityState else (let entityState = EntityState.copy entityState in entityState.Absolute <- value; entityState)) else None) false false Property? Absolute value entity world
         static member internal setEntityPublishChanges value entity world = World.updateEntityState (fun entityState -> if value <> entityState.PublishChanges then Some (if entityState.Imperative then entityState.PublishChanges <- value; entityState else (let entityState = EntityState.copy entityState in entityState.PublishChanges <- value; entityState)) else None) false false Property? PublishChanges value entity world
@@ -316,12 +317,34 @@ module WorldModuleEntity =
         static member internal setEntityOverflow value entity world = World.updateEntityStatePlus (fun entityState -> if value <> entityState.Overflow then Some (if entityState.Imperative then entityState.Overflow <- value; entityState else { entityState with Overflow = value }) else None) false false Property? Overflow value entity world
         static member internal setEntityScriptFrame value entity world = World.updateEntityState (fun entityState -> if value <> entityState.ScriptFrame then Some (if entityState.Imperative then entityState.ScriptFrame <- value; entityState else { entityState with ScriptFrame = value }) else None) false true Property? ScriptFrame value entity world
 
+        static member internal getEntityTransformWithoutEvent entity world =
+            EntityState.getTransform (World.getEntityState entity world)
+
+        static member internal setEntityTransformWithoutEvent value entity world =
+            let oldWorld = world
+            let oldEntityState = World.getEntityState entity world
+            if oldEntityState.Transform.Flags <> value.Flags then failwith "Cannot change transform flags via setEntityTransformEithoutEvent."
+            let oldOmnipresent = oldEntityState.Omnipresent
+            let oldAbsolute = oldEntityState.Absolute
+            let oldBoundsMax = World.getEntityStateBoundsMax oldEntityState
+            let (changed, world) =
+                World.updateEntityStateWithoutEvent
+                    (fun entityState ->
+                        if value <> entityState.Transform
+                        then Some (EntityState.setTransform value entityState)
+                        else None)
+                    entity world
+            if changed
+            then World.updateEntityInEntityTree oldOmnipresent oldAbsolute oldBoundsMax entity oldWorld world
+            else world
+
         static member internal getEntityTransform entity world =
             EntityState.getTransform (World.getEntityState entity world)
 
         static member internal setEntityTransform value entity world =
             let oldWorld = world
             let oldEntityState = World.getEntityState entity world
+            if oldEntityState.Transform.Flags <> value.Flags then failwith "Cannot change transform flags via setEntityTransform."
             let oldOmnipresent = oldEntityState.Omnipresent
             let oldAbsolute = oldEntityState.Absolute
             let oldBoundsMax = World.getEntityStateBoundsMax oldEntityState
@@ -336,7 +359,7 @@ module WorldModuleEntity =
                 let world = World.updateEntityInEntityTree oldOmnipresent oldAbsolute oldBoundsMax entity oldWorld world
                 if World.getEntityPublishChanges entity world then
                     let world = World.publishEntityChange Property? Transform value entity world
-                    let world = World.publishEntityChange Property? Bounds (v4 value.Position.X value.Position.Y (value.Position.X + value.Size.X) (value.Position.Y + value.Size.Y)) entity world
+                    let world = World.publishEntityChange Property? Bounds (v4Bounds value.Position value.Size) entity world
                     let world = World.publishEntityChange Property? Position value.Position entity world
                     let world = World.publishEntityChange Property? Center (value.Position + value.Size * 0.5f) entity world
                     let world = World.publishEntityChange Property? Bottom (value.Position + value.Size.WithY 0.0f * 0.5f) entity world
@@ -349,65 +372,30 @@ module WorldModuleEntity =
 
         static member internal getEntityBounds entity world =
             let transform = (World.getEntityState entity world).Transform
-            v4 transform.Position.X transform.Position.Y (transform.Position.X + transform.Size.X) (transform.Position.Y + transform.Size.Y)
+            v4Bounds transform.Position transform.Size
 
         static member internal setEntityBounds (value : Vector4) entity world =
-            World.updateEntityStatePlus
-                (fun entityState ->
-                    if  entityState.Transform.Position.X <> value.X ||
-                        entityState.Transform.Position.Y <> value.Y ||
-                        entityState.Transform.Position.X + entityState.Transform.Size.X <> value.Z ||
-                        entityState.Transform.Position.Y + entityState.Transform.Size.Y <> value.W then
-                        if entityState.Imperative then
-                            entityState.Transform.Position.X <- value.X
-                            entityState.Transform.Position.Y <- value.Y
-                            entityState.Transform.Size.X <- value.Z - value.X
-                            entityState.Transform.Size.Y <- value.W - value.Y
-                            Some entityState
-                        else
-                            let transform =
-                                { entityState.Transform with
-                                    Position = v2 value.X value.Y
-                                    Size = v2 (value.Z - value.X) (value.W - value.Y) }
-                            let entityState = { entityState with Transform = transform }
-                            Some entityState
-                    else None)
-                false false Property? Position value entity world
+            let transform = World.getEntityTransform entity world
+            let transform = { transform with Position = v2 value.X value.Y; Size = v2 value.Z value.W }
+            World.setEntityTransform transform entity world
 
         static member internal getEntityCenter entity world =
             let transform = (World.getEntityState entity world).Transform
             transform.Position + transform.Size * 0.5f
 
         static member internal setEntityCenter value entity world =
-            World.updateEntityStatePlus
-                (fun entityState ->
-                    if value <> entityState.Position + entityState.Transform.Size * 0.5f then
-                        if entityState.Imperative then
-                            entityState.Transform.Position <- value - entityState.Transform.Size * 0.5f
-                            Some entityState
-                        else
-                            let entityState = { entityState with Transform = { entityState.Transform with Position = value - entityState.Transform.Size * 0.5f }}
-                            Some entityState
-                    else None)
-                false false Property? Position value entity world
+            let transform = World.getEntityTransform entity world
+            let transform = { transform with Position = value - transform.Size * 0.5f }
+            World.setEntityTransform transform entity world
 
         static member internal getEntityBottom entity world =
             let transform = (World.getEntityState entity world).Transform
             transform.Position + transform.Size.WithY 0.0f * 0.5f
 
         static member internal setEntityBottom value entity world =
-            World.updateEntityStatePlus
-                (fun entityState ->
-                    if value <> entityState.Transform.Position + entityState.Transform.Size.WithY 0.0f * 0.5f then
-                        if entityState.Imperative then
-                            entityState.Transform.Position <- value - entityState.Transform.Size.WithY 0.0f * 0.5f
-                            Some entityState
-                        else
-                            let transform = { entityState.Transform with Position = value - entityState.Transform.Size.WithY 0.0f * 0.5f }
-                            let entityState = { entityState with Transform = transform }
-                            Some entityState
-                    else None)
-                false false Property? Position value entity world
+            let transform = World.getEntityTransform entity world
+            let transform = { transform with Position = value - transform.Size.WithY 0.0f * 0.5f }
+            World.setEntityTransform transform entity world
 
         static member private tryGetFacet facetName world =
             let facets = World.getFacets world
@@ -1250,6 +1238,7 @@ module WorldModuleEntity =
         Getters.Add ("PublishUpdates", fun entity world -> { PropertyType = typeof<bool>; PropertyValue = World.getEntityPublishUpdates entity world })
         Getters.Add ("PublishPostUpdates", fun entity world -> { PropertyType = typeof<bool>; PropertyValue = World.getEntityPublishPostUpdates entity world })
         Getters.Add ("Persistent", fun entity world -> { PropertyType = typeof<bool>; PropertyValue = World.getEntityPersistent entity world })
+        Getters.Add ("Optimized", fun entity world -> { PropertyType = typeof<bool>; PropertyValue = World.getEntityOptimized entity world })
         Getters.Add ("OverlayNameOpt", fun entity world -> { PropertyType = typeof<string option>; PropertyValue = World.getEntityOverlayNameOpt entity world })
         Getters.Add ("FacetNames", fun entity world -> { PropertyType = typeof<string Set>; PropertyValue = World.getEntityFacetNames entity world })
         Getters.Add ("CreationTimeStamp", fun entity world -> { PropertyType = typeof<int64>; PropertyValue = World.getEntityCreationTimeStamp entity world })

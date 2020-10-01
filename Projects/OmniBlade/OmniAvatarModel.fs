@@ -6,12 +6,13 @@ open Nu
 [<RequireQualifiedAccess>]
 module AvatarModel =
 
-    type [<CustomEquality; NoComparison>] AvatarModel =
+    type [<ReferenceEquality; NoComparison>] AvatarModel =
         private
-            { Dirty_ : Guid
-              BoundsOriginal_ : Vector4
+            { BoundsOriginal_ : Vector4
               Bounds_ : Vector4
               AnimationState_ : CharacterAnimationState
+              CollidedBodyShapes_ : BodyShapeSource list
+              SeparatedBodyShapes_ : BodyShapeSource list
               IntersectedBodyShapes_ : BodyShapeSource list }
 
         (* Bounds Original Properties *)
@@ -35,11 +36,9 @@ module AvatarModel =
         member this.Direction = this.AnimationState_.Direction
 
         (* Local Properties *)
+        member this.CollidedBodyShapes = this.CollidedBodyShapes_
+        member this.SeparatedBodyShapes = this.SeparatedBodyShapes_
         member this.IntersectedBodyShapes = this.IntersectedBodyShapes_
-
-        (* Equals *)
-        override this.GetHashCode () = hash this.Dirty_
-        override this.Equals thatObj = match thatObj with :? AvatarModel as that -> this.Dirty_ = that.Dirty_ | _ -> false
 
     let getAnimationIndex time avatar =
         CharacterAnimationState.index time avatar.AnimationState_
@@ -50,41 +49,49 @@ module AvatarModel =
     let getAnimationFinished time avatar =
         CharacterAnimationState.getFinished time avatar.AnimationState_
 
+    let updateCollidedBodyShapes updater (avatar : AvatarModel) =
+        { avatar with CollidedBodyShapes_ = updater avatar.CollidedBodyShapes_ }
+
+    let updateSeparatedBodyShapes updater (avatar : AvatarModel) =
+        { avatar with SeparatedBodyShapes_ = updater avatar.SeparatedBodyShapes_ }
+
     let updateIntersectedBodyShapes updater (avatar : AvatarModel) =
-        { avatar with Dirty_ = Gen.id; IntersectedBodyShapes_ = updater avatar.IntersectedBodyShapes_ }
+        { avatar with IntersectedBodyShapes_ = updater avatar.IntersectedBodyShapes_ }
 
     let updateBounds updater (avatar : AvatarModel) =
-        { avatar with Dirty_ = Gen.id; Bounds_ = updater avatar.Bounds_ }
+        { avatar with Bounds_ = updater avatar.Bounds_ }
 
     let updatePosition updater (avatar : AvatarModel) =
-        { avatar with Dirty_ = Gen.id; Bounds_ = avatar.Position |> updater |> avatar.Bounds.WithPosition }
+        { avatar with Bounds_ = avatar.Position |> updater |> avatar.Bounds.WithPosition }
 
     let updateCenter updater (avatar : AvatarModel) =
-        { avatar with Dirty_ = Gen.id; Bounds_ = avatar.Center |> updater |> avatar.Bounds.WithCenter }
+        { avatar with Bounds_ = avatar.Center |> updater |> avatar.Bounds.WithCenter }
 
     let updateBottom updater (avatar : AvatarModel) =
-        { avatar with Dirty_ = Gen.id; Bounds_ = avatar.Bottom |> updater |> avatar.Bounds.WithBottom }
+        { avatar with Bounds_ = avatar.Bottom |> updater |> avatar.Bounds.WithBottom }
 
     let updateDirection updater (avatar : AvatarModel) =
-        { avatar with Dirty_ = Gen.id; AnimationState_ = { avatar.AnimationState_ with Direction = updater avatar.AnimationState_.Direction }}
+        { avatar with AnimationState_ = { avatar.AnimationState_ with Direction = updater avatar.AnimationState_.Direction }}
 
     let animate time cycle avatar =
-        { avatar with Dirty_ = Gen.id; AnimationState_ = CharacterAnimationState.setCycle (Some time) cycle avatar.AnimationState_ }
+        { avatar with AnimationState_ = CharacterAnimationState.setCycle (Some time) cycle avatar.AnimationState_ }
 
     let make bounds animationSheet direction =
         let animationState = { TimeStart = 0L; AnimationSheet = animationSheet; AnimationCycle = IdleCycle; Direction = direction }
-        { Dirty_ = Gen.id
-          BoundsOriginal_ = bounds
+        { BoundsOriginal_ = bounds
           Bounds_ = bounds
           AnimationState_ = animationState
+          CollidedBodyShapes_ = []
+          SeparatedBodyShapes_ = []
           IntersectedBodyShapes_ = [] }
 
     let empty =
         let bounds = v4Bounds (v2Dup 128.0f) Constants.Gameplay.CharacterSize
-        { Dirty_ = Gen.id
-          BoundsOriginal_ = bounds
+        { BoundsOriginal_ = bounds
           Bounds_ = bounds
           AnimationState_ = CharacterAnimationState.empty
+          CollidedBodyShapes_ = []
+          SeparatedBodyShapes_ = []
           IntersectedBodyShapes_ = [] }
 
 type AvatarModel = AvatarModel.AvatarModel

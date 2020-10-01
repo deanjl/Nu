@@ -10,19 +10,41 @@ module EcsTests =
 
     type [<NoEquality; NoComparison; Struct>] Skin =
         { mutable RefCount : int
-          mutable Color : Vector4 }
-        interface Component with
+          mutable Color : Color }
+        interface Skin Component with
             member this.RefCount with get () = this.RefCount and set value = this.RefCount <- value
+            member this.SystemNames = [||]
+            member this.Junction _ _ _ = this
+            member this.Disjunction _ _ _ = ()
 
     type [<NoEquality; NoComparison; Struct>] Airship =
         { mutable RefCount : int
           Transform : Transform ComponentRef
           Skin : Skin ComponentRef }
-        interface Airship Junction with
+        interface Airship Component with
             member this.RefCount with get () = this.RefCount and set value = this.RefCount <- value
             member this.SystemNames = [|"Transform"; "Skin"|]
-            member this.Junction systems registration ecs = { id this with Transform = ecs.Junction registration systems.[0]; Skin = ecs.Junction registration systems.[1] }
+            member this.Junction systems entityId ecs = { id this with Transform = ecs.Junction entityId systems.[0]; Skin = ecs.Junction entityId systems.[1] }
             member this.Disjunction systems entityId ecs = ecs.Disjunction<Transform> entityId systems.[0]; ecs.Disjunction<Skin> entityId systems.[1]
+
+    type [<NoEquality; NoComparison; Struct>] Node =
+        { mutable RefCount : int
+          Transform : Transform }
+        interface Node Component with
+            member this.RefCount with get () = this.RefCount and set value = this.RefCount <- value
+            member this.SystemNames = [||]
+            member this.Junction _ _ _ = this
+            member this.Disjunction _ _ _ = ()
+
+    type [<NoEquality; NoComparison; Struct>] Prop =
+        { mutable RefCount : int
+          Transform : Transform ComponentRef
+          NodeId : Guid }
+        interface Prop Component with
+            member this.RefCount with get () = this.RefCount and set value = this.RefCount <- value
+            member this.SystemNames = [|"Node"|]
+            member this.Junction systems entityId ecs = { id this with Transform = ecs.JunctionHierarchical this.NodeId entityId systems.[0] }
+            member this.Disjunction systems entityId ecs = ecs.DisjunctionHierarchical<Transform> this.NodeId entityId systems.[0]
 
     let example (world : World) =
 
@@ -36,30 +58,30 @@ module EcsTests =
         let _ = ecs.RegisterSystem (SystemCorrelated<Skin, World> ())
 
         // create and register our airship system
-        let airshipSystem = ecs.RegisterSystem (SystemJunctioned<Airship, World> ())
+        let airshipSystem = ecs.RegisterSystem (SystemCorrelated<Airship, World> ())
 
         // define our airship system's update behavior
         let _ = ecs.Subscribe EcsEvents.Update (fun _ _ _ world ->
-            let comps = airshipSystem.Components
-            for i in 0 .. comps.Length do
+            let comps = airshipSystem.Components.Array
+            for i in 0 .. comps.Length - 1 do
                 let comp = &comps.[i]
                 if  comp.RefCount > 0 then
                     comp.Transform.Index.Enabled <- i % 2 = 0
-                    comp.Skin.Index.Color.Z <- 0.5f
+                    comp.Skin.Index.Color.A <- byte 128
             world)
 
         // create and register our airship
-        let airshipId = ecs.RegisterJunctioned Unchecked.defaultof<Airship> airshipSystem.Name (Alloc Gen.id)
+        let airshipId = ecs.RegisterCorrelated Unchecked.defaultof<Airship> airshipSystem.Name Gen.id
 
         // change some airship properties
-        let airship = ecs.IndexJunctioned<Airship> airshipSystem.Name airshipId
+        let airship = ecs.IndexCorrelated<Airship> airshipSystem.Name airshipId
         airship.Index.Transform.Index.Position.X <- 0.5f
-        airship.Index.Skin.Index.Color.X <- 0.1f
+        airship.Index.Skin.Index.Color.R <- byte 16
 
         // for non-junctioned entities, you can alternatively construct and use a much slower entity reference
-        //let airshipRef = ecs.GetEntityRef airshipId
-        //airshipRef.Index<Transform>().Position.Y <- 5.0f
-        //airshipRef.Index<Skin>().Color.Y <- 1.0f
+        let airshipRef = ecs.GetEntityRef airshipId
+        airshipRef.Index<Transform>().Position.Y <- 5.0f
+        airshipRef.Index<Skin>().Color.G <- byte 255
 
         // invoke update behavior
         ecs.Publish EcsEvents.Update () ecs.GlobalSystem world

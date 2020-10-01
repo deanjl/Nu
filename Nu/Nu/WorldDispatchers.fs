@@ -258,8 +258,8 @@ module EffectFacetModule =
                       Effects.Depth = entity.GetDepth world
                       Effects.Offset = Vector2 0.5f
                       Effects.InsetOpt = None
-                      Effects.Color = Vector4.One
-                      Effects.Glow = Vector4.Zero
+                      Effects.Color = Color.White
+                      Effects.Glow = Color.Zero
                       Effects.Enabled = true
                       Effects.Volume = Constants.Audio.DefaultSoundVolume }
                 let effectHistory = entity.GetEffectHistory world
@@ -395,8 +395,8 @@ module TextFacetModule =
         member this.GetJustification world : Justification = this.Get Property? Justification world
         member this.SetJustification (value : Justification) world = this.SetFast Property? Justification false false value world
         member this.Justification = lens Property? Justification this.GetJustification this.SetJustification this
-        member this.GetTextColor world : Vector4 = this.Get Property? TextColor world
-        member this.SetTextColor (value : Vector4) world = this.SetFast Property? TextColor false false value world
+        member this.GetTextColor world : Color = this.Get Property? TextColor world
+        member this.SetTextColor (value : Color) world = this.SetFast Property? TextColor false false value world
         member this.TextColor = lens Property? TextColor this.GetTextColor this.SetTextColor this
 
     type TextFacet () =
@@ -407,7 +407,7 @@ module TextFacetModule =
              define Entity.Font (AssetTag.make<Font> Assets.DefaultPackageName Assets.DefaultFontName)
              define Entity.Margins Vector2.Zero
              define Entity.Justification (Justified (JustifyCenter, JustifyMiddle))
-             define Entity.TextColor (Vector4 (0.0f, 0.0f, 0.0f, 1.0f))]
+             define Entity.TextColor Color.Black]
 
         override this.Actualize (text, world) =
             let textStr = text.GetText world
@@ -438,7 +438,7 @@ module TextFacetModule =
 module RigidBodyFacetModule =
 
     type Entity with
-
+    
         member this.GetBodyType world : BodyType = this.Get Property? BodyType world
         member this.SetBodyType (value : BodyType) world = this.SetFast Property? BodyType false false value world
         member this.BodyType = lens Property? BodyType this.GetBodyType this.SetBodyType this
@@ -499,7 +499,8 @@ module RigidBodyFacetModule =
             World.localizeBodyShape (entity.GetSize world) (entity.GetBodyShape world) world
 
         static member Properties =
-            [define Entity.BodyType Dynamic
+            [define Entity.PublishChanges true
+             define Entity.BodyType Dynamic
              define Entity.Awake true
              define Entity.Density Constants.Physics.NormalDensity
              define Entity.Friction 0.2f
@@ -516,6 +517,25 @@ module RigidBodyFacetModule =
              define Entity.IsBullet false
              define Entity.IsSensor false
              computed Entity.PhysicsId (fun (entity : Entity) world -> { SourceId = entity.GetId world; CorrelationId = Gen.idEmpty }) None]
+
+        override this.Register (entity, world) =
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? Transform) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? BodyType) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? Awake) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? Density) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? Friction) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? Restitution) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? AngularVelocity) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? AngularDamping) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? LinearVelocity) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? LinearDamping) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? GravityScale) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? CollisionCategories) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? CollisionMask) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? BodyShape) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? IsBullet) entity world
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? IsSensor) entity world
+            world
 
         override this.RegisterPhysics (entity, world) =
             let bodyProperties = 
@@ -545,48 +565,6 @@ module RigidBodyFacetModule =
             World.destroyBody (entity.GetPhysicsId world) world
 
 [<AutoOpen>]
-module RigidBodiesFacetModule =
-
-    type Entity with
-
-        member this.GetBodies world : Map<Guid, BodyProperties> = this.Get Property? Bodies world
-        member this.SetBodies (value : Map<Guid, BodyProperties>) world = this.SetFast Property? Bodies false false value world
-        member this.Bodies = lens Property? Bodies this.GetBodies this.SetBodies this
-        member this.GetJoints world : Map<Guid, JointProperties> = this.Get Property? Joints world
-        member this.SetJoints (value : Map<Guid, JointProperties>) world = this.SetFast Property? Joints false false value world
-        member this.Joints = lens Property? Joints this.GetJoints this.SetJoints this
-
-    type RigidBodiesFacet () =
-        inherit Facet ()
-
-        static member Properties =
-            [define Entity.Bodies Map.empty
-             define Entity.Joints Map.empty
-             computed Entity.PhysicsId (fun (entity : Entity) world -> { SourceId = entity.GetId world; CorrelationId = Gen.idEmpty }) None]
-
-        override this.RegisterPhysics (entity, world) =
-            let position = entity.GetPosition world
-            let size = entity.GetSize world
-            let rotation = entity.GetRotation world
-            let bodiesProperties =
-                entity.GetBodies world |>
-                Map.toValueList |>
-                List.map (fun properties ->
-                    { properties with
-                        Position = properties.Position + position
-                        Rotation = properties.Rotation + rotation
-                        BodyShape = World.localizeBodyShape size properties.BodyShape world })
-            let world = World.createBodies entity (entity.GetId world) bodiesProperties world
-            let jointsProperties = Map.toValueList (entity.GetJoints world)
-            let world = World.createJoints entity (entity.GetId world) jointsProperties world
-            world
-
-        override this.UnregisterPhysics (entity, world) =
-            let bodiesProperties = entity.GetBodies world |> Map.toValueList
-            let physicsIds = List.map (fun (properties : BodyProperties) -> { SourceId = entity.GetId world; CorrelationId = properties.BodyId }) bodiesProperties
-            World.destroyBodies physicsIds world
-
-[<AutoOpen>]
 module JointFacetModule =
 
     type Entity with
@@ -599,8 +577,14 @@ module JointFacetModule =
         inherit Facet ()
 
         static member Properties =
-            [define Entity.JointDevice JointEmpty
+            [define Entity.PublishChanges true
+             define Entity.JointDevice JointEmpty
              computed Entity.PhysicsId (fun (entity : Entity) world -> { SourceId = entity.GetId world; CorrelationId = Gen.idEmpty }) None]
+
+        override this.Register (tileMap, world) =
+            let world = World.monitor (fun _ world -> (Cascade, tileMap.PropagatePhysics world)) (tileMap.ChangeEvent Property? Transform) tileMap world
+            let world = World.monitor (fun _ world -> (Cascade, tileMap.PropagatePhysics world)) (tileMap.ChangeEvent Property? JointDevice) tileMap world
+            world
 
         override this.RegisterPhysics (entity, world) =
             let jointProperties =
@@ -615,7 +599,7 @@ module JointFacetModule =
 module TileMapFacetModule =
 
     type Entity with
-    
+
         member this.GetTileMapAsset world : TileMap AssetTag = this.Get Property? TileMapAsset world
         member this.SetTileMapAsset (value : TileMap AssetTag) world = this.SetFast Property? TileMapAsset false false value world
         member this.TileMapAsset = lens Property? TileMapAsset this.GetTileMapAsset this.SetTileMapAsset this
@@ -628,6 +612,16 @@ module TileMapFacetModule =
 
     type TileMapFacet () =
         inherit Facet ()
+
+        let rec importShape shape (tileSize : Vector2) (tileOffset : Vector2) =
+            let tileExtent = tileSize * 0.5f
+            match shape with
+            | BodyEmpty as be -> be
+            | BodyBox box -> BodyBox { box with Extent = box.Extent * tileExtent; Center = box.Center * tileSize + tileOffset }
+            | BodyCircle circle -> BodyCircle { circle with Radius = circle.Radius * tileExtent.Y; Center = circle.Center * tileSize + tileOffset }
+            | BodyCapsule capsule -> BodyCapsule { capsule with Height = tileSize.Y; Radius = capsule.Radius * tileExtent.Y; Center = capsule.Center * tileSize + tileOffset }
+            | BodyPolygon polygon -> BodyPolygon { polygon with Vertices = Array.map (fun point -> point * tileSize) polygon.Vertices; Center = polygon.Center * tileSize + tileOffset }
+            | BodyShapes shapes -> BodyShapes (List.map (fun shape -> importShape shape tileSize tileOffset) shapes)
 
         let tryMakeTileMapDescriptor (tileMapAsset : TileMap AssetTag) world =
             let metadataMap = World.getMetadata world
@@ -655,119 +649,111 @@ module TileMapFacetModule =
             let gidPosition = gid * tmd.TileSizeI.X
             let gid2 = Vector2i (gid % tileSetRun, gid / tileSetRun)
             let tileMapPosition = tm.GetPosition world
-            let tilePosition =
+            let tilePositionI =
                 Vector2i
                     (int tileMapPosition.X + tmd.TileSizeI.X * i,
-                     int tileMapPosition.Y - tmd.TileSizeI.Y * (j + 1)) // subtraction for right-handedness
+                     int tileMapPosition.Y - tmd.TileSizeI.Y * (j + 1) + tmd.TileMapSizeI.Y) // invert y coords
+            let tilePositionF = v2 (single tilePositionI.X) (single tilePositionI.Y)
             let tileSetTileOpt =
                 match tmd.TileSet.Tiles.TryGetValue (tile.Gid - 1) with
                 | (true, tile) -> Some tile
                 | (false, _) -> None
-            { Tile = tile; I = i; J = j; Gid = gid; GidPosition = gidPosition; Gid2 = gid2; TilePosition = tilePosition; TileSetTileOpt = tileSetTileOpt }
+            { Tile = tile; I = i; J = j; Gid = gid; GidPosition = gidPosition; Gid2 = gid2; TilePositionI = tilePositionI; TilePositionF = tilePositionF; TileSetTileOpt = tileSetTileOpt }
 
-        let getTileBodyProperties6 (tm : Entity) tmd tli td ti cexpr world =
-            let tileShape = World.localizeBodyShape (Vector2 (single tmd.TileSizeI.X, single tmd.TileSizeI.Y)) cexpr world
-            { BodyId = Gen.idFromInts tli ti
-              Position =
-                Vector2
-                    (single (td.TilePosition.X + tmd.TileSizeI.X / 2),
-                     single (td.TilePosition.Y + tmd.TileSizeI.Y / 2 + tmd.TileMapSizeI.Y))
-              Rotation = tm.GetRotation world
-              BodyShape = tileShape
-              BodyType = BodyType.Static
-              Awake = false
-              Enabled = true
-              Density = Constants.Physics.NormalDensity
-              Friction = tm.GetFriction world
-              Restitution = tm.GetRestitution world
-              FixedRotation = true
-              AngularVelocity = 0.0f
-              AngularDamping = 0.0f
-              LinearVelocity = Vector2.Zero
-              LinearDamping = 0.0f
-              GravityScale = 0.0f
-              CollisionCategories = PhysicsEngine.categorizeCollisionMask (tm.GetCollisionCategories world)
-              CollisionMask = PhysicsEngine.categorizeCollisionMask (tm.GetCollisionMask world)
-              IsBullet = false
-              IsSensor = false }
-
-        let getTileBodyProperties tm tmd (tl : TmxLayer) tli ti world =
+        let getTileLayerBodyShape tm tmd (tl : TmxLayer) ti world =
             let td = makeTileDescriptor tm tmd tl ti world
             match td.TileSetTileOpt with
             | Some tileSetTile ->
                 match tileSetTile.Properties.TryGetValue Constants.TileMap.CollisionPropertyName with
                 | (true, cexpr) ->
+                    let tileCenter =
+                        Vector2
+                            (td.TilePositionF.X + tmd.TileSizeF.X * 0.5f,
+                             td.TilePositionF.Y + tmd.TileSizeF.Y * 0.5f)
                     let tileBody =
                         match cexpr with
-                        | "" -> BodyBox { Extent = Vector2 0.5f; Center = Vector2.Zero; PropertiesOpt = None }
-                        | _ -> scvalue<BodyShape> cexpr
-                    let tileBodyProperties = getTileBodyProperties6 tm tmd tli td ti tileBody world
-                    Some tileBodyProperties
+                        | "" -> BodyBox { Extent = tmd.TileSizeF * 0.5f; Center = tileCenter; PropertiesOpt = None }
+                        | _ ->
+                            let tileShape = scvalue<BodyShape> cexpr
+                            let tileShapeImported = importShape tileShape tmd.TileSizeF tileCenter
+                            tileShapeImported
+                    Some tileBody
                 | (false, _) -> None
             | None -> None
 
-        let getTileLayerBodyPropertyList tileMap tileMapDescriptor tileLayerIndex (tileLayer : TmxLayer) world =
+        let getTileLayerBodyShapes tileMap tileMapDescriptor (tileLayer : TmxLayer) world =
             Seq.foldi
-                (fun i bodyPropertyList _ ->
-                    match getTileBodyProperties tileMap tileMapDescriptor tileLayer tileLayerIndex i world with
-                    | Some bodyProperties -> bodyProperties :: bodyPropertyList
-                    | None -> bodyPropertyList)
+                (fun i bodyShapes _ ->
+                    match getTileLayerBodyShape tileMap tileMapDescriptor tileLayer i world with
+                    | Some bodyShape -> bodyShape :: bodyShapes
+                    | None -> bodyShapes)
                 [] tileLayer.Tiles |>
             Seq.toList
 
-        let registerTileLayerPhysics (tileMap : Entity) tileMapDescriptor tileLayerIndex world tileLayer =
-            let bodyPropertyList = getTileLayerBodyPropertyList tileMap tileMapDescriptor tileLayerIndex tileLayer world
-            World.createBodies tileMap (tileMap.GetId world) bodyPropertyList world
-
-        let getTileLayerPhysicsIds (tileMap : Entity) tileMapDescriptor tileLayer tileLayerIndex world =
-            Seq.foldi
-                (fun tileIndex physicsIds _ ->
-                    let tileDescriptor = makeTileDescriptor tileMap tileMapDescriptor tileLayer tileIndex world
-                    match tileDescriptor.TileSetTileOpt with
-                    | Some tileSetTile ->
-                        if tileSetTile.Properties.ContainsKey Constants.TileMap.CollisionPropertyName then
-                            let physicsId = { SourceId = tileMap.GetId world; CorrelationId = Gen.idFromInts tileLayerIndex tileIndex }
-                            physicsId :: physicsIds
-                        else physicsIds
-                    | None -> physicsIds)
-                [] tileLayer.Tiles |>
+        let getTileMapBodyShapes tileMap tileMapDescriptor world =
+            tileMapDescriptor.TileMap.Layers |>
+            Seq.fold (fun shapess tileLayer ->
+                let shapes = getTileLayerBodyShapes tileMap tileMapDescriptor tileLayer world
+                shapes :: shapess)
+                [] |>
+            Seq.concat |>
             Seq.toList
+
+        let registerTileMapPhysics (tileMap : Entity) tileMapDescriptor world =
+            let bodyId = (tileMap.GetPhysicsId world).CorrelationId
+            let bodyShapes = getTileMapBodyShapes tileMap tileMapDescriptor world
+            let bodyProperties =
+                { BodyId = bodyId
+                  Position = v2Zero
+                  Rotation = 0.0f
+                  BodyShape = BodyShapes bodyShapes
+                  BodyType = BodyType.Static
+                  Awake = false
+                  Enabled = true
+                  Density = Constants.Physics.NormalDensity
+                  Friction = tileMap.GetFriction world
+                  Restitution = tileMap.GetRestitution world
+                  FixedRotation = true
+                  AngularVelocity = 0.0f
+                  AngularDamping = 0.0f
+                  LinearVelocity = Vector2.Zero
+                  LinearDamping = 0.0f
+                  GravityScale = 0.0f
+                  CollisionCategories = PhysicsEngine.categorizeCollisionMask (tileMap.GetCollisionCategories world)
+                  CollisionMask = PhysicsEngine.categorizeCollisionMask (tileMap.GetCollisionMask world)
+                  IsBullet = false
+                  IsSensor = false }
+            World.createBody tileMap (tileMap.GetId world) bodyProperties world
 
         static member Properties =
             [define Entity.Omnipresent true
+             define Entity.PublishChanges true
              define Entity.Friction 0.0f
              define Entity.Restitution 0.0f
              define Entity.CollisionCategories "1"
              define Entity.CollisionMask "@"
              define Entity.TileMapAsset (AssetTag.make<TileMap> Assets.DefaultPackageName Assets.DefaultTileMapName)
              define Entity.TileLayerClearance 2.0f
-             define Entity.Parallax 0.0f]
+             define Entity.Parallax 0.0f
+             computed Entity.PhysicsId (fun (entity : Entity) world -> { SourceId = entity.GetId world; CorrelationId = Gen.idEmpty }) None]
+
+        override this.Register (tileMap, world) =
+            let world = World.monitor (fun _ world -> (Cascade, tileMap.PropagatePhysics world)) (tileMap.ChangeEvent Property? Transform) tileMap world
+            let world = World.monitor (fun _ world -> (Cascade, tileMap.PropagatePhysics world)) (tileMap.ChangeEvent Property? Friction) tileMap world
+            let world = World.monitor (fun _ world -> (Cascade, tileMap.PropagatePhysics world)) (tileMap.ChangeEvent Property? Restitution) tileMap world
+            let world = World.monitor (fun _ world -> (Cascade, tileMap.PropagatePhysics world)) (tileMap.ChangeEvent Property? CollisionCategories) tileMap world
+            let world = World.monitor (fun _ world -> (Cascade, tileMap.PropagatePhysics world)) (tileMap.ChangeEvent Property? CollisionMask) tileMap world
+            let world = World.monitor (fun _ world -> (Cascade, tileMap.PropagatePhysics world)) (tileMap.ChangeEvent Property? TileMapAsset) tileMap world
+            world
 
         override this.RegisterPhysics (tileMap, world) =
             let tileMapAsset = tileMap.GetTileMapAsset world
             match tryMakeTileMapDescriptor tileMapAsset world with
-            | Some tileMapDescriptor ->
-                Seq.foldi
-                    (registerTileLayerPhysics tileMap tileMapDescriptor)
-                    world
-                    tileMapDescriptor.TileMap.Layers
-            | None ->
-                Log.debug ("Could not make tile map data for '" + scstring tileMapAsset + "'.")
-                world
+            | Some tileMapDescriptor -> registerTileMapPhysics tileMap tileMapDescriptor world
+            | None -> Log.debug ("Could not make tile map data for '" + scstring tileMapAsset + "'."); world
 
         override this.UnregisterPhysics (tileMap, world) =
-            let tileMapAsset = tileMap.GetTileMapAsset world
-            match tryMakeTileMapDescriptor tileMapAsset world with
-            | Some tileMapDescriptor ->
-                Seq.foldi
-                    (fun tileLayerIndex world (tileLayer : TmxLayer) ->
-                        let physicsIds = getTileLayerPhysicsIds tileMap tileMapDescriptor tileLayer tileLayerIndex world
-                        World.destroyBodies physicsIds world)
-                    world
-                    tileMapDescriptor.TileMap.Layers
-            | None ->
-                Log.debug ("Could not make tile map data for '" + scstring tileMapAsset + "'.")
-                world
+            World.destroyBody (tileMap.GetPhysicsId world) world
 
         override this.Actualize (tileMap, world) =
             if tileMap.GetVisible world then
@@ -810,7 +796,7 @@ module TileMapFacetModule =
                                         Seq.skip (j * map.Width) |>
                                         Seq.take map.Width |>
                                         Seq.toArray
-                                    if World.isBoundsInView absolute (Math.makeBounds parallaxPosition size) world then
+                                    if World.isBoundsInView absolute (v4Bounds parallaxPosition size) world then
                                         World.enqueueRenderMessage
                                             (LayeredDescriptorMessage
                                                 { Depth = transform.Depth
@@ -1045,6 +1031,15 @@ module StaticSpriteFacetModule =
         member this.GetStaticImage world : Image AssetTag = this.Get Property? StaticImage world
         member this.SetStaticImage (value : Image AssetTag) world = this.SetFast Property? StaticImage false false value world
         member this.StaticImage = lens Property? StaticImage this.GetStaticImage this.SetStaticImage this
+        member this.GetColor world : Color = this.Get Property? Color world
+        member this.SetColor (value : Color) world = this.SetFast Property? Color false false value world
+        member this.Color = lens Property? Color this.GetColor this.SetColor this
+        member this.GetGlow world : Color = this.Get Property? Glow world
+        member this.SetGlow (value : Color) world = this.SetFast Property? Glow false false value world
+        member this.Glow = lens Property? Glow this.GetGlow this.SetGlow this
+        member this.GetInsetOpt world : Vector4 option = this.Get Property? Inset world
+        member this.SetInsetOpt (value : Vector4 option) world = this.SetFast Property? Inset false false value world
+        member this.InsetOpt = lens Property? Inset this.GetInsetOpt this.SetInsetOpt this
         member this.GetFlip world : Flip = this.Get Property? Flip world
         member this.SetFlip (value : Flip) world = this.SetFast Property? Flip false false value world
         member this.Flip = lens Property? Flip this.GetFlip this.SetFlip this
@@ -1054,6 +1049,9 @@ module StaticSpriteFacetModule =
 
         static member Properties =
             [define Entity.StaticImage (AssetTag.make<Image> Assets.DefaultPackageName "Image4")
+             define Entity.Color Color.White
+             define Entity.Glow Color.Zero
+             define Entity.InsetOpt None
              define Entity.Flip FlipNone]
 
         override this.Actualize (entity, world) =
@@ -1068,10 +1066,10 @@ module StaticSpriteFacetModule =
                             SpriteDescriptor
                                 { Transform = transform
                                   Offset = Vector2.Zero
-                                  InsetOpt = None
+                                  InsetOpt = entity.GetInsetOpt world
                                   Image = entity.GetStaticImage world
-                                  Color = Vector4.One
-                                  Glow = Vector4.Zero
+                                  Color = entity.GetColor world
+                                  Glow = entity.GetGlow world
                                   Flip = entity.GetFlip world }})
                     world
             else world
@@ -1115,16 +1113,18 @@ module AnimatedSpriteFacetModule =
                 let celJ = cel / celRun
                 let celX = single celI * celSize.X
                 let celY = single celJ * celSize.Y
-                let inset = Vector4 (celX, celY, celX + celSize.X, celY + celSize.Y)
+                let inset = v4Bounds (v2 celX celY) celSize
                 Some inset
             else None
 
         static member Properties =
-            [define Entity.CelCount 16 
-             define Entity.CelSize (Vector2 (16.0f, 16.0f))
+            [define Entity.CelSize (Vector2 (16.0f, 16.0f))
              define Entity.CelRun 4
+             define Entity.CelCount 16
              define Entity.AnimationDelay 4L
              define Entity.AnimationSheet (AssetTag.make<Image> Assets.DefaultPackageName "Image7")
+             define Entity.Color Color.White
+             define Entity.Glow Color.Zero
              define Entity.Flip FlipNone]
 
         override this.Actualize (entity, world) =
@@ -1141,8 +1141,8 @@ module AnimatedSpriteFacetModule =
                                   Offset = Vector2.Zero
                                   InsetOpt = getSpriteInsetOpt entity world
                                   Image = entity.GetAnimationSheet world
-                                  Color = Vector4.One
-                                  Glow = Vector4.Zero
+                                  Color = entity.GetColor world
+                                  Glow = entity.GetGlow world
                                   Flip = entity.GetFlip world }})
                     world
             else world
@@ -1260,6 +1260,41 @@ module EffectDispatcherModule =
              define Entity.Effect (scvalue<Effect> "[Effect None [] [Contents [Shift 0] [[StaticSprite [Resource Default Image] [] Nil]]]]")]
 
 [<AutoOpen>]
+module StaticSpriteDispatcherModule =
+
+    type StaticSpriteDispatcher () =
+        inherit EntityDispatcher ()
+
+        static member Facets =
+            [typeof<StaticSpriteFacet>]
+
+        static member Properties =
+            [define Entity.StaticImage (AssetTag.make<Image> Assets.DefaultPackageName "Image4")
+             define Entity.Color Color.White
+             define Entity.Glow Color.Zero
+             define Entity.InsetOpt None
+             define Entity.Flip FlipNone]
+
+[<AutoOpen>]
+module AnimatedSpriteDispatcherModule =
+
+    type AnimatedSpriteDispatcher () =
+        inherit EntityDispatcher ()
+
+        static member Facets =
+            [typeof<AnimatedSpriteFacet>]
+
+        static member Properties =
+            [define Entity.CelSize (Vector2 (16.0f, 16.0f))
+             define Entity.CelRun 4
+             define Entity.CelCount 16
+             define Entity.AnimationDelay 4L
+             define Entity.AnimationSheet (AssetTag.make<Image> Assets.DefaultPackageName "Image7")
+             define Entity.Color Color.White
+             define Entity.Glow Color.Zero
+             define Entity.Flip FlipNone]
+
+[<AutoOpen>]
 module NodeDispatcherModule =
 
     type NodeDispatcher () =
@@ -1285,8 +1320,8 @@ module GuiDispatcherModule =
 
     type Entity with
     
-        member this.GetDisabledColor world : Vector4 = this.Get Property? DisabledColor world
-        member this.SetDisabledColor (value : Vector4) world = this.SetFast Property? DisabledColor false false value world
+        member this.GetDisabledColor world : Color = this.Get Property? DisabledColor world
+        member this.SetDisabledColor (value : Color) world = this.SetFast Property? DisabledColor false false value world
         member this.DisabledColor = lens Property? DisabledColor this.GetDisabledColor this.SetDisabledColor this
         member this.GetSwallowMouseLeft world : bool = this.Get Property? SwallowMouseLeft world
         member this.SetSwallowMouseLeft (value : bool) world = this.SetFast Property? SwallowMouseLeft false false value world
@@ -1317,7 +1352,7 @@ module GuiDispatcherModule =
              define Entity.Absolute true
              define Entity.PublishChanges true
              define Entity.AlwaysUpdate true
-             define Entity.DisabledColor (Vector4 0.75f)
+             define Entity.DisabledColor (Color (byte 192, byte 192, byte 192, byte 192))
              define Entity.SwallowMouseLeft true]
 
         override this.Register (gui, world) =
@@ -1349,7 +1384,7 @@ module GuiDispatcherModule =
             [define Entity.Absolute true
              define Entity.PublishChanges true
              define Entity.AlwaysUpdate true
-             define Entity.DisabledColor (Vector4 0.75f)
+             define Entity.DisabledColor (Color (byte 192, byte 192, byte 192, byte 192))
              define Entity.SwallowMouseLeft true]
 
         override this.Register (gui, world) =
@@ -1456,8 +1491,8 @@ module ButtonDispatcherModule =
                                   Offset = Vector2.Zero
                                   InsetOpt = None
                                   Image = image
-                                  Color = if button.GetEnabled world then Vector4.One else button.GetDisabledColor world
-                                  Glow = Vector4.Zero
+                                  Color = if button.GetEnabled world then Color.White else button.GetDisabledColor world
+                                  Glow = Color.Zero
                                   Flip = FlipNone }})
                     world
             else world
@@ -1498,8 +1533,8 @@ module LabelDispatcherModule =
                                   Offset = Vector2.Zero
                                   InsetOpt = None
                                   Image = label.GetLabelImage world
-                                  Color = if label.GetEnabled world then Vector4.One else label.GetDisabledColor world
-                                  Glow = Vector4.Zero
+                                  Color = if label.GetEnabled world then Color.White else label.GetDisabledColor world
+                                  Glow = Color.Zero
                                   Flip = FlipNone }})
                     world
             else world
@@ -1514,9 +1549,9 @@ module TextDispatcherModule =
 
     type Entity with
     
-        member this.GetBackgroundImage world : Image AssetTag = this.Get Property? BackgroundImage world
-        member this.SetBackgroundImage (value : Image AssetTag) world = this.SetFast Property? BackgroundImage false false value world
-        member this.BackgroundImage = lens Property? BackgroundImage this.GetBackgroundImage this.SetBackgroundImage this
+        member this.GetBackgroundImageOpt world : Image AssetTag option = this.Get Property? BackgroundImageOpt world
+        member this.SetBackgroundImageOpt (value : Image AssetTag option) world = this.SetFast Property? BackgroundImageOpt false false value world
+        member this.BackgroundImageOpt = lens Property? BackgroundImageOpt this.GetBackgroundImageOpt this.SetBackgroundImageOpt this
 
     type TextDispatcher () =
         inherit GuiDispatcher ()
@@ -1527,31 +1562,37 @@ module TextDispatcherModule =
         static member Properties =
             [define Entity.Size (Vector2 (256.0f, 64.0f))
              define Entity.SwallowMouseLeft false
-             define Entity.BackgroundImage (AssetTag.make<Image> Assets.DefaultPackageName "Image3")]
+             define Entity.BackgroundImageOpt (Some (AssetTag.make<Image> Assets.DefaultPackageName "Image3"))]
 
         override this.Actualize (text, world) =
             if text.GetVisible world then
-                let transform = text.GetTransform world
-                World.enqueueRenderMessage
-                    (LayeredDescriptorMessage
-                        { Depth = transform.Depth
-                          PositionY = transform.Position.Y
-                          AssetTag = text.GetBackgroundImage world |> AssetTag.generalize
-                          RenderDescriptor =
-                            SpriteDescriptor
-                                { Transform = transform
-                                  Offset = Vector2.Zero
-                                  InsetOpt = None
-                                  Image = text.GetBackgroundImage world
-                                  Color = if text.GetEnabled world then Vector4.One else text.GetDisabledColor world
-                                  Glow = Vector4.Zero
-                                  Flip = FlipNone }})
-                    world
+                match text.GetBackgroundImageOpt world with
+                | Some image ->
+                    let transform = text.GetTransform world
+                    World.enqueueRenderMessage
+                        (LayeredDescriptorMessage
+                            { Depth = transform.Depth
+                              PositionY = transform.Position.Y
+                              AssetTag = AssetTag.generalize image
+                              RenderDescriptor =
+                                SpriteDescriptor
+                                    { Transform = transform
+                                      Offset = Vector2.Zero
+                                      InsetOpt = None
+                                      Image = image
+                                      Color = if text.GetEnabled world then Color.White else text.GetDisabledColor world
+                                      Glow = Color.Zero
+                                      Flip = FlipNone }})
+                        world
+                | None -> world
             else world
 
         override this.GetQuickSize (text, world) =
-            match Metadata.tryGetTextureSizeF (text.GetBackgroundImage world) (World.getMetadata world) with
-            | Some size -> size
+            match text.GetBackgroundImageOpt world with
+            | Some image ->
+                match Metadata.tryGetTextureSizeF image (World.getMetadata world) with
+                | Some size -> size
+                | None -> Constants.Engine.DefaultEntitySize
             | None -> Constants.Engine.DefaultEntitySize
 
 [<AutoOpen>]
@@ -1657,8 +1698,8 @@ module ToggleDispatcherModule =
                                   Offset = Vector2.Zero
                                   InsetOpt = None
                                   Image = image
-                                  Color = if toggle.GetEnabled world then Vector4.One else toggle.GetDisabledColor world
-                                  Glow = Vector4.Zero
+                                  Color = if toggle.GetEnabled world then Color.White else toggle.GetDisabledColor world
+                                  Glow = Color.Zero
                                   Flip = FlipNone }})
                     world
             else world
@@ -1797,8 +1838,8 @@ module FillBarDispatcherModule =
              define Entity.SwallowMouseLeft false
              define Entity.Fill 0.0f
              define Entity.FillInset 0.0f
-             define Entity.FillImage (AssetTag.make<Image> Assets.DefaultPackageName "Image10")
-             define Entity.BorderImage (AssetTag.make<Image> Assets.DefaultPackageName "Image11")]
+             define Entity.FillImage (AssetTag.make<Image> Assets.DefaultPackageName "Image11")
+             define Entity.BorderImage (AssetTag.make<Image> Assets.DefaultPackageName "Image12")]
 
         override this.Actualize (fillBar, world) =
             if fillBar.GetVisible world then
@@ -1817,7 +1858,7 @@ module FillBarDispatcherModule =
                       Depth = fillBar.GetDepth world
                       Flags = fillBar.GetFlags world
                       RefCount = 0 }
-                let fillBarColor = if fillBar.GetEnabled world then Vector4.One else fillBar.GetDisabledColor world
+                let fillBarColor = if fillBar.GetEnabled world then Color.White else fillBar.GetDisabledColor world
                 World.enqueueRenderMessage
                     (LayeredDescriptorsMessage
                         [|{ Depth = borderSpriteTransform.Depth
@@ -1830,7 +1871,7 @@ module FillBarDispatcherModule =
                                       InsetOpt = None
                                       Image = fillBar.GetBorderImage world
                                       Color = fillBarColor
-                                      Glow = Vector4.Zero
+                                      Glow = Color.Zero
                                       Flip = FlipNone }}
                           { Depth = fillBarSpriteTransform.Depth
                             PositionY = fillBarSpriteTransform.Position.Y
@@ -1842,7 +1883,7 @@ module FillBarDispatcherModule =
                                       InsetOpt = None
                                       Image = fillBar.GetFillImage world
                                       Color = fillBarColor
-                                      Glow = Vector4.Zero
+                                      Glow = Color.Zero
                                       Flip = FlipNone }}|])
                     world
             else world
@@ -1863,7 +1904,8 @@ module BlockDispatcherModule =
              typeof<StaticSpriteFacet>]
 
         static member Properties =
-            [define Entity.BodyType Static
+            [define Entity.PublishChanges true
+             define Entity.BodyType Static
              define Entity.StaticImage (AssetTag.make<Image> Assets.DefaultPackageName "Image4")]
 
 [<AutoOpen>]
@@ -1877,13 +1919,14 @@ module BoxDispatcherModule =
              typeof<StaticSpriteFacet>]
 
         static member Properties =
-            [define Entity.StaticImage (AssetTag.make<Image> Assets.DefaultPackageName "Image4")]
+            [define Entity.PublishChanges true
+             define Entity.StaticImage (AssetTag.make<Image> Assets.DefaultPackageName "Image4")]
 
 [<AutoOpen>]
 module CharacterDispatcherModule =
 
     type Entity with
-        
+
         member this.GetCharacterIdleImage world = this.Get Property? CharacterIdleImage world
         member this.SetCharacterIdleImage value world = this.SetFast Property? CharacterIdleImage false false value world
         member this.CharacterIdleImage = lens<Image AssetTag> Property? CharacterIdleImage this.GetCharacterIdleImage this.SetCharacterIdleImage this
@@ -1896,7 +1939,7 @@ module CharacterDispatcherModule =
         member this.GetCharacterFacingLeft world = this.Get Property? CharacterFacingLeft world
         member this.SetCharacterFacingLeft value world = this.SetFast Property? CharacterFacingLeft false false value world
         member this.CharacterFacingLeft = lens<bool> Property? CharacterFacingLeft this.GetCharacterFacingLeft this.SetCharacterFacingLeft this
-        
+
     type CharacterDispatcher () =
         inherit EntityDispatcher ()
 
@@ -1906,15 +1949,16 @@ module CharacterDispatcherModule =
             let i = single (frame % 3L)
             let j = single (frame / 3L)
             let offset = v2 (i * celSize.X) (j * celSize.Y) 
-            v4 offset.X offset.Y (offset.X + celSize.X) (offset.Y + celSize.Y)
+            v4Bounds offset celSize
 
         static member Facets =
             [typeof<RigidBodyFacet>]
 
         static member Properties =
-            [define Entity.AnimationDelay 6L
+            [define Entity.PublishChanges true
              define Entity.CelSize (v2 28.0f 28.0f)
              define Entity.CelRun 8
+             define Entity.AnimationDelay 4L
              define Entity.FixedRotation true
              define Entity.GravityScale 3.0f
              define Entity.BodyShape (BodyCapsule { Height = 0.5f; Radius = 0.25f; Center = v2Zero; PropertiesOpt = None })
@@ -1934,7 +1978,7 @@ module CharacterDispatcherModule =
 
         override this.Actualize (entity, world) =
             if entity.GetVisible world && entity.GetInView world then
-                let time = World.getTickTime world
+                let tickTime = World.getTickTime world
                 let physicsId = entity.GetPhysicsId world
                 let facingLeft = entity.GetCharacterFacingLeft world
                 let velocity = World.getBodyLinearVelocity physicsId world
@@ -1951,7 +1995,7 @@ module CharacterDispatcherModule =
                         (None, image)
                     else
                         let image = entity.GetCharacterWalkSheet world
-                        (Some (computeWalkCelInset celSize celRun animationDelay time), image)
+                        (Some (computeWalkCelInset celSize celRun animationDelay tickTime), image)
                 World.enqueueRenderMessage
                     (LayeredDescriptorMessage
                         { Depth = transform.Depth
@@ -1963,8 +2007,8 @@ module CharacterDispatcherModule =
                                   Offset = v2Zero
                                   InsetOpt = insetOpt
                                   Image = image
-                                  Color = Vector4.One
-                                  Glow = Vector4.Zero
+                                  Color = Color.White
+                                  Glow = Color.Zero
                                   Flip = if facingLeft then FlipH else FlipNone }})
                     world
             else world
@@ -1980,6 +2024,7 @@ module TileMapDispatcherModule =
 
         static member Properties =
             [define Entity.Omnipresent true
+             define Entity.PublishChanges true
              define Entity.Friction 0.0f
              define Entity.Restitution 0.0f
              define Entity.CollisionCategories "1"

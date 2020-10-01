@@ -29,7 +29,7 @@ module Engine =
     let (*Literal*) EntityTreeGranularity = 4
     let (*Literal*) EntityTreeDepth = 3
     let (*Literal*) EntityTreeSize = Vector2 (single (Math.Pow (2.0, 16.0)))
-    let (*Literal*) EntityTreeBounds = Vector4 (EntityTreeSize.X * -0.5f, EntityTreeSize.Y * -0.5f, EntityTreeSize.X * 0.5f, EntityTreeSize.Y * 0.5f)
+    let (*Literal*) EntityTreeBounds = Vector4 (EntityTreeSize.X * -0.5f, EntityTreeSize.Y * -0.5f, EntityTreeSize.X, EntityTreeSize.Y)
     let (*Literal*) InvalidId = Guid.Empty
     let (*Literal*) TaskletListConfig = Functional
     let (*Literal*) SimulantMapConfig = Functional
@@ -106,5 +106,5 @@ module Math =
 
 module Ecs =
 
-    let [<Literal>] ArrayReserve = 32
-    let [<Literal>] ArrayGrowth = 2.0f
+    let [<Literal>] ArrayReserve = 256
+    let [<Literal>] ArrayGrowth = 2

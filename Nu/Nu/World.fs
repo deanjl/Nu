@@ -394,6 +394,8 @@ module WorldModule3 =
             // TODO: consider if we shoud reflectively generate these
             Map.ofListBy World.pairWithName $
                 [EntityDispatcher ()
+                 StaticSpriteDispatcher () :> EntityDispatcher
+                 AnimatedSpriteDispatcher () :> EntityDispatcher
                  NodeDispatcher () :> EntityDispatcher
                  EffectDispatcher () :> EntityDispatcher
                  GuiDispatcher () :> EntityDispatcher
@@ -417,7 +419,6 @@ module WorldModule3 =
                  (typeof<ScriptFacet>.Name, ScriptFacet () :> Facet)
                  (typeof<TextFacet>.Name, TextFacet () :> Facet)
                  (typeof<RigidBodyFacet>.Name, RigidBodyFacet () :> Facet)
-                 (typeof<RigidBodiesFacet>.Name, RigidBodiesFacet () :> Facet)
                  (typeof<JointFacet>.Name, JointFacet () :> Facet)
                  (typeof<TileMapFacet>.Name, TileMapFacet () :> Facet)
                  (typeof<StaticSpriteFacet>.Name, StaticSpriteFacet () :> Facet)

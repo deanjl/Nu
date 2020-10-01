@@ -11,6 +11,7 @@ module Constants =
 
         let TileSize = v2 64.0f 64.0f
         let CharacterSize = v2 160.0f 160.0f
+        let DialogSplit = '^'
 
     [<RequireQualifiedAccess>]
     module Field =
@@ -23,6 +24,7 @@ module Constants =
         let GuiDepth = 20.0f
         let GuiEffectDepth = 30.0f
         let PropsLayerName = "Props"
+        let TransitionTime = 60L
 
     [<RequireQualifiedAccess>]
     module Battle =

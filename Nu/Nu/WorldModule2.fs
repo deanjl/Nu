@@ -511,7 +511,7 @@ module WorldModule2 =
                 | SDL.SDL_EventType.SDL_QUIT ->
                     World.exit world
                 | SDL.SDL_EventType.SDL_MOUSEMOTION ->
-                    let mousePosition = Vector2 (single evt.button.x, single evt.button.y)
+                    let mousePosition = v2 (single evt.button.x) (single evt.button.y)
                     let world =
                         if World.isMouseButtonDown MouseLeft world then
                             let eventTrace = EventTrace.record4 "World" "processInput" "MouseDrag" EventTrace.empty
@@ -583,6 +583,51 @@ module WorldModule2 =
                     else world
                 | _ -> world
             (World.getLiveness world, world)
+
+        static member private processIntegrationMessage integrationMessage world =
+            match World.getLiveness world with
+            | Running ->
+                match integrationMessage with
+                | BodyCollisionMessage bodyCollisionMessage ->
+                    let entity = bodyCollisionMessage.BodyShapeSource.Simulant :?> Entity
+                    if entity.Exists world then
+                        let collisionAddress = Events.Collision --> entity.EntityAddress
+                        let collisionData =
+                            { Collider = BodyShapeSource.fromInternal bodyCollisionMessage.BodyShapeSource
+                              Collidee = BodyShapeSource.fromInternal bodyCollisionMessage.BodyShapeSource2
+                              Normal = bodyCollisionMessage.Normal
+                              Speed = bodyCollisionMessage.Speed }
+                        let eventTrace = EventTrace.record "World" "handleIntegrationMessage" EventTrace.empty
+                        World.publish collisionData collisionAddress eventTrace Simulants.Game false world
+                    else world
+                | BodySeparationMessage bodySeparationMessage ->
+                    let entity = bodySeparationMessage.BodyShapeSource.Simulant :?> Entity
+                    if entity.Exists world then
+                        let separationAddress = Events.Separation --> entity.EntityAddress
+                        let separationData =
+                            { Separator = BodyShapeSource.fromInternal bodySeparationMessage.BodyShapeSource
+                              Separatee = BodyShapeSource.fromInternal bodySeparationMessage.BodyShapeSource2  }
+                        let eventTrace = EventTrace.record "World" "handleIntegrationMessage" EventTrace.empty
+                        World.publish separationData separationAddress eventTrace Simulants.Game false world
+                    else world
+                | BodyTransformMessage bodyTransformMessage ->
+                    let bodySource = bodyTransformMessage.BodySource
+                    let entity = bodySource.Simulant :?> Entity
+                    let transform = entity.GetTransform world
+                    let position = bodyTransformMessage.Position - transform.Size * 0.5f
+                    let rotation = bodyTransformMessage.Rotation
+                    let world =
+                        if bodyTransformMessage.BodySource.BodyId = Gen.idEmpty then
+                            let transform2 = { transform with Position = position; Rotation = rotation }
+                            if transform <> transform2
+                            then entity.SetTransformWithoutEvent transform2 world
+                            else world
+                        else world
+                    let transformAddress = Events.Transform --> entity.EntityAddress
+                    let transformData = { BodySource = BodySource.fromInternal bodySource; Position = position; Rotation = rotation }
+                    let eventTrace = EventTrace.record "World" "handleIntegrationMessage" EventTrace.empty
+                    World.publish transformData transformAddress eventTrace Simulants.Game false world
+            | Exiting -> world
 
         static member private getEntities3 getElementsFromTree world =
             let entityTree = World.getEntityTree world
@@ -725,7 +770,7 @@ module WorldModule2 =
             | Some dissolveImage ->
                 let progress = single (screen.GetTransitionTicks world) / single transition.TransitionLifetime
                 let alpha = match transition.TransitionType with Incoming -> 1.0f - progress | Outgoing -> progress
-                let color = Vector4 (Vector3.One, alpha)
+                let color = Color.White.WithA (byte (alpha * 255.0f))
                 let position = -eyeSize * 0.5f // negation for right-handedness
                 let size = eyeSize
                 let transform = { Position = position; Size = size; Rotation = 0.0f; Depth = Single.MaxValue; Flags = -1; RefCount = 0 }
@@ -741,7 +786,7 @@ module WorldModule2 =
                                   InsetOpt = None
                                   Image = dissolveImage
                                   Color = color
-                                  Glow = Vector4.Zero
+                                  Glow = Color.Zero
                                   Flip = FlipNone }})
                     world
             | None -> world
@@ -800,52 +845,8 @@ module WorldModule2 =
             let (physicsMessages, physicsEngine) = physicsEngine.PopMessages ()
             let world = World.setPhysicsEngine physicsEngine world
             let integrationMessages = PhysicsEngine.integrate (World.getTickRate world) physicsMessages physicsEngine
-            Seq.fold
-                (fun world integrationMessage ->
-                    match World.getLiveness world with
-                    | Running ->
-                        match integrationMessage with
-                        | BodyCollisionMessage bodyCollisionMessage ->
-                            let entity = bodyCollisionMessage.BodyShapeSource.Simulant :?> Entity
-                            if entity.Exists world then
-                                let collisionAddress = Events.Collision --> entity.EntityAddress
-                                let collisionData =
-                                    { Collider = BodyShapeSource.fromInternal bodyCollisionMessage.BodyShapeSource
-                                      Collidee = BodyShapeSource.fromInternal bodyCollisionMessage.BodyShapeSource2
-                                      Normal = bodyCollisionMessage.Normal
-                                      Speed = bodyCollisionMessage.Speed }
-                                let eventTrace = EventTrace.record "World" "handleIntegrationMessage" EventTrace.empty
-                                World.publish collisionData collisionAddress eventTrace Simulants.Game false world
-                            else world
-                        | BodySeparationMessage bodySeparationMessage ->
-                            let entity = bodySeparationMessage.BodyShapeSource.Simulant :?> Entity
-                            if entity.Exists world then
-                                let separationAddress = Events.Separation --> entity.EntityAddress
-                                let separationData =
-                                    { Separator = BodyShapeSource.fromInternal bodySeparationMessage.BodyShapeSource
-                                      Separatee = BodyShapeSource.fromInternal bodySeparationMessage.BodyShapeSource2  }
-                                let eventTrace = EventTrace.record "World" "handleIntegrationMessage" EventTrace.empty
-                                World.publish separationData separationAddress eventTrace Simulants.Game false world
-                            else world
-                        | BodyTransformMessage bodyTransformMessage ->
-                            let bodySource = bodyTransformMessage.BodySource
-                            let entity = bodySource.Simulant :?> Entity
-                            let transform = entity.GetTransform world
-                            let position = bodyTransformMessage.Position - transform.Size * 0.5f
-                            let rotation = bodyTransformMessage.Rotation
-                            let world =
-                                if bodyTransformMessage.BodySource.BodyId = Gen.idEmpty then
-                                    let transform2 = { transform with Position = position; Rotation = rotation }
-                                    if transform <> transform2
-                                    then entity.SetTransform transform2 world
-                                    else world
-                                else world
-                            let transformAddress = Events.Transform --> entity.EntityAddress
-                            let transformData = { BodySource = BodySource.fromInternal bodySource; Position = position; Rotation = rotation }
-                            let eventTrace = EventTrace.record "World" "handleIntegrationMessage" EventTrace.empty
-                            World.publish transformData transformAddress eventTrace Simulants.Game false world
-                    | Exiting -> world)
-                world integrationMessages
+            let world = Seq.fold (flip World.processIntegrationMessage) world integrationMessages
+            world
 
         static member private render renderMessages renderContext renderer eyeCenter eyeSize =
             match Constants.Render.ScreenClearing with
@@ -911,7 +912,7 @@ module WorldModule2 =
                                                 PerFrameTimer.Stop ()
                                                 match World.getLiveness world with
                                                 | Running ->
-    #if MULTITHREAD
+#if MULTITHREAD
                                                     // attempt to finish renderer thread
                                                     let world =
                                                         match rendererThreadOpt with
@@ -950,7 +951,7 @@ module WorldModule2 =
                                                             let audioPlayerThread : Task = Task.Factory.StartNew (fun () -> World.play audioMessages audioPlayer)
                                                             (Some audioPlayerThread, world)
                                                         else (None, world)
-    #else
+#else
                                                     // process rendering on main thread
                                                     RenderTimer.Start ()
                                                     let world =
@@ -977,7 +978,7 @@ module WorldModule2 =
                                                             world
                                                         else world
                                                     AudioTimer.Stop ()
-    #endif
+#endif
                                                     // post-process the world
                                                     PostFrameTimer.Start ()
                                                     let world = World.postFrame world

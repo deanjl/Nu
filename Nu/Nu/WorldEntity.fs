@@ -72,6 +72,8 @@ module WorldEntityModule =
         member this.GetPersistent world = World.getEntityPersistent this world
         member this.SetPersistent value world = World.setEntityPersistent value this world
         member this.Persistent = lens Property? Persistent this.GetPersistent this.SetPersistent this
+        member this.GetOptimized world = World.getEntityOptimized this world
+        member this.Optimized = lensReadOnly Property? Optimized this.GetOptimized this
         member this.GetOverlayNameOpt world = World.getEntityOverlayNameOpt this world
         member this.OverlayNameOpt = lensReadOnly Property? OverlayNameOpt this.GetOverlayNameOpt this
         member this.GetFacetNames world = World.getEntityFacetNames this world
@@ -112,6 +114,10 @@ module WorldEntityModule =
             let world = this.SetOmnipresent true world
             let world = this.SetPublishChanges false world
             world
+
+        /// Set the transform of an entity without generating any change events.
+        member this.SetTransformWithoutEvent transform world =
+            World.setEntityTransformWithoutEvent transform this world
 
         /// Set the transform of an entity snapped to the give position and rotation snaps.
         member this.SetTransformSnapped positionSnap rotationSnap transform world =
@@ -163,7 +169,7 @@ module WorldEntityModule =
         member this.GetQuickSize world = World.getEntityQuickSize this world
 
         /// Get an entity's bounds, taking into account its overflow.
-        member this.GetBoundsOverflow world = Math.makeBoundsOverflow (this.GetPosition world) (this.GetSize world) (this.GetOverflow world)
+        member this.GetBoundsOverflow world = v4BoundsOverflow (this.GetPosition world) (this.GetSize world) (this.GetOverflow world)
 
         /// Get an entity's bounds maximum.
         member this.GetBoundsMax world = World.getEntityBoundsMax this world

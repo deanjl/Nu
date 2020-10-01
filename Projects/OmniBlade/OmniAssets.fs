@@ -9,9 +9,13 @@ module Assets =
 
     // gui assets
     let Font = asset<Font> GuiPackageName "Font"
-    let DialogThin = asset<Image> GuiPackageName "DialogThin"
-    let DialogMedium = asset<Image> GuiPackageName "DialogMedium"
-    let DialogLarge = asset<Image> GuiPackageName "DialogLarge"
+    let DialogThinImage = asset<Image> GuiPackageName "DialogThin"
+    let DialogMediumImage = asset<Image> GuiPackageName "DialogMedium"
+    let DialogLargeImage = asset<Image> GuiPackageName "DialogLarge"
+    let ButtonUpImage = asset<Image> GuiPackageName "ButtonUp"
+    let ButtonDownImage = asset<Image> GuiPackageName "ButtonDown"
+    let ButtonShortUpImage = asset<Image> GuiPackageName "ButtonShortUp"
+    let ButtonShortDownImage = asset<Image> GuiPackageName "ButtonShortDown"
     let AffirmSound = asset<Sound> GuiPackageName "Affirm"
     let TitleSong = { Volume = Constants.Audio.DefaultSongVolume; FadeOutMs = Constants.Audio.DefaultFadeOutMs; Song = asset<Song> GuiPackageName "Title" }
 
@@ -23,7 +27,12 @@ module Assets =
     let BrassChestClosedImage = asset<Image> FieldPackageName "BrassChestClosed"
     let WoodenDoorOpenedImage = asset<Image> FieldPackageName "WoodenDoorOpened"
     let WoodenDoorClosedImage = asset<Image> FieldPackageName "WoodenDoorClosed"
+    let ThrowSwitchOffImage = asset<Image> FieldPackageName "ThrowSwitchOff"
+    let ThrowSwitchOnImage = asset<Image> FieldPackageName "ThrowSwitchOn"
+    let StepPlateImage = asset<Image> FieldPackageName "StepPlate"
+    let EmptyImage = asset<Image> FieldPackageName "Empty"
     let NpcAnimationSheet = asset<Image> FieldPackageName "Npcs"
+    let ShopkeepAnimationSheet = asset<Image> FieldPackageName "Shopkeep"
     let FinnAnimationSheet = asset<Image> FieldPackageName "Finn"
     let GlennAnimationSheet = asset<Image> FieldPackageName "Glenn"
     let GoblinAnimationSheet = asset<Image> FieldPackageName "Goblin"
@@ -32,7 +41,11 @@ module Assets =
     let EnterBattleSound = asset<Sound> FieldPackageName "EnterBattle"
     let HealSound = asset<Sound> FieldPackageName "Heal"
     let DeathSound = asset<Sound> FieldPackageName "Death"
-    let OpenChestSound = asset<Sound> FieldPackageName "Unlatch"
+    let OpenDoorSound = asset<Sound> FieldPackageName "Unlatch"
+    let OpenChestSound = asset<Sound> FieldPackageName "Unlatch2"
+    let TriggerSound = asset<Sound> FieldPackageName "Unlatch3"
+    let UseSwitchSound = asset<Sound> FieldPackageName "Unlatch4"
+    let StairStepsSound = asset<Sound> FieldPackageName "StairSteps"
     let FieldSong = { Volume = Constants.Audio.DefaultSongVolume; FadeOutMs = Constants.Audio.DefaultFadeOutMs; Song = asset<Song> FieldPackageName "Field" }
 
     // battle assets
