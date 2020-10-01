@@ -577,8 +577,7 @@ module GameplayDispatcherModule =
                        let fieldMap = fieldMap.Get world
                        Content.entity<FieldDispatcher> Simulants.Field.Name
                            [Entity.FieldModel == { FieldMapNp = fieldMap }
-                            Entity.Size == vmtovf fieldMap.FieldSizeM
-                            Entity.Persistent == false])
+                            Entity.Size == vmtovf fieldMap.FieldSizeM])
 
                      Content.entitiesIndexedBy model
                         (fun model -> model.Enemies) constant

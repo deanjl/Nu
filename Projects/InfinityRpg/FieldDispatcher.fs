@@ -33,13 +33,13 @@ module FieldDispatcherModule =
                 Vector4
                     (tileOffset.X,
                      tileOffset.Y,
-                     tileOffset.X + Constants.Layout.TileSize.X,
-                     tileOffset.Y + Constants.Layout.TileSize.Y)
+                     Constants.Layout.TileSize.X,
+                     Constants.Layout.TileSize.Y)
             Some tileInset
 
         static let viewBoundsToMapUnits (viewBounds : Vector4) =
-            let right = int viewBounds.Z
-            let top = int viewBounds.W
+            let right = int viewBounds.X + int viewBounds.Z
+            let top = int viewBounds.Y + int viewBounds.W
             Vector4i
                 (itom (int viewBounds.X),
                  itom (int viewBounds.Y),
@@ -49,8 +49,8 @@ module FieldDispatcherModule =
         static let tilePositionInView (tilePositionM : Vector2i) (mInViewBounds : Vector4i) =
             tilePositionM.X >= mInViewBounds.X &&
             tilePositionM.Y >= mInViewBounds.Y &&
-            tilePositionM.X <= mInViewBounds.Z &&
-            tilePositionM.Y <= mInViewBounds.W
+            tilePositionM.X <= mInViewBounds.X + mInViewBounds.Z &&
+            tilePositionM.Y <= mInViewBounds.Y + mInViewBounds.W
         
         static member Properties =
             [define Entity.Omnipresent true]
@@ -61,7 +61,7 @@ module FieldDispatcherModule =
                 field.GetAbsolute world
 
             let bounds =
-                Math.makeBoundsOverflow
+                v4BoundsOverflow
                     (field.GetPosition world)
                     (Vector2.Multiply (Constants.Layout.TileSize, Constants.Layout.TileSheetSize))
                     (field.GetOverflow world)
@@ -89,8 +89,8 @@ module FieldDispatcherModule =
                                       Offset = Vector2.Zero
                                       InsetOpt = tileInsetOpt
                                       Image = image
-                                      Color = Vector4.One
-                                      Glow = Vector4.Zero
+                                      Color = Color.White
+                                      Glow = Color.Zero
                                       Flip = FlipNone }
                                 sprite :: sprites
                             else sprites)

@@ -116,8 +116,8 @@ module CharacterDispatcherModule =
                 Vector4
                     (spriteOffset.X,
                      spriteOffset.Y,
-                     spriteOffset.X + Constants.Layout.TileSize.X,
-                     spriteOffset.Y + Constants.Layout.TileSize.Y)
+                     Constants.Layout.TileSize.X,
+                     Constants.Layout.TileSize.Y)
             Some spriteInset
 
         static member Properties =
@@ -148,8 +148,8 @@ module CharacterDispatcherModule =
                                   Offset = Vector2.Zero
                                   InsetOpt = getSpriteInsetOpt entity world
                                   Image = (entity.GetCharacterModel world).CharacterAnimationSheet
-                                  Color = Vector4.One
-                                  Glow = Vector4.Zero
+                                  Color = Color.White
+                                  Glow = Color.Zero
                                   Flip = FlipNone }})
                     world
             else world
