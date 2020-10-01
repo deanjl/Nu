@@ -9,16 +9,10 @@ open InfinityRpg
 module CharacterDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] CharacterModel =
-        { 
-          // gameplay logic data
-        
-          Index : CharacterIndex
+        { Index : CharacterIndex
           Turn : Turn
           CharacterState : CharacterState
-          PositionM : Vector2i
-          
-          // "puppet show" data
-          
+          TurnStatus : TurnStatus
           CharacterActivityState : CharacterActivityState
           CharacterAnimationState : CharacterAnimationState
           CharacterAnimationSheet : Image AssetTag
@@ -28,40 +22,41 @@ module CharacterDispatcherModule =
             { Index = PlayerIndex
               Turn = NoTurn
               CharacterState = CharacterState.empty
-              PositionM = Vector2i.Zero
+              TurnStatus = Idle
               CharacterActivityState = NoActivity
               CharacterAnimationState = CharacterAnimationState.initial
               CharacterAnimationSheet = Assets.PlayerImage
               Position = Vector2.Zero }
 
-        static member updatePosition newValue (model : CharacterModel) =
-            { model with Position = newValue }
-
-        static member updatePositionM newValue (model : CharacterModel) =
-            { model with PositionM = newValue }
-
-        static member updateCharacterActivityState newValue (model : CharacterModel) =
-            { model with CharacterActivityState = newValue }
+        static member updateTurn newValue (model : CharacterModel) =
+            { model with Turn = newValue }
 
         static member updateCharacterState newValue (model : CharacterModel) =
             { model with CharacterState = newValue }
+        
+        static member updateTurnStatus newValue (model : CharacterModel) =
+            { model with TurnStatus = newValue }
+        
+        static member updateCharacterActivityState newValue (model : CharacterModel) =
+            { model with CharacterActivityState = newValue }
 
         static member updateCharacterAnimationState newValue (model : CharacterModel) =
             { model with CharacterAnimationState = newValue }
 
-        static member updateTurn newValue (model : CharacterModel) =
-            { model with Turn = newValue }
+        static member updatePosition newValue (model : CharacterModel) =
+            { model with Position = newValue }
         
-        static member makePlayer =
+        static member makePlayer positionM =
             let characterState = { CharacterState.empty with HitPoints = 30; ControlType = PlayerControlled }
-            CharacterModel.updateCharacterState characterState CharacterModel.initial
+            { CharacterModel.initial with
+                CharacterState = characterState
+                Position = vmtovf positionM }
 
         static member makeEnemy index positionM =
             let characterState = { CharacterState.empty with HitPoints = 10; ControlType = Chaos }
             { CharacterModel.initial with
-                Index = EnemyIndex index
+                Index = index
                 CharacterState = characterState
-                PositionM = positionM
                 CharacterAnimationSheet = Assets.GoopyImage
                 Position = vmtovf positionM }
     

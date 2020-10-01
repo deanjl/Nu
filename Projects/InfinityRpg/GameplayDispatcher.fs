@@ -9,8 +9,111 @@ open InfinityRpg
 [<AutoOpen>]
 module GameplayDispatcherModule =
 
+    type FieldMapUnit =
+        { RandSeed : uint64
+          OffsetCount : Vector2i
+          IsHorizontal : bool
+          PathStart : Vector2i
+          PathEnd : Vector2i }
+
+        member this.ToFieldMap =
+            let rand = Rand.makeFromSeedState this.RandSeed
+            FieldMap.make Assets.FieldTileSheetImage this.OffsetCount Constants.Layout.FieldUnitSizeM [(this.PathStart, this.PathEnd)] rand |> fst
+
+        static member make fieldMapUnitOpt =
+            let sysrandom = System.Random ()
+            let randSeed = uint64 (sysrandom.Next ())
+            let randResult = Gen.random1 (Constants.Layout.FieldUnitSizeM.X - 4) // assumes X and Y are equal
+            let pathEnd = if randResult % 2 = 0 then Vector2i (randResult + 2, Constants.Layout.FieldUnitSizeM.Y - 2) else Vector2i (Constants.Layout.FieldUnitSizeM.X - 2, randResult + 2)
+            let (offsetCount, pathStart) =
+                match fieldMapUnitOpt with
+                | Some fieldMapUnit ->
+                    match fieldMapUnit.IsHorizontal with
+                    | true -> (fieldMapUnit.OffsetCount + Vector2i.Right, Vector2i (1, fieldMapUnit.PathEnd.Y))
+                    | false -> (fieldMapUnit.OffsetCount + Vector2i.Up, Vector2i (fieldMapUnit.PathEnd.X, 1))
+                | None -> (Vector2i.Zero, Vector2i.One)
+            
+            { RandSeed = randSeed
+              OffsetCount = offsetCount
+              IsHorizontal = pathEnd.X > pathEnd.Y
+              PathStart = pathStart
+              PathEnd = pathEnd }
+    
+    type SingleRoundMove =
+        | Step of Direction
+        | Attack of CharacterIndex
+
+    type MultiRoundMove = // must be reducible to SingleRoundMoves e.g. Travel = { Step, Step ...}
+        | Travel of NavigationNode list
+
+    type Move =
+        | SingleRoundMove of SingleRoundMove
+        | MultiRoundMove of MultiRoundMove
+
+        member this.MakeTurn positionM =
+            match this with
+            | SingleRoundMove singleRoundMove ->
+                match singleRoundMove with
+                | Step direction -> Turn.makeNavigation None positionM direction
+                | Attack index -> Turn.makeAttack index
+            | MultiRoundMove multiRoundMove ->
+                match multiRoundMove with
+                | Travel path ->
+                    let direction = vmtod (path.Head.PositionM - positionM)
+                    Turn.makeNavigation (Some path) positionM direction
+
+    type MoveModeler =
+        { PassableCoordinates : Vector2i list
+          CharacterCoordinates : Map<CharacterIndex, Vector2i>
+          LatestSingleMoves : Map<CharacterIndex, SingleRoundMove>
+          LatestMultiMoves : Map<CharacterIndex, MultiRoundMove> }
+
+        static member empty =
+            { PassableCoordinates = []
+              CharacterCoordinates = Map.empty
+              LatestSingleMoves = Map.empty
+              LatestMultiMoves = Map.empty }
+
+        member this.AvailableCoordinates =
+            let occupiedCoordinates = Map.toValueSeq this.CharacterCoordinates
+            List.except occupiedCoordinates this.PassableCoordinates
+
+        member this.OpenDirections coordinates =
+            List.filter (fun d -> List.exists (fun x -> x = (coordinates + (dtovm d))) this.AvailableCoordinates) [Upward; Rightward; Downward; Leftward]
+        
+        member this.AddCharacter index coordinates =
+            if List.exists (fun x -> x = coordinates) this.AvailableCoordinates then
+                { this with CharacterCoordinates = Map.add index coordinates this.CharacterCoordinates }
+            else failwith "character placement failed; coordinates unavailable"
+
+        member this.RemoveCharacter index =
+            { this with CharacterCoordinates = Map.remove index this.CharacterCoordinates }
+        
+        member this.RelocateCharacter index coordinates =
+            if List.exists (fun x -> x = coordinates) this.AvailableCoordinates then
+                let characterCoordinates = Map.add index coordinates this.CharacterCoordinates
+                { this with CharacterCoordinates = characterCoordinates }
+            else failwith "character relocation failed; coordinates unavailable"
+        
+        member this.AddSingleMove index move =
+            { this with LatestSingleMoves = Map.add index move this.LatestSingleMoves }
+
+        member this.AddMultiMove index move =
+            { this with LatestMultiMoves = Map.add index move this.LatestMultiMoves }
+
+        member this.AddMove index move =
+            match move with
+            | SingleRoundMove move -> this.AddSingleMove index move
+            | MultiRoundMove move -> this.AddMultiMove index move
+        
+        static member make fieldMap =
+            let passableCoordinates = fieldMap.FieldTiles |> Map.filter (fun _ fieldTile -> fieldTile.TileType = Passable) |> Map.toKeyList
+            { MoveModeler.empty with PassableCoordinates = passableCoordinates }                    
+    
     type [<StructuralEquality; NoComparison>] GameplayModel =
-        { ContentRandState : uint64
+        { FieldMapUnit : FieldMapUnit
+          MoveModeler : MoveModeler
+          ContentRandState : uint64
           ShallLoadGame : bool
           FieldMapOpt : FieldMap option
           Enemies : CharacterModel list
@@ -19,7 +122,9 @@ module GameplayDispatcherModule =
         static member initial =
             let sysrandom = System.Random ()
             let contentSeedState = uint64 (sysrandom.Next ())
-            { ContentRandState = contentSeedState
+            { FieldMapUnit = FieldMapUnit.make None
+              MoveModeler = MoveModeler.empty
+              ContentRandState = contentSeedState
               ShallLoadGame = false
               FieldMapOpt = None
               Enemies = []
@@ -34,28 +139,14 @@ module GameplayDispatcherModule =
         static member getCharacterByIndex index model =
             GameplayModel.tryGetCharacterByIndex index model |> Option.get
 
-        static member getCharacterOpponents index model =
-            match index with
-            | PlayerIndex -> model.Enemies
-            | _ -> [model.Player]
-        
-        static member tryGetCharacterAtPositionM positionM model =
-            GameplayModel.getCharacters model |> List.tryFind (fun model -> model.PositionM = positionM)
-
-        static member getCharacterAtPositionM positionM model =
-            GameplayModel.tryGetCharacterAtPositionM positionM model |> Option.get
-
-        static member getCharacterIndexFromPositionM positionM model =
-            (GameplayModel.getCharacterAtPositionM positionM model).Index
-        
         static member getTurn index model =
             (GameplayModel.getCharacterByIndex index model).Turn
 
         static member getCharacterState index model =
             (GameplayModel.getCharacterByIndex index model).CharacterState
         
-        static member getPositionM index model =
-            (GameplayModel.getCharacterByIndex index model).PositionM
+        static member getTurnStatus index model =
+            (GameplayModel.getCharacterByIndex index model).TurnStatus
         
         static member getCharacterActivityState index model =
             (GameplayModel.getCharacterByIndex index model).CharacterActivityState
@@ -66,33 +157,22 @@ module GameplayDispatcherModule =
         static member getPosition index model =
             (GameplayModel.getCharacterByIndex index model).Position
         
-        static member getCharacterIndices model =
-            GameplayModel.getCharacters model |> List.map (fun model -> model.Index)
-        
         static member getEnemyIndices model =
             List.map (fun model -> model.Index) model.Enemies
-        
-        static member getEnemyPositions model =
-            List.map (fun model -> model.Position) model.Enemies
 
-        static member getCharacterPositionMs model =
-            GameplayModel.getCharacters model |> List.map (fun model -> model.PositionM)
-
-        static member getEnemyActivityStates model =
-            List.map (fun model -> model.CharacterActivityState) model.Enemies
-        
-        static member getCharacterActivityStates model =
-            model.Player.CharacterActivityState :: (GameplayModel.getEnemyActivityStates model)
+        static member getOpponentIndices index model =
+            match index with
+            | PlayerIndex -> GameplayModel.getEnemyIndices model
+            | _ -> [PlayerIndex]
         
         static member getEnemyTurns model =
             List.map (fun model -> model.Turn) model.Enemies
-
-        static member enemyTurnsPending model =
-            GameplayModel.getEnemyTurns model |> List.exists (fun turn -> turn <> NoTurn)
+        
+        static member getCharacterTurnStati model =
+            GameplayModel.getCharacters model |> List.map (fun model -> model.TurnStatus)
         
         static member anyTurnsInProgress model =
-            GameplayModel.getCharacterActivityStates model |> List.exists (fun state -> state <> NoActivity) ||
-            GameplayModel.enemyTurnsPending model
+            GameplayModel.getCharacterTurnStati model |> List.exists (fun turnStatus -> turnStatus <> Idle)
         
         static member updateCharacterBy updater index newValue model =
             match index with
@@ -103,27 +183,28 @@ module GameplayDispatcherModule =
                     List.map (fun model -> if model.Index = index then updater newValue model else model)
                 { model with Enemies = enemies }
         
-        static member updatePosition index newValue model =
-            GameplayModel.updateCharacterBy CharacterModel.updatePosition index newValue model
+        static member updateTurn index newValue model =
+            GameplayModel.updateCharacterBy CharacterModel.updateTurn index newValue model
 
-        static member updatePositionM index newValue model =
-            GameplayModel.updateCharacterBy CharacterModel.updatePositionM index newValue model
+        static member updateCharacterState index newValue model =
+            GameplayModel.updateCharacterBy CharacterModel.updateCharacterState index newValue model
+        
+        static member updateTurnStatus index newValue model =
+            GameplayModel.updateCharacterBy CharacterModel.updateTurnStatus index newValue model
         
         static member updateCharacterActivityState index newValue model =
             GameplayModel.updateCharacterBy CharacterModel.updateCharacterActivityState index newValue model
 
-        static member updateCharacterState index newValue model =
-            GameplayModel.updateCharacterBy CharacterModel.updateCharacterState index newValue model
-
         static member updateCharacterAnimationState index newValue model =
             GameplayModel.updateCharacterBy CharacterModel.updateCharacterAnimationState index newValue model
 
-        static member updateTurn index newValue model =
-            GameplayModel.updateCharacterBy CharacterModel.updateTurn index newValue model
-
+        static member updatePosition index newValue model =
+            GameplayModel.updateCharacterBy CharacterModel.updatePosition index newValue model
+        
         static member removeEnemy index model =
             let enemies = List.filter (fun model -> model.Index <> index) model.Enemies
-            { model with Enemies = enemies }
+            let moveModeler = model.MoveModeler.RemoveCharacter index
+            { model with MoveModeler = moveModeler; Enemies = enemies }
 
         static member updateEnemiesBy updater newValues model =
             let enemies = List.map2 (fun newValue model -> updater newValue model) newValues model.Enemies
@@ -131,40 +212,6 @@ module GameplayDispatcherModule =
 
         static member updateEnemyActivityStates newValues model =
             GameplayModel.updateEnemiesBy CharacterModel.updateCharacterActivityState newValues model
-
-        static member updateEnemyTurns newValues model =
-            GameplayModel.updateEnemiesBy CharacterModel.updateTurn newValues model
-
-        static member resetEnemyTurns model =
-            let enemies = List.map (fun model -> CharacterModel.updateTurn NoTurn model) model.Enemies
-            { model with Enemies = enemies }
-
-        static member applyTurn index model =
-            match (GameplayModel.getTurn index model) with
-            | ActionTurn actionDescriptor ->
-                let reactorDamage = 4 // NOTE: just hard-coding damage for now
-                let reactorIndex = Option.get actionDescriptor.ActionTargetIndexOpt
-                let reactorTurn = GameplayModel.getTurn reactorIndex model
-                let reactorState = GameplayModel.getCharacterState reactorIndex model
-                let model = GameplayModel.updateCharacterState reactorIndex { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
-                match reactorTurn with
-                | NavigationTurn navigationDescriptor ->
-                    GameplayModel.updateTurn reactorIndex (NavigationTurn navigationDescriptor.CancelNavigation) model
-                | _ -> model
-            | NavigationTurn navigationDescriptor ->
-                let characterModel = GameplayModel.getCharacterByIndex index model
-                let positionM = characterModel.PositionM + dtovm navigationDescriptor.WalkDescriptor.WalkDirection
-                GameplayModel.updatePositionM index positionM model
-            | _ -> model
-
-        static member occupationMap indexOpt model = // provide index for adjacent character map
-            let fieldTiles = (Option.get model.FieldMapOpt).FieldTiles
-            let characterPositions = GameplayModel.getCharacterPositionMs model |> List.map (fun positionM -> vmtovf positionM)
-            match indexOpt with
-            | Some index ->
-                let characterPositionM = GameplayModel.getPositionM index model
-                OccupationMap.makeFromFieldTilesAndAdjacentCharacters characterPositionM fieldTiles characterPositions
-            | None -> OccupationMap.makeFromFieldTilesAndCharacters fieldTiles characterPositions
 
         static member forEachIndex updater indices model =
             let rec recursion (indices : CharacterIndex list) model =
@@ -179,6 +226,75 @@ module GameplayDispatcherModule =
                     recursion indices.Tail model
             recursion indices model
 
+        static member getCoordinates index model =
+            model.MoveModeler.CharacterCoordinates.[index]
+
+        static member getIndexByCoordinates coordinates model =
+            Map.findKey (fun _ x -> x = coordinates) model.MoveModeler.CharacterCoordinates
+
+        static member getMultiMove index model =
+            model.MoveModeler.LatestMultiMoves.[index]
+        
+        static member relocateCharacter index coordinates model =
+            { model with MoveModeler = model.MoveModeler.RelocateCharacter index coordinates }
+
+        static member addMove index (move : Move) model =
+            let turn = GameplayModel.getCoordinates index model |> move.MakeTurn
+            let model = GameplayModel.updateTurn index turn model
+            let model = GameplayModel.updateTurnStatus index TurnPending model
+            { model with MoveModeler = model.MoveModeler.AddMove index move }
+        
+        static member finishMove index model =
+            let model = GameplayModel.updateTurn index NoTurn model
+            let model = GameplayModel.updateCharacterActivityState index NoActivity model
+            GameplayModel.updateTurnStatus index Idle model
+        
+        static member applyStep index direction model =
+            let coordinates = (GameplayModel.getCoordinates index model) + dtovm direction
+            GameplayModel.relocateCharacter index coordinates model
+        
+        static member applyAttack reactorIndex model =
+            let reactorDamage = 4 // NOTE: just hard-coding damage for now
+            let reactorState = GameplayModel.getCharacterState reactorIndex model
+            GameplayModel.updateCharacterState reactorIndex { reactorState with HitPoints = reactorState.HitPoints - reactorDamage } model
+        
+        static member stopTraveler reactorIndex model =
+            match GameplayModel.getTurn reactorIndex model with
+            | NavigationTurn navigationDescriptor ->
+                GameplayModel.updateTurn reactorIndex (NavigationTurn navigationDescriptor.CancelNavigation) model
+            | _ -> model
+        
+        static member activateCharacter index model =
+            let activity = GameplayModel.getTurn index model |> Turn.toCharacterActivityState
+            let model = GameplayModel.updateCharacterActivityState index activity model
+            GameplayModel.updateTurnStatus PlayerIndex TurnBeginning model
+        
+        static member addFieldMap fieldMap model =
+            let moveModeler = MoveModeler.make fieldMap
+            { model with MoveModeler = moveModeler; FieldMapOpt = Some fieldMap }
+
+        static member makePlayer model =
+            let coordinates = Vector2i.Zero
+            let moveModeler = model.MoveModeler.AddCharacter PlayerIndex coordinates
+            let playerModel = CharacterModel.makePlayer coordinates
+            { model with MoveModeler = moveModeler; Player = playerModel }
+
+        static member makeEnemy index model =
+            let availableCoordinates = model.MoveModeler.AvailableCoordinates
+            let coordinates = availableCoordinates.Item(Gen.random1 availableCoordinates.Length)
+            let moveModeler = model.MoveModeler.AddCharacter index coordinates
+            let enemyModel = CharacterModel.makeEnemy index coordinates
+            { model with MoveModeler = moveModeler; Enemies = enemyModel :: model.Enemies }
+
+        static member makeEnemies quantity model =
+            let quantity = quantity - 1
+            let rec recursion count model =
+                let model = GameplayModel.makeEnemy (EnemyIndex count) model
+                if count = quantity then model
+                else recursion (count + 1) model
+            let model = recursion 0 model
+            { model with Enemies = List.rev model.Enemies } // enemy indices in ascending order because enemy turns must be applied in the same order as they are determined
+
     type [<StructuralEquality; NoComparison>] PlayerInput =
         | TouchInput of Vector2
         | DetailInput of Direction
@@ -186,9 +302,11 @@ module GameplayDispatcherModule =
 
     type [<StructuralEquality; NoComparison>] GameplayMessage =
         | TryContinueNavigation
-        | UpdateActiveCharacters
+        | FinishTurns of CharacterIndex list
+        | ProgressTurns of CharacterIndex list
+        | BeginTurns of CharacterIndex list
         | RunCharacterActivation
-        | PlayNewRound of Turn
+        | PlayNewRound of Move
         | TryMakePlayerMove of PlayerInput
         | StartGameplay
     
@@ -211,73 +329,14 @@ module GameplayDispatcherModule =
     type GameplayDispatcher () =
         inherit ScreenDispatcher<GameplayModel, GameplayMessage, GameplayCommand> (GameplayModel.initial)
 
-        static let determinePathEnd rand =
-            let (randResult, rand) = Rand.nextIntUnder (Constants.Layout.FieldUnitSizeM.X - 4) rand // assumes X and Y are equal
-            let pathEnd = if randResult % 2 = 0 then Vector2i (randResult + 2, Constants.Layout.FieldUnitSizeM.Y - 2) else Vector2i (Constants.Layout.FieldUnitSizeM.X - 2, randResult + 2)
-            (pathEnd, rand)
-
-        static let makeFieldUnit (fieldUnitOpt, rand) =
-            let (pathEnd, rand) = determinePathEnd rand
-            let (offsetCount, pathStart) =
-                match fieldUnitOpt with
-                | Some fieldUnit ->
-                    match fieldUnit.IsHorizontal with
-                    | true -> (fieldUnit.OffsetCount + Vector2i.Right, Vector2i (1, fieldUnit.PathEnd.Y))
-                    | false -> (fieldUnit.OffsetCount + Vector2i.Up, Vector2i (fieldUnit.PathEnd.X, 1))
-                | None -> (Vector2i.Zero, Vector2i.One)
-            let fieldUnit =
-                { OffsetCount = offsetCount
-                  IsHorizontal = pathEnd.X > pathEnd.Y
-                  PathStart = pathStart
-                  PathEnd = pathEnd }
-            (fieldUnit, rand)
-
-        static let fieldUnitToFieldTiles (fieldUnit, rand) =
-            let offsetM = Vector2i.Multiply (fieldUnit.OffsetCount, Constants.Layout.FieldUnitSizeM)
-            let pathEdgesM = [(offsetM + fieldUnit.PathStart, offsetM + fieldUnit.PathEnd)]
-            let (fieldMap, rand) = FieldMap.make Assets.FieldTileSheetImage offsetM Constants.Layout.FieldUnitSizeM pathEdgesM rand
-            (fieldMap.FieldTiles, rand)
-
-        static let createField rand =
-            let extentions = 0
-            let fieldUnitTuples =
-                List.fold
-                    (fun (fieldUnitTuples : (FieldUnit * Rand) list) _ ->
-                        let lastFieldUnitTuple = fieldUnitTuples.Head
-                        let lastFieldUnitTupleWithOpt = (Some (fst lastFieldUnitTuple), snd lastFieldUnitTuple)
-                        let fieldUnitTuple = makeFieldUnit lastFieldUnitTupleWithOpt
-                        fieldUnitTuple :: fieldUnitTuples)
-                    [makeFieldUnit (None, rand)]
-                    [0 .. extentions - 1]
-            let offsetCount = (fst fieldUnitTuples.Head).OffsetCount
-            let fieldTilesTupleList = List.map (fun fieldUnitTuple -> fieldUnitToFieldTiles fieldUnitTuple) fieldUnitTuples
-            let fieldTiles = List.map (fun fieldTiles -> fst fieldTiles) fieldTilesTupleList |> List.reduce (fun concat fieldTiles -> concat @@ fieldTiles)
-            let fieldMap = 
-                { FieldSizeM = Constants.Layout.FieldUnitSizeM + Vector2i.Multiply (offsetCount, Constants.Layout.FieldUnitSizeM)
-                  FieldTiles = fieldTiles
-                  FieldTileSheet = Assets.FieldTileSheetImage }
-            fieldMap
-
-        static let createEnemies fieldMap =
-            let randResult = Gen.random1 5
-            let enemyCount = randResult + 5
-            let (models, _) =
-                List.fold
-                    (fun (models, coords) index ->
-                        let availableCoordinates = OccupationMap.makeFromFieldTilesAndCharacters fieldMap.FieldTiles coords |> Map.filter (fun _ occupied -> occupied = false) |> Map.toKeyList |> List.toArray
-                        let randResult = Gen.random1 availableCoordinates.Length
-                        let enemyCoordinates = availableCoordinates.[randResult]
-                        let model = CharacterModel.makeEnemy index enemyCoordinates
-                        (model :: models, (vmtovf enemyCoordinates) :: coords))
-                    ([], [])
-                    [0 .. enemyCount - 1]
-            models
-
-        static let tryGetNavigationPath index positionM occupationMap model =
-            let characterModel = GameplayModel.getCharacterByIndex index model
+        static let tryGetNavigationPath index positionM model =
+            let fieldTiles = (Option.get model.FieldMapOpt).FieldTiles
+            let characterPositions = Map.toValueList model.MoveModeler.CharacterCoordinates |> List.map (fun positionM -> vmtovf positionM)
+            let currentPositionM = GameplayModel.getCoordinates PlayerIndex model
+            let occupationMap = OccupationMap.makeFromFieldTilesAndAdjacentCharacters currentPositionM fieldTiles characterPositions
             let nodes = OccupationMap.makeNavigationNodes occupationMap
             let goalNode = Map.find positionM nodes
-            let currentNode = Map.find characterModel.PositionM nodes
+            let currentNode = Map.find currentPositionM nodes
             let navigationPathOpt =
                 AStar.FindPath (
                     currentNode,
@@ -288,35 +347,6 @@ module GameplayDispatcherModule =
             | null -> None
             | navigationPath -> Some (navigationPath |> List.ofSeq |> List.rev |> List.tail)
 
-        static let determineCharacterTurnFromPosition index targetPositionM occupationMap model =
-            let currentPositionM = GameplayModel.getPositionM index model
-            match Math.arePositionMsAdjacent targetPositionM currentPositionM with
-            | true ->
-                let openDirections = OccupationMap.getOpenDirectionsAtPositionM currentPositionM occupationMap
-                let direction = vmtod (targetPositionM - currentPositionM)
-                let opponents = GameplayModel.getCharacterOpponents index model
-                if Set.contains direction openDirections then
-                    Turn.makeNavigation None currentPositionM direction
-                elif List.exists (fun opponent -> opponent.PositionM = targetPositionM) opponents then
-                    GameplayModel.getCharacterIndexFromPositionM targetPositionM model |> Turn.makeAttack
-                else NoTurn
-            | false ->
-                match tryGetNavigationPath index targetPositionM occupationMap model with
-                | Some navigationPath ->
-                    match navigationPath with
-                    | [] -> NoTurn
-                    | (head :: _) ->
-                        if not (Map.find head.PositionM occupationMap) then
-                            let walkDirection = vmtod (head.PositionM - currentPositionM)
-                            Turn.makeNavigation (Some navigationPath) currentPositionM walkDirection
-                        else CancelTurn // space became occupied
-                | None -> NoTurn
-
-        static let determineCharacterTurnFromDirection index direction occupationMap model =
-            let positionM = GameplayModel.getPositionM index model
-            let targetPositionM = positionM + dtovm direction
-            determineCharacterTurnFromPosition index targetPositionM occupationMap model
-        
         static let walk3 positive current destination =
             let walkSpeed = if positive then Constants.Layout.CharacterWalkSpeed else -Constants.Layout.CharacterWalkSpeed
             let next = current + walkSpeed
@@ -349,162 +379,239 @@ module GameplayDispatcherModule =
             match message with
             
             | TryContinueNavigation ->
-                let currentPositionM = model.Player.PositionM
-                let playerTurn =
-                    if model.Player.Position = vmtovf currentPositionM then
-                        match model.Player.CharacterActivityState with
-                        | Navigation navigationDescriptor ->
-                            match navigationDescriptor.NavigationPathOpt with
-                            | Some (currentNode :: navigationPath) ->
-                                let targetPositionM = (List.head navigationPath).PositionM
-                                let occupationMap = GameplayModel.occupationMap None model
-                                if not (Map.find targetPositionM occupationMap) then
-                                    let walkDirection = vmtod (targetPositionM - currentPositionM)
-                                    let navigationDescriptor = NavigationDescriptor.make (Some navigationPath) currentPositionM walkDirection
-                                    NavigationTurn navigationDescriptor
-                                else CancelTurn
-                            | _ -> failwith "at this point navigation path should exist with length > 1"
-                        | _ -> NoTurn
-                    else NoTurn
-
-                match playerTurn with
-                | NoTurn -> just model
-                | _ -> withMsg model (PlayNewRound playerTurn)
-            
-            | UpdateActiveCharacters ->
+                let playerMoveOpt =
+                    match model.Player.TurnStatus with
+                    | TurnFinishing ->
+                        match GameplayModel.getMultiMove PlayerIndex model with
+                        | Travel (_ :: navigationPath) ->
+                            let targetPositionM = (List.head navigationPath).PositionM
+                            if List.exists (fun x -> x = targetPositionM) model.MoveModeler.AvailableCoordinates then
+                                Some (MultiRoundMove (Travel navigationPath))
+                            else None
+                    | _ -> None
+             
+                let model =
+                    match model.Player.TurnStatus with
+                    | TurnFinishing -> GameplayModel.updateTurnStatus PlayerIndex Idle model
+                    | _ -> model
                 
+                match playerMoveOpt with
+                | Some move -> withMsg model (PlayNewRound move)
+                | _ -> just model
+            
+            | FinishTurns indices ->
                 let updater index model =
-                    let characterPosition = GameplayModel.getPosition index model
-                    let characterAnimationState = GameplayModel.getCharacterAnimationState index model
-                    let characterActivityState = GameplayModel.getCharacterActivityState index model
-
-                    match characterActivityState with
-                    | Action actionDescriptor ->
-                        let reactorIndex = Option.get actionDescriptor.ActionTargetIndexOpt
-                        let reactorState = GameplayModel.getCharacterState reactorIndex model
-                        let time = World.getTickTime world
-                        
-                        let model = // mostly battle animation control
-                            match actionDescriptor.ActionTicks with
-                            | x when x = 0L ->
-                                let direction = ActionDescriptor.computeActionDirection characterPosition (GameplayModel.getPositionM reactorIndex model)
-                                GameplayModel.updateCharacterAnimationState index (CharacterAnimationState.makeAction time direction) model
-                            | x when x = Constants.InfinityRpg.ReactionTick ->
-                                if reactorState.HitPoints <= 0 then
-                                    let reactorCharacterAnimationState = GameplayModel.getCharacterAnimationState reactorIndex model
-                                    GameplayModel.updateCharacterAnimationState reactorIndex reactorCharacterAnimationState.Slain model
-                                else model
-                            | x when x = Constants.InfinityRpg.ActionTicksMax ->
-                                let model = GameplayModel.updateCharacterAnimationState index (characterAnimationState.Facing time) model
-                                if reactorState.HitPoints <= 0 then
-                                    match reactorIndex with
-                                    | PlayerIndex -> GameplayModel.updateCharacterState reactorIndex {reactorState with ControlType = Uncontrolled} model // TODO: reimplement screen transition
-                                    | EnemyIndex _ -> GameplayModel.removeEnemy reactorIndex model
-                                else model
-                            | _ -> model
-
-                        if actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
-                            GameplayModel.updateCharacterActivityState index NoActivity model
-                        else GameplayModel.updateCharacterActivityState index (Action actionDescriptor.Inc) model
-                    | Navigation navigationDescriptor ->
-                        
-                        let walkDescriptor = navigationDescriptor.WalkDescriptor
-                        let (newPosition, walkState) = walk walkDescriptor characterPosition
-                        let model = GameplayModel.updateCharacterAnimationState index (characterAnimationState.UpdateDirection walkDescriptor.WalkDirection) model
-                        let model = GameplayModel.updatePosition index newPosition model
-
-                        match walkState with
-                        | WalkFinished ->
+                    match (GameplayModel.getTurnStatus index model) with
+                    | TurnFinishing ->
+                        match GameplayModel.getCharacterActivityState index model with
+                        | Action actionDescriptor ->
+                            let model = GameplayModel.finishMove index model
+                            let reactorIndex = Option.get actionDescriptor.ActionTargetIndexOpt
+                            let reactorState = GameplayModel.getCharacterState reactorIndex model
+                            let characterAnimationState = GameplayModel.getCharacterAnimationState index model
+                            let model = GameplayModel.updateCharacterAnimationState index (characterAnimationState.Facing (World.getTickTime world)) model
+                            if reactorState.HitPoints <= 0 then
+                                match reactorIndex with
+                                | PlayerIndex -> GameplayModel.updateCharacterState reactorIndex {reactorState with ControlType = Uncontrolled} model // TODO: reimplement screen transition
+                                | EnemyIndex _ -> GameplayModel.removeEnemy reactorIndex model
+                            else model
+                        | Navigation navigationDescriptor ->
+                            let position = GameplayModel.getCoordinates index model |> vmtovf
+                            let model = GameplayModel.updatePosition index position model
                             match navigationDescriptor.NavigationPathOpt with
                             | None
-                            | Some (_ :: []) -> GameplayModel.updateCharacterActivityState index NoActivity model
+                            | Some (_ :: []) -> GameplayModel.finishMove index model
                             | _ -> model
-                        | WalkContinuing -> model
-                    | NoActivity -> model
+                        | _ -> failwith "TurnStatus is TurnFinishing; CharacterActivityState should not be NoActivity"
+                    | _ -> failwith "non-finishing turns should be filtered out by this point"
 
-                let model = GameplayModel.forEachIndex updater (GameplayModel.getCharacterIndices model) model
-                
+                let model = GameplayModel.forEachIndex updater indices model
                 withMsg model TryContinueNavigation
+            
+            | ProgressTurns indices ->
+                
+                let updater index model =
+                    match (GameplayModel.getTurnStatus index model) with
+                    | TurnProgressing ->
+                        match GameplayModel.getCharacterActivityState index model with
+                        | Action actionDescriptor ->
+                            let reactorIndex = Option.get actionDescriptor.ActionTargetIndexOpt
+                            let reactorState = GameplayModel.getCharacterState reactorIndex model
+                            
+                            let model = 
+                                if actionDescriptor.ActionTicks = Constants.InfinityRpg.ReactionTick then
+                                    if reactorState.HitPoints <= 0 then
+                                        let reactorCharacterAnimationState = GameplayModel.getCharacterAnimationState reactorIndex model
+                                        GameplayModel.updateCharacterAnimationState reactorIndex reactorCharacterAnimationState.Slain model
+                                    else model
+                                else model
+
+                            if actionDescriptor.ActionTicks = Constants.InfinityRpg.ActionTicksMax then
+                                GameplayModel.updateTurnStatus index TurnFinishing model
+                            else GameplayModel.updateCharacterActivityState index (Action actionDescriptor.Inc) model
+                        | Navigation navigationDescriptor ->
+                            let (newPosition, walkState) = GameplayModel.getPosition index model |> walk navigationDescriptor.WalkDescriptor
+                            let model = GameplayModel.updatePosition index newPosition model
+
+                            match walkState with
+                            | WalkFinished -> GameplayModel.updateTurnStatus index TurnFinishing model
+                            | WalkContinuing -> model
+                        | NoActivity -> failwith "TurnStatus is TurnProgressing; CharacterActivityState should not be NoActivity"
+                    | _ -> model
+
+                let model = GameplayModel.forEachIndex updater indices model
+                let indices = List.filter (fun x -> (GameplayModel.getTurnStatus x model) = TurnFinishing) indices
+
+                withMsg model (FinishTurns indices)
+            
+            | BeginTurns indices ->
+
+                let updater index model =
+                    let characterAnimationState = GameplayModel.getCharacterAnimationState index model
+                    match (GameplayModel.getTurnStatus index model) with
+                    | TurnBeginning ->
+                        let characterAnimationState =
+                            match (GameplayModel.getCharacterActivityState index model) with
+                            | Action actionDescriptor ->
+                                let reactorIndex = Option.get actionDescriptor.ActionTargetIndexOpt
+                                let characterPosition = GameplayModel.getPosition index model
+                                let direction = ActionDescriptor.computeActionDirection characterPosition (GameplayModel.getCoordinates reactorIndex model)
+                                CharacterAnimationState.makeAction (World.getTickTime world) direction
+                            | Navigation navigationDescriptor ->
+                                characterAnimationState.UpdateDirection navigationDescriptor.WalkDescriptor.WalkDirection
+                            | _ -> failwith "TurnStatus is TurnBeginning; CharacterActivityState should not be NoActivity"
+                        let model = GameplayModel.updateCharacterAnimationState index characterAnimationState model
+                        GameplayModel.updateTurnStatus index TurnProgressing model // "TurnProgressing" for normal animation; "TurnFinishing" for roguelike mode
+                    | _ -> model
+                
+                let model = GameplayModel.forEachIndex updater indices model
+                
+                withMsg model (ProgressTurns indices)
             
             | RunCharacterActivation ->
                 
                 // player's turn is converted to activity at the beginning of the round, activating the observable playback of his move
                 let model =
-                    if model.Player.Turn <> NoTurn then
-                        let activity = Turn.toCharacterActivityState model.Player.Turn
-                        let model = GameplayModel.updateCharacterActivityState PlayerIndex activity model
-                        GameplayModel.updateTurn PlayerIndex NoTurn model
+                    if model.Player.TurnStatus = TurnPending then
+                        GameplayModel.activateCharacter PlayerIndex model
                     else model
 
                 // enemies are so activated at the same time during player movement, or after player's action has finished playback
+                let indices = GameplayModel.getEnemyIndices model |> List.filter (fun x -> (GameplayModel.getTurnStatus x model) <> Idle)
                 let model =
-                    if (GameplayModel.enemyTurnsPending model) then
+                    if (List.exists (fun x -> (GameplayModel.getTurnStatus x model) = TurnPending) indices) then
                         match model.Player.CharacterActivityState with
                         | Action _ -> model
                         | Navigation _ 
-                        | NoActivity ->
+                        | NoActivity -> // TODO: find out why using activateCharacter here triggered "turn status is TurnBeginning..." exception
                             let enemyActivities = GameplayModel.getEnemyTurns model |> List.map Turn.toCharacterActivityState
-                            let model = GameplayModel.updateEnemyActivityStates enemyActivities model
-                            GameplayModel.resetEnemyTurns model
+                            let model = GameplayModel.forEachIndex (fun index model -> GameplayModel.updateTurnStatus index TurnBeginning model) indices model
+                            GameplayModel.updateEnemyActivityStates enemyActivities model
                     else model
                                 
-                withMsg model UpdateActiveCharacters                
+                let indices = List.filter (fun x -> (GameplayModel.getTurnStatus x model) <> TurnPending) indices
+                
+                let indices =
+                    match model.Player.TurnStatus with
+                    | Idle -> indices
+                    | _ -> PlayerIndex :: indices
+                
+                withMsg model (BeginTurns indices)
             
-            | PlayNewRound newPlayerTurn ->
+            | PlayNewRound playerMove ->
                 
                 // player makes his move
-                let model = GameplayModel.updateTurn PlayerIndex newPlayerTurn model
-                let model = GameplayModel.applyTurn PlayerIndex model
+                
+                let model = GameplayModel.addMove PlayerIndex playerMove model
+                
+                let model =
+                    match playerMove with
+                    | SingleRoundMove singleRoundMove ->
+                        match singleRoundMove with
+                        | Step direction -> GameplayModel.applyStep PlayerIndex direction model
+                        | Attack reactorIndex -> GameplayModel.applyAttack reactorIndex model
+                    | MultiRoundMove multiRoundMove ->
+                        match multiRoundMove with
+                        | Travel (head :: _) -> GameplayModel.relocateCharacter PlayerIndex head.PositionM model
                 
                 // (still standing) enemies make theirs
-                let turnGenerator index (occupationMap, enemyTurns) =
-                    let enemyPositionM = GameplayModel.getPositionM index model
-                    let characterState = GameplayModel.getCharacterState index model
-                    let enemyTurn =
-                        match characterState.ControlType with
-                        | Chaos ->
-                            if characterState.HitPoints <= 0 then NoTurn
-                            else
-                                if Math.arePositionMsAdjacent enemyPositionM model.Player.PositionM then
-                                    Turn.makeAttack PlayerIndex
-                                else
-                                    let randResult = Gen.random1 4
-                                    let direction = Direction.fromInt randResult
-                                    determineCharacterTurnFromDirection index direction occupationMap model
-                        | _ -> NoTurn
-                    let occupationMap = OccupationMap.transferByDesiredTurn enemyTurn (vmtovf enemyPositionM) occupationMap
-                    (occupationMap, enemyTurn :: enemyTurns)
-                
-                // if any action turn is present, all actions except the first are cancelled
-                let turnFilter enemyTurns =
-                    if List.exists Turn.isAction enemyTurns then
-                        let firstActionIndex = List.tryFindIndex Turn.isAction enemyTurns |> Option.get
-                        List.mapi (fun index (turn : Turn) -> if index = firstActionIndex then turn else NoTurn ) enemyTurns
-                    else enemyTurns
                 
                 let indices = GameplayModel.getEnemyIndices model
-                let enemyTurns = List.foldBack turnGenerator indices (GameplayModel.occupationMap None model, []) |> snd |> turnFilter
+                let attackerOpt = List.tryFind (fun x -> Math.arePositionMsAdjacent (GameplayModel.getCoordinates x model) (GameplayModel.getCoordinates PlayerIndex model)) indices
 
-                let model = GameplayModel.updateEnemyTurns enemyTurns model
-                let model = GameplayModel.forEachIndex GameplayModel.applyTurn indices model
-                
+                let updater =
+                    (fun index model ->
+                        let characterState = GameplayModel.getCharacterState index model
+                        let enemyMoveOpt =
+                            match characterState.ControlType with
+                            | Chaos ->
+                                if characterState.HitPoints > 0 then
+                                    match attackerOpt with
+                                    | Some attackerIndex ->
+                                        if index = attackerIndex then
+                                            Some (SingleRoundMove (Attack PlayerIndex))
+                                        else None
+                                    | None ->
+                                        let openDirections = GameplayModel.getCoordinates index model |> model.MoveModeler.OpenDirections
+                                        let direction = Gen.random1 4 |> Direction.fromInt
+                                        if List.exists (fun x -> x = direction) openDirections then
+                                            Some (SingleRoundMove (Step direction))
+                                        else None
+                                else None
+                            | _ -> None
+                        
+                        match enemyMoveOpt with
+                        | Some move ->
+                            let model = GameplayModel.addMove index move model
+                            match move with
+                            | SingleRoundMove singleRoundMove ->
+                                match singleRoundMove with
+                                | Step direction -> GameplayModel.applyStep index direction model
+                                | Attack reactorIndex ->
+                                    let model = GameplayModel.applyAttack reactorIndex model
+                                    GameplayModel.stopTraveler reactorIndex model
+                            | _ -> failwith "enemy not yet capable of multiround move"
+                        | None -> model)
+                        
+                let model = GameplayModel.forEachIndex updater indices model
+
                 withMsg model RunCharacterActivation
 
             | TryMakePlayerMove playerInput ->
 
-                let occupationMap = GameplayModel.occupationMap (Some PlayerIndex) model
-            
-                let playerTurn =
+                let currentCoordinates = GameplayModel.getCoordinates PlayerIndex model
+                
+                let targetCoordinatesOpt =
                     match playerInput with
-                    | TouchInput touchPosition ->
-                        let targetPositionM = World.mouseToWorld false touchPosition world |> vftovm
-                        determineCharacterTurnFromPosition PlayerIndex targetPositionM occupationMap model
-                    | DetailInput direction -> determineCharacterTurnFromDirection PlayerIndex direction occupationMap model
-                    | NoInput -> NoTurn
+                    | TouchInput touchPosition -> Some (World.mouseToWorld false touchPosition world |> vftovm)
+                    | DetailInput direction -> Some (currentCoordinates + dtovm direction)
+                    | NoInput -> None
 
-                match playerTurn with
-                | ActionTurn _
-                | NavigationTurn _ -> withMsg model (PlayNewRound playerTurn)
+                let playerMoveOpt =
+                    match targetCoordinatesOpt with
+                    | Some coordinates ->
+                        match Math.arePositionMsAdjacent coordinates currentCoordinates with
+                        | true ->
+                            let openDirections = model.MoveModeler.OpenDirections currentCoordinates
+                            let direction = vmtod (coordinates - currentCoordinates)
+                            let opponents = GameplayModel.getOpponentIndices PlayerIndex model
+                            if List.exists (fun x -> x = direction) openDirections then
+                                Some (SingleRoundMove (Step direction))
+                            elif List.exists (fun index -> (GameplayModel.getCoordinates index model) = coordinates) opponents then
+                                let targetIndex = GameplayModel.getIndexByCoordinates coordinates model
+                                Some (SingleRoundMove (Attack targetIndex))
+                            else None
+                        | false ->
+                            match tryGetNavigationPath PlayerIndex coordinates model with
+                            | Some navigationPath ->
+                                match navigationPath with
+                                | [] -> None
+                                | _ -> Some (MultiRoundMove (Travel navigationPath))
+                            | None -> None
+                    | None -> None
+                
+                match playerMoveOpt with
+                | Some move -> withMsg model (PlayNewRound move)
                 | _ -> just model
 
             | StartGameplay ->
@@ -513,10 +620,10 @@ module GameplayDispatcherModule =
                     let model = scvalue<GameplayModel> modelStr
                     just model
                 else
-                    let rand = Rand.makeFromSeedState model.ContentRandState
-                    let fieldMap = createField rand
-                    let enemies = createEnemies fieldMap
-                    let model = { model with FieldMapOpt = Some fieldMap; Enemies = enemies; Player = CharacterModel.makePlayer }
+                    let fieldMap = model.FieldMapUnit.ToFieldMap
+                    let model = GameplayModel.addFieldMap fieldMap model
+                    let model = GameplayModel.makePlayer model
+                    let model = GameplayModel.makeEnemies 9 model
                     just model
 
         override this.Command (model, command, _, world) =
@@ -584,5 +691,5 @@ module GameplayDispatcherModule =
                         (fun model -> model.Index.getEnemyIndex)
                         (fun index model _ -> Content.entity<EnemyDispatcher> ("Enemy+" + scstring index) [Entity.CharacterModel <== model])
 
-                     Content.entity<PlayerDispatcher> Simulants.Player.Name // TODO: didn't realise enemies' possible placements included outermost tiles allowing player/enemy overlap. another problem to deal with once structure is under control
+                     Content.entity<PlayerDispatcher> Simulants.Player.Name
                        [Entity.CharacterModel <== model --> fun model -> model.Player]])]

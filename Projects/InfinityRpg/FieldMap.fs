@@ -16,12 +16,6 @@ type [<StructuralEquality; NoComparison>] FieldMap =
       FieldTiles : Map<Vector2i, FieldTile>
       FieldTileSheet : Image AssetTag }
 
-type FieldUnit =
-    { OffsetCount : Vector2i
-      IsHorizontal : bool
-      PathStart : Vector2i
-      PathEnd : Vector2i }
-
 [<RequireQualifiedAccess>]
 module FieldMap =
 
