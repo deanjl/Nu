@@ -113,20 +113,16 @@ module GameplayDispatcherModule =
     type [<StructuralEquality; NoComparison>] GameplayModel =
         { FieldMapUnit : FieldMapUnit
           MoveModeler : MoveModeler
-          ContentRandState : uint64
           ShallLoadGame : bool
-          FieldMapOpt : FieldMap option
+          Field : FieldModel
           Enemies : CharacterModel list
           Player : CharacterModel }
 
         static member initial =
-            let sysrandom = System.Random ()
-            let contentSeedState = uint64 (sysrandom.Next ())
             { FieldMapUnit = FieldMapUnit.make None
               MoveModeler = MoveModeler.empty
-              ContentRandState = contentSeedState
               ShallLoadGame = false
-              FieldMapOpt = None
+              Field = FieldModel.initial
               Enemies = []
               Player = CharacterModel.initial }
 
@@ -271,7 +267,8 @@ module GameplayDispatcherModule =
         
         static member addFieldMap fieldMap model =
             let moveModeler = MoveModeler.make fieldMap
-            { model with MoveModeler = moveModeler; FieldMapOpt = Some fieldMap }
+            let fieldModel = { FieldMapNp = fieldMap }
+            { model with MoveModeler = moveModeler; Field = fieldModel }
 
         static member makePlayer model =
             let coordinates = Vector2i.Zero
@@ -330,7 +327,7 @@ module GameplayDispatcherModule =
         inherit ScreenDispatcher<GameplayModel, GameplayMessage, GameplayCommand> (GameplayModel.initial)
 
         static let tryGetNavigationPath index positionM model =
-            let fieldTiles = (Option.get model.FieldMapOpt).FieldTiles
+            let fieldTiles = model.Field.FieldMapNp.FieldTiles
             let characterPositions = Map.toValueList model.MoveModeler.CharacterCoordinates |> List.map (fun positionM -> vmtovf positionM)
             let currentPositionM = GameplayModel.getCoordinates PlayerIndex model
             let occupationMap = OccupationMap.makeFromFieldTilesAndAdjacentCharacters currentPositionM fieldTiles characterPositions
@@ -614,7 +611,7 @@ module GameplayDispatcherModule =
                 | Some move -> withMsg model (PlayNewRound move)
                 | _ -> just model
 
-            | StartGameplay ->
+            | StartGameplay -> // TODO: and fix >1 new games again!
                 if model.ShallLoadGame && File.Exists Assets.SaveFilePath then
                     let modelStr = File.ReadAllText Assets.SaveFilePath
                     let model = scvalue<GameplayModel> modelStr
@@ -638,7 +635,7 @@ module GameplayDispatcherModule =
                     | PlayerControlled -> withMsg world (TryMakePlayerMove playerInput)
                     | _ -> just world
                 else just world
-            | SaveGame ->
+            | SaveGame -> // TODO: fix save once again when the new map handling system is in place
                 let modelStr = scstring model
                 File.WriteAllText (Assets.SaveFilePath, modelStr)
                 just world
@@ -680,12 +677,9 @@ module GameplayDispatcherModule =
             [Content.layerIfScreenSelected screen (fun _ _ ->
                 Content.layer Simulants.Scene.Name []
 
-                    [Content.entityOpt model (fun model -> model.FieldMapOpt) (fun fieldMap world ->
-                       let fieldMap = fieldMap.Get world
-                       Content.entity<FieldDispatcher> Simulants.Field.Name
-                           [Entity.FieldModel == { FieldMapNp = fieldMap }
-                            Entity.Size == vmtovf fieldMap.FieldSizeM])
-
+                    [Content.entity<FieldDispatcher> Simulants.Field.Name
+                       [Entity.FieldModel <== model --> fun model -> model.Field]
+                                        
                      Content.entitiesIndexedBy model
                         (fun model -> model.Enemies) constant
                         (fun model -> model.Index.getEnemyIndex)

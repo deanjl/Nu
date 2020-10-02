@@ -55,6 +55,9 @@ module FieldDispatcherModule =
         static member Properties =
             [define Entity.Omnipresent true]
 
+        override this.Initializers (model, _) =
+            [Entity.Size <== model --> fun (model : FieldModel) -> vmtovf model.FieldMapNp.FieldSizeM]
+        
         override this.Actualize (field, world) =
 
             let absolute =
