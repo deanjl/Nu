@@ -39,6 +39,24 @@ module GameplayDispatcherModule =
               PathStart = pathStart
               PathEnd = pathEnd }
     
+    type MapModeler =
+        { FieldMapUnits : Map<Vector2i, FieldMapUnit>
+          CurrentFieldOffset : Vector2i }
+
+        static member empty =
+            { FieldMapUnits = Map.empty
+              CurrentFieldOffset = Vector2i.Zero }
+
+        member this.AddFieldMapUnit fieldMapUnit =
+            let fieldMapUnits = Map.add fieldMapUnit.OffsetCount fieldMapUnit this.FieldMapUnits
+            { this with FieldMapUnits = fieldMapUnits }
+
+        member this.GetCurrent =
+            this.FieldMapUnits.[this.CurrentFieldOffset]
+        
+        static member make =
+            FieldMapUnit.make None |> MapModeler.empty.AddFieldMapUnit 
+    
     type SingleRoundMove =
         | Step of Direction
         | Attack of CharacterIndex
@@ -111,7 +129,7 @@ module GameplayDispatcherModule =
             { MoveModeler.empty with PassableCoordinates = passableCoordinates }                    
     
     type [<StructuralEquality; NoComparison>] GameplayModel =
-        { FieldMapUnit : FieldMapUnit
+        { MapModeler : MapModeler
           MoveModeler : MoveModeler
           ShallLoadGame : bool
           Field : FieldModel
@@ -119,7 +137,7 @@ module GameplayDispatcherModule =
           Player : CharacterModel }
 
         static member initial =
-            { FieldMapUnit = FieldMapUnit.make None
+            { MapModeler = MapModeler.make
               MoveModeler = MoveModeler.empty
               ShallLoadGame = false
               Field = FieldModel.initial
@@ -617,7 +635,7 @@ module GameplayDispatcherModule =
                     let model = scvalue<GameplayModel> modelStr
                     just model
                 else
-                    let fieldMap = model.FieldMapUnit.ToFieldMap
+                    let fieldMap = model.MapModeler.GetCurrent.ToFieldMap
                     let model = GameplayModel.addFieldMap fieldMap model
                     let model = GameplayModel.makePlayer model
                     let model = GameplayModel.makeEnemies 9 model
