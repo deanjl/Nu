@@ -13,6 +13,11 @@ type CharacterIndex =
         | EnemyIndex index -> index
         | _ -> failwith "must be enemy index."
 
+    member this.isEnemy =
+        match this with
+        | EnemyIndex _ -> true
+        | _ -> false
+
 type [<CustomEquality; NoComparison>] NavigationNode =
     { PositionM : Vector2i
       mutable Neighbors : NavigationNode list } // OPTIMIZATION: has to be mutable to be efficiently populated.

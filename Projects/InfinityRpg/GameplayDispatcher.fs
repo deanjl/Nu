@@ -53,9 +53,13 @@ module GameplayDispatcherModule =
 
         member this.GetCurrent =
             this.FieldMapUnits.[this.CurrentFieldOffset]
+
+        member this.MoveCurrent direction =
+            { this with CurrentFieldOffset = this.CurrentFieldOffset + dtovm direction }
         
         static member make =
-            FieldMapUnit.make None |> MapModeler.empty.AddFieldMapUnit 
+            let mm = FieldMapUnit.make None |> MapModeler.empty.AddFieldMapUnit
+            FieldMapUnit.make (Some mm.GetCurrent) |> mm.AddFieldMapUnit
     
     type SingleRoundMove =
         | Step of Direction
@@ -113,6 +117,9 @@ module GameplayDispatcherModule =
                 { this with CharacterCoordinates = characterCoordinates }
             else failwith "character relocation failed; coordinates unavailable"
         
+        member this.ClearEnemies =
+            { this with CharacterCoordinates = Map.filter (fun k _ -> not k.isEnemy ) this.CharacterCoordinates }
+        
         member this.AddSingleMove index move =
             { this with LatestSingleMoves = Map.add index move this.LatestSingleMoves }
 
@@ -124,9 +131,9 @@ module GameplayDispatcherModule =
             | SingleRoundMove move -> this.AddSingleMove index move
             | MultiRoundMove move -> this.AddMultiMove index move
         
-        static member make fieldMap =
+        member this.SetPassableCoordinates fieldMap =
             let passableCoordinates = fieldMap.FieldTiles |> Map.filter (fun _ fieldTile -> fieldTile.TileType = Passable) |> Map.toKeyList
-            { MoveModeler.empty with PassableCoordinates = passableCoordinates }                    
+            { this with PassableCoordinates = passableCoordinates }                    
     
     type [<StructuralEquality; NoComparison>] GameplayModel =
         { MapModeler : MapModeler
@@ -220,6 +227,9 @@ module GameplayDispatcherModule =
             let moveModeler = model.MoveModeler.RemoveCharacter index
             { model with MoveModeler = moveModeler; Enemies = enemies }
 
+        static member clearEnemies model =
+            { model with MoveModeler = model.MoveModeler.ClearEnemies; Enemies = [] }
+
         static member updateEnemiesBy updater newValues model =
             let enemies = List.map2 (fun newValue model -> updater newValue model) newValues model.Enemies
             { model with Enemies = enemies }
@@ -283,10 +293,13 @@ module GameplayDispatcherModule =
             let model = GameplayModel.updateCharacterActivityState index activity model
             GameplayModel.updateTurnStatus PlayerIndex TurnBeginning model
         
-        static member addFieldMap fieldMap model =
-            let moveModeler = MoveModeler.make fieldMap
+        static member setFieldMap fieldMap model =
+            let moveModeler = model.MoveModeler.SetPassableCoordinates fieldMap
             let fieldModel = { FieldMapNp = fieldMap }
             { model with MoveModeler = moveModeler; Field = fieldModel }
+
+        static member moveCurrentFieldOffset direction model =
+            { model with MapModeler = model.MapModeler.MoveCurrent direction }
 
         static member makePlayer model =
             let coordinates = Vector2i.Zero
@@ -323,6 +336,8 @@ module GameplayDispatcherModule =
         | RunCharacterActivation
         | PlayNewRound of Move
         | TryMakePlayerMove of PlayerInput
+        | TransitionMap of Direction
+        | HandleMapChange of PlayerInput
         | StartGameplay
     
     type [<NoEquality; NoComparison>] GameplayCommand =
@@ -629,6 +644,35 @@ module GameplayDispatcherModule =
                 | Some move -> withMsg model (PlayNewRound move)
                 | _ -> just model
 
+            | TransitionMap direction ->
+
+                let model = GameplayModel.clearEnemies model
+                let model = GameplayModel.moveCurrentFieldOffset direction model
+                let fieldMap = model.MapModeler.GetCurrent.ToFieldMap
+                let model = GameplayModel.setFieldMap fieldMap model
+                just model
+
+            | HandleMapChange playerInput ->
+                
+                let msg =
+                    match playerInput with
+                    | DetailInput direction ->
+                        let currentCoordinates = GameplayModel.getCoordinates PlayerIndex model
+                        let targetOutside =
+                            match direction with
+                            | Upward -> currentCoordinates.Y = Constants.Layout.FieldUnitSizeM.Y - 1
+                            | Rightward -> currentCoordinates.X = Constants.Layout.FieldUnitSizeM.X - 1
+                            | Downward -> currentCoordinates.Y = 0
+                            | Leftware -> currentCoordinates.X = 0
+                        let fieldInDirection =
+                            let targetFieldOffset = model.MapModeler.CurrentFieldOffset + dtovm direction 
+                            Map.containsKey targetFieldOffset model.MapModeler.FieldMapUnits
+                        if targetOutside && fieldInDirection then
+                            TransitionMap direction
+                        else TryMakePlayerMove playerInput
+                    | _ -> TryMakePlayerMove playerInput
+                withMsg model msg
+            
             | StartGameplay -> // TODO: and fix >1 new games again!
                 if model.ShallLoadGame && File.Exists Assets.SaveFilePath then
                     let modelStr = File.ReadAllText Assets.SaveFilePath
@@ -636,7 +680,7 @@ module GameplayDispatcherModule =
                     just model
                 else
                     let fieldMap = model.MapModeler.GetCurrent.ToFieldMap
-                    let model = GameplayModel.addFieldMap fieldMap model
+                    let model = GameplayModel.setFieldMap fieldMap model
                     let model = GameplayModel.makePlayer model
                     let model = GameplayModel.makeEnemies 9 model
                     just model
@@ -650,7 +694,7 @@ module GameplayDispatcherModule =
                 if not (GameplayModel.anyTurnsInProgress model) then
                     let world = Simulants.HudSaveGame.SetEnabled false world
                     match model.Player.CharacterState.ControlType with
-                    | PlayerControlled -> withMsg world (TryMakePlayerMove playerInput)
+                    | PlayerControlled -> withMsg world (HandleMapChange playerInput)
                     | _ -> just world
                 else just world
             | SaveGame -> // TODO: fix save once again when the new map handling system is in place
