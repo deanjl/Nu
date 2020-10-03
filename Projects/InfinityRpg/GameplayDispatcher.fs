@@ -18,7 +18,7 @@ module GameplayDispatcherModule =
 
         member this.ToFieldMap =
             let rand = Rand.makeFromSeedState this.RandSeed
-            FieldMap.make Assets.FieldTileSheetImage this.OffsetCount Constants.Layout.FieldUnitSizeM [(this.PathStart, this.PathEnd)] rand |> fst
+            FieldMap.make Assets.FieldTileSheetImage Vector2i.Zero Constants.Layout.FieldUnitSizeM [(this.PathStart, this.PathEnd)] rand |> fst
 
         static member make fieldMapUnitOpt =
             let sysrandom = System.Random ()
@@ -49,7 +49,7 @@ module GameplayDispatcherModule =
 
         member this.AddFieldMapUnit fieldMapUnit =
             let fieldMapUnits = Map.add fieldMapUnit.OffsetCount fieldMapUnit this.FieldMapUnits
-            { this with FieldMapUnits = fieldMapUnits }
+            { this with FieldMapUnits = fieldMapUnits; CurrentFieldOffset = fieldMapUnit.OffsetCount }
 
         member this.GetCurrent =
             this.FieldMapUnits.[this.CurrentFieldOffset]
@@ -261,6 +261,10 @@ module GameplayDispatcherModule =
         
         static member relocateCharacter index coordinates model =
             { model with MoveModeler = model.MoveModeler.RelocateCharacter index coordinates }
+
+        static member yankPlayer coordinates model =
+            let model = GameplayModel.relocateCharacter PlayerIndex coordinates model
+            GameplayModel.updatePosition PlayerIndex (vmtovf coordinates) model
 
         static member addMove index (move : Move) model =
             let turn = GameplayModel.getCoordinates index model |> move.MakeTurn
@@ -646,10 +650,19 @@ module GameplayDispatcherModule =
 
             | TransitionMap direction ->
 
+                let currentCoordinates = GameplayModel.getCoordinates PlayerIndex model
+                let newCoordinates =
+                    match direction with
+                    | Upward -> currentCoordinates.WithY 0
+                    | Rightward -> currentCoordinates.WithX 0
+                    | Downward -> currentCoordinates.WithY (Constants.Layout.FieldUnitSizeM.Y - 1)
+                    | Leftward -> currentCoordinates.WithX (Constants.Layout.FieldUnitSizeM.X - 1)
                 let model = GameplayModel.clearEnemies model
+                let model = GameplayModel.yankPlayer newCoordinates model
                 let model = GameplayModel.moveCurrentFieldOffset direction model
                 let fieldMap = model.MapModeler.GetCurrent.ToFieldMap
                 let model = GameplayModel.setFieldMap fieldMap model
+                let model = GameplayModel.makeEnemies 4 model
                 just model
 
             | HandleMapChange playerInput ->
@@ -663,7 +676,7 @@ module GameplayDispatcherModule =
                             | Upward -> currentCoordinates.Y = Constants.Layout.FieldUnitSizeM.Y - 1
                             | Rightward -> currentCoordinates.X = Constants.Layout.FieldUnitSizeM.X - 1
                             | Downward -> currentCoordinates.Y = 0
-                            | Leftware -> currentCoordinates.X = 0
+                            | Leftward -> currentCoordinates.X = 0
                         let fieldInDirection =
                             let targetFieldOffset = model.MapModeler.CurrentFieldOffset + dtovm direction 
                             Map.containsKey targetFieldOffset model.MapModeler.FieldMapUnits
@@ -682,7 +695,7 @@ module GameplayDispatcherModule =
                     let fieldMap = model.MapModeler.GetCurrent.ToFieldMap
                     let model = GameplayModel.setFieldMap fieldMap model
                     let model = GameplayModel.makePlayer model
-                    let model = GameplayModel.makeEnemies 9 model
+                    let model = GameplayModel.makeEnemies 4 model
                     just model
 
         override this.Command (model, command, _, world) =
