@@ -48,7 +48,7 @@ module FacetModule =
                 | :? Signal<'message, 'command> as signal ->
                     Signal.processSignal facet.Message facet.Command (entity.FacetModel<'model> facet.ModelName) signal entity world
                 | _ -> Log.info "Incorrect signal type returned from event binding."; world
-            | _ -> Log.info "Failed to send signal to entity."; world
+            | _ -> Log.info "Failed to send signal to entity facet."; world
 
         static member internal signalEntityFacet<'model, 'message, 'command> signal facetName (entity : Entity) world =
             let facets = entity.GetFacets world
@@ -103,7 +103,7 @@ module FacetModule =
             let content = this.Content (this.Model entity, entity)
             let world =
                 List.fold (fun world content ->
-                    World.expandEntityContent content (FacetOrigin (entity, getTypeName this)) entity.Parent world |> snd)
+                    World.expandEntityContent content (FacetOrigin (entity, getTypeName this)) entity entity.Parent world |> snd)
                     world content
             let initializers = this.Initializers (this.Model entity, entity)
             List.fold (fun world initializer ->
@@ -398,6 +398,9 @@ module TextFacetModule =
         member this.GetTextColor world : Color = this.Get Property? TextColor world
         member this.SetTextColor (value : Color) world = this.SetFast Property? TextColor false false value world
         member this.TextColor = lens Property? TextColor this.GetTextColor this.SetTextColor this
+        member this.GetTextDisabledColor world : Color = this.Get Property? TextDisabledColor world
+        member this.SetTextDisabledColor (value : Color) world = this.SetFast Property? TextDisabledColor false false value world
+        member this.TextDisabledColor = lens Property? TextDisabledColor this.GetTextDisabledColor this.SetTextDisabledColor this
 
     type TextFacet () =
         inherit Facet ()
@@ -407,7 +410,8 @@ module TextFacetModule =
              define Entity.Font (AssetTag.make<Font> Assets.DefaultPackageName Assets.DefaultFontName)
              define Entity.Margins Vector2.Zero
              define Entity.Justification (Justified (JustifyCenter, JustifyMiddle))
-             define Entity.TextColor Color.Black]
+             define Entity.TextColor Color.Black
+             define Entity.TextDisabledColor (Color (byte 64, byte 64, byte 64, byte 192))]
 
         override this.Actualize (text, world) =
             let textStr = text.GetText world
@@ -429,7 +433,7 @@ module TextFacetModule =
                                 { Transform = transform
                                   Text = textStr
                                   Font = text.GetFont world
-                                  Color = text.GetTextColor world
+                                  Color = if text.GetEnabled world then text.GetTextColor world else text.GetTextDisabledColor world
                                   Justification = text.GetJustification world }})
                     world
             else world
@@ -1194,7 +1198,7 @@ module EntityDispatcherModule =
             let content = this.Content (this.Model entity, entity)
             let world =
                 List.fold (fun world content ->
-                    World.expandEntityContent content (SimulantOrigin entity) entity.Parent world |> snd)
+                    World.expandEntityContent content (SimulantOrigin entity) entity entity.Parent world |> snd)
                     world content
             let initializers = this.Initializers (this.Model entity, entity)
             List.fold (fun world initializer ->
@@ -1319,7 +1323,7 @@ module NodeDispatcherModule =
 module GuiDispatcherModule =
 
     type Entity with
-    
+
         member this.GetDisabledColor world : Color = this.Get Property? DisabledColor world
         member this.SetDisabledColor (value : Color) world = this.SetFast Property? DisabledColor false false value world
         member this.DisabledColor = lens Property? DisabledColor this.GetDisabledColor this.SetDisabledColor this
@@ -1562,7 +1566,8 @@ module TextDispatcherModule =
         static member Properties =
             [define Entity.Size (Vector2 (256.0f, 64.0f))
              define Entity.SwallowMouseLeft false
-             define Entity.BackgroundImageOpt (Some (AssetTag.make<Image> Assets.DefaultPackageName "Image3"))]
+             define Entity.BackgroundImageOpt None
+             define Entity.Justification (Justified (JustifyLeft, JustifyMiddle))]
 
         override this.Actualize (text, world) =
             if text.GetVisible world then
@@ -2076,7 +2081,7 @@ module LayerDispatcherModule =
             let content = this.Content (this.Model layer, layer)
             let world =
                 List.fold (fun world content ->
-                    World.expandEntityContent content (SimulantOrigin layer) layer world |> snd)
+                    World.expandEntityContent content (SimulantOrigin layer) layer layer world |> snd)
                     world content
             let initializers = this.Initializers (this.Model layer, layer)
             List.fold (fun world initializer ->

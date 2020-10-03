@@ -10,12 +10,20 @@ open OmniBlade
 [<AutoOpen>]
 module OmniField =
 
-    type [<NoComparison>] FieldMessage =
+    type [<NoComparison; NoEquality>] FieldMessage =
         | UpdateAvatar of AvatarModel
         | UpdateFieldTransition
         | UpdateDialog
         | UpdatePortal
         | UpdateSensor
+        | ShopBuy
+        | ShopSell
+        | ShopPageUp
+        | ShopPageDown
+        | ShopConfirmPrompt of Lens<int * ItemType, World>
+        | ShopConfirmAccept
+        | ShopConfirmDecline
+        | ShopLeave
         | Interact
 
     type [<NoComparison>] FieldCommand =
@@ -31,6 +39,14 @@ module OmniField =
 
     type FieldDispatcher () =
         inherit ScreenDispatcher<FieldModel, FieldMessage, FieldCommand> (FieldModel.initial)
+
+        static let pageItems pageSize pageIndex items =
+            items |>
+            Seq.chunkBySize pageSize |>
+            Seq.trySkip pageIndex |>
+            Seq.map List.ofArray |>
+            Seq.tryHead |>
+            Option.defaultValue []
 
         static let isFacingBodyShape bodyShape (avatar : AvatarModel) world =
             if bodyShape.Entity.Is<PropDispatcher> world then
@@ -125,7 +141,7 @@ module OmniField =
                 if model.Advents.IsSupersetOf requirements then
                     let model = FieldModel.updateAdvents (Set.addMany consequents) model
                     let model = FieldModel.updatePropStates (Map.add propModel.PropId (DoorState true)) model
-                    just model
+                    withCmd model (PlaySound (0L, Constants.Audio.DefaultSoundVolume, Assets.OpenDoorSound))
                 else just (FieldModel.updateDialogOpt (constant (Some { DialogForm = DialogThin; DialogText = "Locked!"; DialogProgress = 0; DialogPage = 0 })) model)
             | _ -> failwithumf ()
 
@@ -135,7 +151,7 @@ module OmniField =
                 if model.Advents.IsSupersetOf requirements then
                     let model = FieldModel.updateAdvents (if on then Set.removeMany consequents else Set.addMany consequents) model
                     let model = FieldModel.updatePropStates (Map.add propModel.PropId (SwitchState (not on))) model
-                    just model
+                    withCmd model (PlaySound (0L, Constants.Audio.DefaultSoundVolume, Assets.UseSwitchSound))
                 else just (FieldModel.updateDialogOpt (constant (Some { DialogForm = DialogThin; DialogText = "Won't budge!"; DialogProgress = 0; DialogPage = 0 })) model)
             | _ -> failwithumf ()
 
@@ -145,6 +161,11 @@ module OmniField =
             let dialogForm = { DialogForm = DialogLarge; DialogText = dialog; DialogProgress = 0; DialogPage = 0 }
             let model = FieldModel.updateDialogOpt (constant (Some dialogForm)) model
             let model = FieldModel.updateAdvents (Set.addMany consequents) model
+            just model
+
+        static let interactShopkeep shopType (model : FieldModel) =
+            let shopModel = { ShopType = shopType; ShopState = ShopBuying; ShopPage = 0; ShopConfirmModelOpt = None }
+            let model = FieldModel.updateShopModelOpt (constant (Some shopModel)) model
             just model
 
         override this.Channel (_, field) =
@@ -226,6 +247,72 @@ module OmniField =
                     results
                 | Some _ -> just model
 
+            | ShopBuy ->
+                let model = FieldModel.updateShopModelOpt (Option.map (fun shopModel -> { shopModel with ShopState = ShopBuying })) model
+                just model
+
+            | ShopSell ->
+                let model = FieldModel.updateShopModelOpt (Option.map (fun shopModel -> { shopModel with ShopState = ShopSelling })) model
+                just model
+
+            | ShopPageUp ->
+                let model = FieldModel.updateShopModelOpt (Option.map (fun shopModel -> { shopModel with ShopPage = max 0 (dec shopModel.ShopPage) })) model
+                just model
+
+            | ShopPageDown ->
+                let model = FieldModel.updateShopModelOpt (Option.map (fun shopModel -> { shopModel with ShopPage = inc shopModel.ShopPage })) model
+                just model
+
+            | ShopConfirmPrompt selectionLens ->
+                let selection = Lens.get selectionLens world
+                let model =
+                    FieldModel.updateShopModelOpt (Option.map (fun shopModel ->
+                        let buying = match shopModel.ShopState with ShopBuying -> true | ShopSelling -> false
+                        let shopConfirmModelOpt = ShopConfirmModel.tryMakeFromSelection buying model.Inventory selection
+                        { shopModel with ShopConfirmModelOpt = shopConfirmModelOpt }))
+                        model
+                just model
+
+            | ShopConfirmAccept ->
+                match model.ShopModelOpt with
+                | Some shopModel ->
+                    match shopModel.ShopConfirmModelOpt with
+                    | Some shopConfirmModel ->
+                        let valid =
+                            match shopModel.ShopState with
+                            | ShopBuying -> model.Inventory.Gold > shopConfirmModel.ShopConfirmPrice
+                            | ShopSelling -> true
+                        if valid then
+                            let itemType = snd shopConfirmModel.ShopConfirmSelection
+                            let model =
+                                FieldModel.updateInventory
+                                    (match shopModel.ShopState with
+                                     | ShopBuying -> Inventory.addItem itemType
+                                     | ShopSelling -> Inventory.removeItem itemType)
+                                    model
+                            let model =
+                                FieldModel.updateInventory
+                                    (match shopModel.ShopState with
+                                     | ShopBuying -> Inventory.updateGold (fun gold -> gold - shopConfirmModel.ShopConfirmPrice)
+                                     | ShopSelling -> Inventory.updateGold (fun gold -> gold + shopConfirmModel.ShopConfirmPrice))
+                                    model
+                            let model =
+                                FieldModel.updateShopModelOpt (Option.map (fun shopModel ->
+                                    { shopModel with ShopConfirmModelOpt = None }))
+                                    model
+                            withCmd model (PlaySound (0L, Constants.Audio.DefaultSoundVolume, Assets.PurchaseSound))
+                        else withCmd model (PlaySound (0L, Constants.Audio.DefaultSoundVolume, Assets.ErrorSound))
+                    | None -> just model
+                | None -> just model
+
+            | ShopConfirmDecline ->
+                let model = FieldModel.updateShopModelOpt (Option.map (fun shopModel -> { shopModel with ShopConfirmModelOpt = None })) model
+                just model
+
+            | ShopLeave ->
+                let model = FieldModel.updateShopModelOpt (constant None) model
+                just model
+
             | Interact ->
                 match model.DialogOpt with
                 | None ->
@@ -239,7 +326,7 @@ module OmniField =
                         | Switch (_, requirements, consequents) -> interactSwitch requirements consequents propModel model
                         | Sensor (_, _, _, _) -> just model
                         | Npc (_, _, dialogs, _) -> interactNpc dialogs model
-                        | Shopkeep _ -> just model
+                        | Shopkeep (_, _, shopType, _) -> interactShopkeep shopType model
                     | None -> just model
                 | Some dialog -> interactDialog dialog model
 
@@ -309,7 +396,10 @@ module OmniField =
                     [Entity.Size == Constants.Gameplay.CharacterSize
                      Entity.Position == v2 256.0f 256.0f
                      Entity.Depth == Constants.Field.ForgroundDepth
-                     Entity.Enabled <== model --> fun model -> Option.isNone model.DialogOpt && Option.isNone model.FieldTransitionOpt
+                     Entity.Enabled <== model --> fun model ->
+                        Option.isNone model.DialogOpt &&
+                        Option.isNone model.ShopModelOpt &&
+                        Option.isNone model.FieldTransitionOpt
                      Entity.LinearDamping == Constants.Field.LinearDamping
                      Entity.AvatarModel <== model --> fun model -> model.Avatar]
 
@@ -322,7 +412,8 @@ module OmniField =
                      Entity.DownImage == Assets.ButtonShortDownImage
                      Entity.Visible <== model ->> fun model world ->
                         let interactionOpt = tryGetInteraction model.DialogOpt model.Advents model.Avatar world
-                        Option.isSome interactionOpt
+                        Option.isSome interactionOpt &&
+                        Option.isNone model.ShopModelOpt
                      Entity.Text <== model ->> fun model world ->
                         match tryGetInteraction model.DialogOpt model.Advents model.Avatar world with
                         | Some interaction -> interaction
@@ -397,8 +488,117 @@ module OmniField =
                                     | Door (_, _, _) -> DoorState false
                                     | Switch (_, _, _) -> SwitchState false
                                     | Npc (_, _, _, requirements) -> NpcState (advents.IsSupersetOf requirements)
-                                    | Shopkeep (_, _, requirements) -> ShopkeepState (advents.IsSupersetOf requirements)
+                                    | Shopkeep (_, _, _, requirements) -> ShopkeepState (advents.IsSupersetOf requirements)
                                     | _ -> NilState
                                 | Some propState -> propState
                             PropModel.make propBounds propDepth advents propData propState object.Id)
-                        Content.entity<PropDispatcher> Gen.name [Entity.PropModel <== propModel])]]
+                        Content.entity<PropDispatcher> Gen.name [Entity.PropModel <== propModel])
+
+                 // shop
+                 Content.panel Simulants.FieldShop.Name
+                    [Entity.Position == v2 -448.0f -256.0f
+                     Entity.Size == v2 896.0f 512.0f
+                     Entity.Depth == Constants.Field.GuiDepth
+                     Entity.LabelImage == Assets.DialogHugeImage
+                     Entity.Visible <== model --> fun model -> Option.isSome model.ShopModelOpt
+                     Entity.Enabled <== model --> fun model -> match model.ShopModelOpt with Some shopModel -> Option.isNone shopModel.ShopConfirmModelOpt | None -> true]
+                    [Content.button Simulants.FieldShopBuy.Name
+                        [Entity.PositionLocal == v2 12.0f 440.0f; Entity.DepthLocal == 2.0f; Entity.Text == "Buy"
+                         Entity.Visible <== model --> fun model -> match model.ShopModelOpt with Some shopModel -> shopModel.ShopState = ShopSelling | None -> false
+                         Entity.ClickEvent ==> msg ShopBuy]
+                     Content.button Simulants.FieldShopSell.Name
+                        [Entity.PositionLocal == v2 320.0f 440.0f; Entity.DepthLocal == 2.0f; Entity.Text == "Sell"
+                         Entity.Visible <== model --> fun model -> match model.ShopModelOpt with Some shopModel -> shopModel.ShopState = ShopBuying | None -> false
+                         Entity.ClickEvent ==> msg ShopSell]
+                     Content.text Gen.name
+                        [Entity.PositionLocal == v2 12.0f 440.0f; Entity.DepthLocal == 1.0f; Entity.Text == "Buy what?"; Entity.Justification == Justified (JustifyCenter, JustifyMiddle)
+                         Entity.Visible <== model --> fun model -> match model.ShopModelOpt with Some shopModel -> shopModel.ShopState = ShopBuying | None -> false]
+                     Content.text Gen.name
+                        [Entity.PositionLocal == v2 320.0f 440.0f; Entity.DepthLocal == 1.0f; Entity.Text == "Sell what?"; Entity.Justification == Justified (JustifyCenter, JustifyMiddle)
+                         Entity.Visible <== model --> fun model -> match model.ShopModelOpt with Some shopModel -> shopModel.ShopState = ShopSelling | None -> false]
+                     Content.button Simulants.FieldShopLeave.Name
+                        [Entity.PositionLocal == v2 628.0f 440.0f; Entity.DepthLocal == 2.0f; Entity.Text == "Leave"
+                         Entity.ClickEvent ==> msg ShopLeave]
+                     Content.button Simulants.FieldShopPageUp.Name
+                        [Entity.PositionLocal == v2 16.0f 12.0f; Entity.DepthLocal == 1.0f; Entity.Text == "<"; Entity.Size == v2 48.0f 64.0f
+                         Entity.ClickEvent ==> msg ShopPageUp]
+                     Content.button Simulants.FieldShopPageDown.Name
+                        [Entity.PositionLocal == v2 832.0f 12.0f; Entity.DepthLocal == 1.0f; Entity.Text == ">"; Entity.Size == v2 48.0f 64.0f
+                         Entity.ClickEvent ==> msg ShopPageDown]
+                     Content.text Simulants.FieldShopGold.Name
+                        [Entity.PositionLocal == v2 316.0f 12.0f; Entity.DepthLocal == 1.0f; Entity.Justification == Justified (JustifyCenter, JustifyMiddle)
+                         Entity.Text <== model --> (fun model -> string model.Inventory.Gold + "G")]
+                     Content.entities model
+                        (fun (model : FieldModel) -> (model.ShopModelOpt, model.Inventory))
+                        (fun (shopModelOpt, inventory : Inventory) _ ->
+                            match shopModelOpt with
+                            | Some shopModel ->
+                                match shopModel.ShopState with
+                                | ShopBuying ->
+                                    match Map.tryFind shopModel.ShopType data.Value.Shops with
+                                    | Some shop -> shop.ShopItems |> Set.toSeq |> Seq.indexed |> pageItems 10 shopModel.ShopPage
+                                    | None -> []
+                                | ShopSelling ->
+                                    inventory |>
+                                    Inventory.indexItems |>
+                                    Seq.choose
+                                        (function
+                                         | (_, Equipment _ as item) | (_, Consumable _ as item) -> Some item
+                                         | (_, KeyItem _) | (_, Stash _) -> None) |>
+                                    pageItems 10 shopModel.ShopPage
+                            | None -> [])
+                        (fun i selection _ ->
+                            let x = if i < 5 then 20.0f else 452.0f
+                            let y = 368.0f - single (i % 5) * 72.0f
+                            Content.button Gen.name
+                                [Entity.PositionLocal == v2 x y
+                                 Entity.Size == v2 424.0f 64.0f
+                                 Entity.DepthLocal == 1.0f
+                                 Entity.Text <== selection --> fun (_, itemType) -> ItemType.getName itemType
+                                 Entity.Justification == Justified (JustifyLeft, JustifyMiddle)
+                                 Entity.Margins == v2 16.0f 0.0f
+                                 Entity.ClickEvent ==> msg (ShopConfirmPrompt selection)])]
+
+                 // shop confirm
+                 Content.panel Simulants.FieldShopConfirm.Name
+                    [Entity.Position == v2 -448.0f -128.0f
+                     Entity.Size == v2 896.0f 256.0f
+                     Entity.Depth == Constants.Field.GuiDepth + 10.0f
+                     Entity.LabelImage == Assets.DialogLargeImage
+                     Entity.Visible <== model --> fun model ->
+                        match model.ShopModelOpt with
+                        | Some shopModel -> Option.isSome shopModel.ShopConfirmModelOpt
+                        | None -> false]
+                    [Content.button Simulants.FieldShopConfirmAccept.Name
+                        [Entity.PositionLocal == v2 160.0f 16.0f; Entity.DepthLocal == 2.0f; Entity.Text == "Accept"
+                         Entity.ClickEvent ==> msg ShopConfirmAccept]
+                     Content.button Simulants.FieldShopConfirmDecline.Name
+                        [Entity.PositionLocal == v2 456.0f 16.0f; Entity.DepthLocal == 2.0f; Entity.Text == "Decline"
+                         Entity.ClickEvent ==> msg ShopConfirmDecline]
+                     Content.text Simulants.FieldShopConfirmOffer.Name
+                        [Entity.PositionLocal == v2 32.0f 176.0f; Entity.DepthLocal == 2.0f
+                         Entity.Text <== model --> fun model ->
+                            match model.ShopModelOpt with
+                            | Some shopModel ->
+                                match shopModel.ShopConfirmModelOpt with
+                                | Some shopConfirmModel -> shopConfirmModel.ShopConfirmOffer
+                                | None -> ""
+                            | None -> ""]
+                     Content.text Simulants.FieldShopConfirmLine1.Name
+                        [Entity.PositionLocal == v2 64.0f 128.0f; Entity.DepthLocal == 2.0f
+                         Entity.Text <== model --> fun model ->
+                            match model.ShopModelOpt with
+                            | Some shopModel ->
+                                match shopModel.ShopConfirmModelOpt with
+                                | Some shopConfirmModel -> shopConfirmModel.ShopConfirmLine1
+                                | None -> ""
+                            | None -> ""]
+                     Content.text Simulants.FieldShopConfirmLine2.Name
+                        [Entity.PositionLocal == v2 64.0f 80.0f; Entity.DepthLocal == 2.0f
+                         Entity.Text <== model --> fun model ->
+                            match model.ShopModelOpt with
+                            | Some shopModel ->
+                                match shopModel.ShopConfirmModelOpt with
+                                | Some shopConfirmModel -> shopConfirmModel.ShopConfirmLine2
+                                | None -> ""
+                            | None -> ""]]]]

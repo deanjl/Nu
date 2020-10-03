@@ -47,9 +47,9 @@ type [<StructuralEquality; StructuralComparison>] StatusType =
     | SleepStatus
 
 type [<StructuralEquality; StructuralComparison>] EquipmentType =
-    | Weapon
-    | Armor
-    | Accessory
+    | WeaponType of string
+    | ArmorType of string
+    | AccessoryType of string
 
 type [<StructuralEquality; StructuralComparison>] ConsumableType =
     | GreenHerb
@@ -62,11 +62,13 @@ type [<StructuralEquality; StructuralComparison>] ItemType =
     | Equipment of EquipmentType
     | Consumable of ConsumableType
     | KeyItem of KeyItemType
+    | Stash of int
     static member getName item =
         match item with
-        | Equipment ty -> string ty
+        | Equipment ty -> match ty with WeaponType name | ArmorType name | AccessoryType name -> name
         | Consumable ty -> string ty
         | KeyItem ty -> string ty
+        | Stash gold -> string gold + "G"
 
 type [<StructuralEquality; StructuralComparison>] AimType =
     | EnemyAim of bool // healthy (N/A)
@@ -102,9 +104,6 @@ type [<StructuralEquality; StructuralComparison>] ArchetypeType =
     | Cleric
     | Goblin
 
-type WeaponType =
-    string
-
 type [<StructuralEquality; StructuralComparison>] WeaponSubtype =
     | Melee
     | Sword
@@ -113,22 +112,19 @@ type [<StructuralEquality; StructuralComparison>] WeaponSubtype =
     | Staff
     | Rod
 
-type ArmorType =
-    string
-
 type [<StructuralEquality; StructuralComparison>] ArmorSubtype =
     | Robe
     | Vest
     | Mail
     | Pelt
 
-type AccessoryType =
-    string
-
 type [<StructuralEquality; StructuralComparison>] ShopType =
-    | WeaponShopkeep of int // level
-    | ArmorShopKeep of int // level
-    | AccessoryShopKeep of int // level
+    | PodunkChemist
+    | PodunkArmory
+
+type [<StructuralEquality; StructuralComparison>] ShopState =
+    | ShopBuying
+    | ShopSelling
 
 type [<StructuralEquality; StructuralComparison>] ShopkeepAppearanceType =
     | Male
@@ -210,23 +206,26 @@ type [<StructuralEquality; StructuralComparison>] CharacterType =
     | Enemy of EnemyType
 
 type [<StructuralEquality; NoComparison>] WeaponData =
-    { WeaponType : WeaponType // key
+    { WeaponType : string // key
       WeaponSubtype : WeaponSubtype
       PowerBase : int
       MagicBase : int
+      Cost : int
       Description : string }
 
 type [<StructuralEquality; NoComparison>] ArmorData =
-    { ArmorType : ArmorType // key
+    { ArmorType : string // key
       ArmorSubtype : ArmorSubtype
       HitPointsBase : int
       TechPointsBase : int
+      Cost : int
       Description : string }
 
 type [<StructuralEquality; NoComparison>] AccessoryData =
-    { AccessoryType : AccessoryType // key
+    { AccessoryType : string // key
       ShieldBase : int
       CounterBase : int
+      Cost : int
       Description : string }
 
 type [<StructuralEquality; NoComparison>] ConsumableData =
@@ -234,6 +233,7 @@ type [<StructuralEquality; NoComparison>] ConsumableData =
       Scalar : single
       Curative : bool
       AimType : AimType
+      Cost : int
       Description : string }
 
 type [<StructuralEquality; NoComparison>] TechData =
@@ -282,12 +282,9 @@ type [<StructuralEquality; NoComparison>] DoorData =
       OpenImage : Image AssetTag
       ClosedImage : Image AssetTag }
 
-type [<StructuralEquality; NoComparison>] ShopkeepData =
-    { ShopkeepType : ShopkeepType // key
-      ShopkeepAppearanceType : ShopkeepAppearanceType
-      ShopkeepItems : ItemType Set
-      ShopkeepGreet : string list
-      ShopkeepFarewell : string list }
+type [<StructuralEquality; NoComparison>] ShopData =
+    { ShopType : ShopType // key
+      ShopItems : ItemType Set }
 
 type [<StructuralEquality; NoComparison>] PropData =
     | Chest of ChestType * ItemType * Guid * BattleType option * Advent Set * Advent Set
@@ -296,7 +293,7 @@ type [<StructuralEquality; NoComparison>] PropData =
     | Switch of SwitchType * Advent Set * Advent Set // anything that can affect another thing on the field through interaction
     | Sensor of SensorType * BodyShape option * Advent Set * Advent Set // anything that can affect another thing on the field through traversal
     | Npc of NpcType * Direction * (string * Advent Set * Advent Set) list * Advent Set
-    | Shopkeep of ShopkeepType * Direction * Advent Set
+    | Shopkeep of ShopkeepType * Direction * ShopType * Advent Set
     static member empty = Chest (WoodenChest, Consumable GreenHerb, Gen.idEmpty, None, Set.empty, Set.empty)
 
 type [<StructuralEquality; NoComparison>] FieldData =
@@ -336,13 +333,14 @@ type [<StructuralEquality; NoComparison>] CharacterAnimationData =
 module Data =
 
     type [<StructuralEquality; NoComparison>] Data =
-        { Weapons : Map<WeaponType, WeaponData>
-          Armors : Map<ArmorType, ArmorData>
-          Accessories : Map<AccessoryType, AccessoryData>
+        { Weapons : Map<string, WeaponData>
+          Armors : Map<string, ArmorData>
+          Accessories : Map<string, AccessoryData>
           Consumables : Map<ConsumableType, ConsumableData>
           Techs : Map<TechType, TechData>
           Archetypes : Map<ArchetypeType, ArchetypeData>
           Characters : Map<CharacterType, CharacterData>
+          Shops : Map<ShopType, ShopData>
           Fields : Map<FieldType, FieldData>
           Battles : Map<BattleType, BattleData>
           TechAnimations : Map<TechType, TechAnimationData>
@@ -362,6 +360,7 @@ module Data =
           Techs = readSheet Assets.TechDataFilePath (fun data -> data.TechType)
           Archetypes = readSheet Assets.ArchetypeDataFilePath (fun data -> data.ArchetypeType)
           Characters = readSheet Assets.CharacterDataFilePath (fun data -> data.CharacterType)
+          Shops = readSheet Assets.ShopDataFilePath (fun data -> data.ShopType)
           Fields = readSheet Assets.FieldDataFilePath (fun data -> data.FieldType)
           Battles = readSheet Assets.BattleDataFilePath (fun data -> data.BattleType)
           TechAnimations = readSheet Assets.TechAnimationDataFilePath (fun data -> data.TechType)

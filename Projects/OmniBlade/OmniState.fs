@@ -35,11 +35,12 @@ type [<StructuralEquality; NoComparison>] Inventory =
         | _ -> false
 
     static member addItem item inventory =
-        match Map.tryFind item inventory.Items with
-        | Some itemCount ->
-            { inventory with Items = Map.add item (inc itemCount) inventory.Items }
-        | None ->
-            { inventory with Items = Map.add item 1 inventory.Items }
+        match item with
+        | Equipment _ | Consumable _ | KeyItem _ ->
+            match Map.tryFind item inventory.Items with
+            | Some itemCount -> { inventory with Items = Map.add item (inc itemCount) inventory.Items }
+            | None -> { inventory with Items = Map.add item 1 inventory.Items }
+        | Stash gold -> { inventory with Gold = inventory.Gold + gold }
 
     static member removeItem item inventory =
         match Map.tryFind item inventory.Items with
@@ -49,14 +50,34 @@ type [<StructuralEquality; NoComparison>] Inventory =
             { inventory with Items = Map.remove item inventory.Items }
         | _ -> inventory
 
+    static member indexItems (inventory : Inventory) =
+        inventory.Items |>
+        Map.toSeq |>
+        Seq.map (fun (ty, ct) -> List.init ct (fun _ -> ty)) |>
+        Seq.concat |>
+        Seq.index
+
+    static member tryIndexItem index inventory =
+        let items = Inventory.indexItems inventory
+        let tail = Seq.trySkip index items
+        Seq.tryHead tail
+
+    static member getItemCount itemType inventory =
+        match Map.tryFind itemType inventory.Items with
+        | Some count -> count
+        | None -> 0
+
+    static member updateGold updater inventory =
+        { inventory with Gold = updater inventory.Gold }
+
 type Legionnaire =
     { LegionIndex : int // key
       PartyIndexOpt : int option
       CharacterType : CharacterType
       ExpPoints : int
-      WeaponOpt : WeaponType option
-      ArmorOpt : ArmorType option
-      Accessories : AccessoryType list }
+      WeaponOpt : string option
+      ArmorOpt : string option
+      Accessories : string list }
 
     static member finn =
         { LegionIndex = 0
@@ -91,9 +112,9 @@ type [<StructuralEquality; StructuralComparison>] CharacterIndex =
 type [<StructuralEquality; NoComparison>] CharacterState =
     { ArchetypeType : ArchetypeType
       ExpPoints : int
-      WeaponOpt : WeaponType option
-      ArmorOpt : ArmorType option
-      Accessories : AccessoryType list
+      WeaponOpt : string option
+      ArmorOpt : string option
+      Accessories : string list
       HitPoints : int
       TechPoints : int
       Statuses : StatusType Set

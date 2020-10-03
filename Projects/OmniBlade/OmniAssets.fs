@@ -12,6 +12,7 @@ module Assets =
     let DialogThinImage = asset<Image> GuiPackageName "DialogThin"
     let DialogMediumImage = asset<Image> GuiPackageName "DialogMedium"
     let DialogLargeImage = asset<Image> GuiPackageName "DialogLarge"
+    let DialogHugeImage = asset<Image> GuiPackageName "DialogHuge"
     let ButtonUpImage = asset<Image> GuiPackageName "ButtonUp"
     let ButtonDownImage = asset<Image> GuiPackageName "ButtonDown"
     let ButtonShortUpImage = asset<Image> GuiPackageName "ButtonShortUp"
@@ -41,6 +42,8 @@ module Assets =
     let EnterBattleSound = asset<Sound> FieldPackageName "EnterBattle"
     let HealSound = asset<Sound> FieldPackageName "Heal"
     let DeathSound = asset<Sound> FieldPackageName "Death"
+    let PurchaseSound = asset<Sound> FieldPackageName "Purchase"
+    let ErrorSound = asset<Sound> FieldPackageName "Error"
     let OpenDoorSound = asset<Sound> FieldPackageName "Unlatch"
     let OpenChestSound = asset<Sound> FieldPackageName "Unlatch2"
     let TriggerSound = asset<Sound> FieldPackageName "Unlatch3"
@@ -57,6 +60,8 @@ module Assets =
     // layer file paths
     let TitleLayerFilePath = "Assets/Gui/Title.nulyr"
     let CreditsLayerFilePath = "Assets/Gui/Credits.nulyr"
+    let ShopLayerFilePath = "Assets/Field/Shop.nulyr"
+    let ShopConfirmLayerFilePath = "Assets/Field/ShopConfirm.nulyr"
 
     // data file paths
     let WeaponDataFilePath = "Assets/Field/WeaponData.csv"
@@ -66,6 +71,7 @@ module Assets =
     let TechDataFilePath = "Assets/Field/TechData.csv"
     let ArchetypeDataFilePath = "Assets/Field/ArchetypeData.csv"
     let CharacterDataFilePath = "Assets/Field/CharacterData.csv"
+    let ShopDataFilePath = "Assets/Field/ShopData.csv"
     let FieldDataFilePath = "Assets/Field/FieldData.csv"
     let BattleDataFilePath = "Assets/Field/BattleData.csv"
     let TechAnimationDataFilePath = "Assets/Field/TechAnimationData.csv"

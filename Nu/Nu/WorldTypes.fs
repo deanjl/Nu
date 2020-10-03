@@ -139,12 +139,12 @@ type [<StructuralEquality; NoComparison>] WorldConfig =
 module WorldTypes =
 
     // Property category reach-arounds.
-    let mutable internal getPropertyOpt = Unchecked.defaultof<string -> Propertied -> obj -> obj option>
-    let mutable internal setPropertyOpt = Unchecked.defaultof<string -> Propertied -> obj option -> Type -> obj -> obj>
-    let mutable internal handlePropertyChange = Unchecked.defaultof<string -> Propertied -> obj -> obj -> obj * obj>
+    let mutable internal getPropertyOpt : string -> Propertied -> obj -> obj option = Unchecked.defaultof<_>
+    let mutable internal setPropertyOpt : string -> Propertied -> obj option -> Type -> obj -> obj = Unchecked.defaultof<_>
+    let mutable internal handlePropertyChange : string -> Propertied -> obj -> obj -> obj * obj= Unchecked.defaultof<_>
 
     // EventSystem reach-arounds.
-    let mutable internal handleUserDefinedCallback = Unchecked.defaultof<obj -> obj -> obj -> Handling * obj>
+    let mutable internal handleUserDefinedCallback : obj -> obj -> obj -> Handling * obj = Unchecked.defaultof<_>
 
     /// Represents an unsubscription operation for an event.
     type Unsubscription =

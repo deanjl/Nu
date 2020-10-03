@@ -15,6 +15,84 @@ type [<StructuralEquality; NoComparison>] DialogModel =
       DialogProgress : int
       DialogPage : int }
 
+type [<StructuralEquality; NoComparison>] ShopConfirmModel =
+    { ShopConfirmSelection : int * ItemType
+      ShopConfirmPrice : int
+      ShopConfirmOffer : string
+      ShopConfirmLine1 : string
+      ShopConfirmLine2 : string }
+
+    static member make selection price offer line1 line2 =
+        { ShopConfirmSelection = selection
+          ShopConfirmPrice = price
+          ShopConfirmOffer = offer
+          ShopConfirmLine1 = line1
+          ShopConfirmLine2 = line2 }
+
+    static member makeFromConsumableData buying inventory selection cd =
+        let itemType = snd selection
+        let header = if buying then "Buy " else "Sell "
+        let price = if buying then cd.Cost else cd.Cost / 2
+        let offer = header + ItemType.getName itemType + " for " + string price + "G?"
+        let effect = "Effect: " + cd.Description
+        let stats = "Own: " + string (Inventory.getItemCount itemType inventory)
+        ShopConfirmModel.make selection price offer stats effect
+
+    static member makeFromWeaponData buying inventory selection (wd : WeaponData) =
+        let itemType = snd selection
+        let header = if buying then "Buy " else "Sell "
+        let price = if buying then wd.Cost else wd.Cost / 2
+        let effect = "Effect: " + wd.Description
+        let offer = header + ItemType.getName itemType + " for " + string price + "G?"
+        let stats = "Pow: " + string wd.PowerBase + " | Mag: " + string wd.MagicBase + " | Own: " + string (Inventory.getItemCount itemType inventory)
+        ShopConfirmModel.make selection price offer stats effect
+
+    static member makeFromArmorData buying inventory selection (ad : ArmorData) =
+        let itemType = snd selection
+        let header = if buying then "Buy " else "Sell "
+        let price = if buying then ad.Cost else ad.Cost / 2
+        let effect = "Effect: " + ad.Description
+        let offer = header + ItemType.getName itemType + " for " + string price + "G?"
+        let stats = "HP: " + string ad.HitPointsBase + " | TP: " + string ad.TechPointsBase + " | Own: " + string (Inventory.getItemCount itemType inventory)
+        ShopConfirmModel.make selection price offer stats effect
+
+    static member makeFromAccessoryData buying inventory selection (ad : AccessoryData) =
+        let itemType = snd selection
+        let header = if buying then "Buy " else "Sell "
+        let price = if buying then ad.Cost else ad.Cost / 2
+        let effect = "Effect: " + ad.Description
+        let offer = header + ItemType.getName itemType + " for " + string price + "G?"
+        let stats = "Blk: " + string ad.ShieldBase + " | Ctr: " + string ad.CounterBase + " | Own: " + string (Inventory.getItemCount itemType inventory)
+        ShopConfirmModel.make selection price offer stats effect
+
+    static member tryMakeFromSelection buying inventory selection =
+        match snd selection with
+        | Consumable ty ->
+            match Map.tryFind ty data.Value.Consumables with
+            | Some cd -> ShopConfirmModel.makeFromConsumableData buying inventory selection cd |> Some
+            | None -> None
+        | Equipment ty ->
+            match ty with
+            | WeaponType name ->
+                match Map.tryFind name data.Value.Weapons with
+                | Some wd -> ShopConfirmModel.makeFromWeaponData buying inventory selection wd |> Some
+                | None -> None
+            | ArmorType name ->
+                match Map.tryFind name data.Value.Armors with
+                | Some ad -> ShopConfirmModel.makeFromArmorData buying inventory selection ad |> Some
+                | None -> None
+            | AccessoryType name ->
+                match Map.tryFind name data.Value.Accessories with
+                | Some ad -> ShopConfirmModel.makeFromAccessoryData buying inventory selection ad |> Some
+                | None -> None
+        | KeyItem _ | Stash _ -> None
+
+type [<StructuralEquality; NoComparison>] ShopModel =
+    { ShopType : ShopType
+      ShopState : ShopState
+      ShopPage : int
+      ShopConfirmModelOpt : ShopConfirmModel option }
+
 type FieldTransition =
     { FieldType : FieldType
       FieldIndex : Vector2
@@ -32,6 +110,7 @@ module FieldModel =
               Advents_ : Advent Set
               PropStates_ : Map<int, PropState>
               Inventory_ : Inventory
+              ShopModelOpt_ : ShopModel option
               FieldTransitionOpt_ : FieldTransition option
               DialogOpt_ : DialogModel option
               BattleOpt_ : BattleModel option }
@@ -43,6 +122,7 @@ module FieldModel =
         member this.Advents = this.Advents_
         member this.PropStates = this.PropStates_
         member this.Inventory = this.Inventory_
+        member this.ShopModelOpt = this.ShopModelOpt_
         member this.FieldTransitionOpt = this.FieldTransitionOpt_
         member this.DialogOpt = this.DialogOpt_
         member this.BattleOpt = this.BattleOpt_
@@ -69,6 +149,9 @@ module FieldModel =
     let updateInventory updater fieldModel =
         { fieldModel with Inventory_ = updater fieldModel.Inventory_ }
 
+    let updateShopModelOpt updater fieldModel =
+        { fieldModel with ShopModelOpt_ = updater fieldModel.ShopModelOpt_ }
+
     let updateDialogOpt updater fieldModel =
         { fieldModel with DialogOpt_ = updater fieldModel.DialogOpt_ }
 
@@ -85,6 +168,7 @@ module FieldModel =
           Advents_ = advents
           PropStates_ = Map.empty
           Inventory_ = inventory
+          ShopModelOpt_ = None
           FieldTransitionOpt_ = None
           DialogOpt_ = None
           BattleOpt_ = None }
@@ -96,6 +180,7 @@ module FieldModel =
           Advents_ = Set.empty
           PropStates_ = Map.empty
           Inventory_ = { Items = Map.empty; Gold = 0 }
+          ShopModelOpt_ = None
           FieldTransitionOpt_ = None
           DialogOpt_ = None
           BattleOpt_ = None }
@@ -107,6 +192,7 @@ module FieldModel =
           Advents_ = Set.empty
           PropStates_ = Map.empty
           Inventory_ = { Items = Map.empty; Gold = 0 }
+          ShopModelOpt_ = None
           FieldTransitionOpt_ = None
           DialogOpt_ = None
           BattleOpt_ = None }
