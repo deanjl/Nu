@@ -54,13 +54,37 @@ module GameplayDispatcherModule =
         member this.GetCurrent =
             this.FieldMapUnits.[this.CurrentFieldOffset]
 
+        member this.OffsetInDirection direction =
+            this.CurrentFieldOffset + dtovm direction
+        
+        member this.ExistsInDirection direction =
+            Map.containsKey (this.OffsetInDirection direction) this.FieldMapUnits
+        
+        member this.NextOffset =
+            if this.GetCurrent.IsHorizontal then
+                this.OffsetInDirection Rightward
+            else this.OffsetInDirection Upward
+        
+        member this.NextOffsetInDirection direction =
+            this.NextOffset = this.OffsetInDirection direction
+
+        member this.PossibleInDirection direction =
+            this.ExistsInDirection direction || this.NextOffsetInDirection direction
+        
         member this.MoveCurrent direction =
-            { this with CurrentFieldOffset = this.CurrentFieldOffset + dtovm direction }
+            { this with CurrentFieldOffset = this.OffsetInDirection direction }
+        
+        member this.MakeFieldMapUnit =
+            FieldMapUnit.make (Some this.GetCurrent) |> this.AddFieldMapUnit
+        
+        member this.Transition direction =
+            if this.ExistsInDirection direction then
+                this.MoveCurrent direction
+            else this.MakeFieldMapUnit
         
         static member make =
-            let mm = FieldMapUnit.make None |> MapModeler.empty.AddFieldMapUnit
-            FieldMapUnit.make (Some mm.GetCurrent) |> mm.AddFieldMapUnit
-    
+            FieldMapUnit.make None |> MapModeler.empty.AddFieldMapUnit
+
     type SingleRoundMove =
         | Step of Direction
         | Attack of CharacterIndex
@@ -302,8 +326,8 @@ module GameplayDispatcherModule =
             let fieldModel = { FieldMapNp = fieldMap }
             { model with MoveModeler = moveModeler; Field = fieldModel }
 
-        static member moveCurrentFieldOffset direction model =
-            { model with MapModeler = model.MapModeler.MoveCurrent direction }
+        static member transitionMap direction model =
+            { model with MapModeler = model.MapModeler.Transition direction }
 
         static member makePlayer model =
             let coordinates = Vector2i.Zero
@@ -515,7 +539,7 @@ module GameplayDispatcherModule =
                                 characterAnimationState.UpdateDirection navigationDescriptor.WalkDescriptor.WalkDirection
                             | _ -> failwith "TurnStatus is TurnBeginning; CharacterActivityState should not be NoActivity"
                         let model = GameplayModel.updateCharacterAnimationState index characterAnimationState model
-                        GameplayModel.updateTurnStatus index TurnProgressing model // "TurnProgressing" for normal animation; "TurnFinishing" for roguelike mode
+                        GameplayModel.updateTurnStatus index TurnFinishing model // "TurnProgressing" for normal animation; "TurnFinishing" for roguelike mode
                     | _ -> model
                 
                 let model = GameplayModel.forEachIndex updater indices model
@@ -659,7 +683,7 @@ module GameplayDispatcherModule =
                     | Leftward -> currentCoordinates.WithX (Constants.Layout.FieldUnitSizeM.X - 1)
                 let model = GameplayModel.clearEnemies model
                 let model = GameplayModel.yankPlayer newCoordinates model
-                let model = GameplayModel.moveCurrentFieldOffset direction model
+                let model = GameplayModel.transitionMap direction model
                 let fieldMap = model.MapModeler.GetCurrent.ToFieldMap
                 let model = GameplayModel.setFieldMap fieldMap model
                 let model = GameplayModel.makeEnemies 4 model
@@ -677,10 +701,7 @@ module GameplayDispatcherModule =
                             | Rightward -> currentCoordinates.X = Constants.Layout.FieldUnitSizeM.X - 1
                             | Downward -> currentCoordinates.Y = 0
                             | Leftward -> currentCoordinates.X = 0
-                        let fieldInDirection =
-                            let targetFieldOffset = model.MapModeler.CurrentFieldOffset + dtovm direction 
-                            Map.containsKey targetFieldOffset model.MapModeler.FieldMapUnits
-                        if targetOutside && fieldInDirection then
+                        if targetOutside && model.MapModeler.PossibleInDirection direction then
                             TransitionMap direction
                         else TryMakePlayerMove playerInput
                     | _ -> TryMakePlayerMove playerInput
