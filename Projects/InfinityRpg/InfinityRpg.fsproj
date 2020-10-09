@@ -1,5 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+﻿<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="..\..\packages\xunit.runner.visualstudio.2.4.0\build\net20\xunit.runner.visualstudio.props" Condition="Exists('..\..\packages\xunit.runner.visualstudio.2.4.0\build\net20\xunit.runner.visualstudio.props')" />
   <Import Project="..\..\packages\xunit.core.2.4.0\build\xunit.core.props" Condition="Exists('..\..\packages\xunit.core.2.4.0\build\xunit.core.props')" />
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
@@ -15,8 +14,7 @@
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <Name>InfinityRpg</Name>
     <TargetFrameworkProfile />
-    <NuGetPackageImportStamp>
-    </NuGetPackageImportStamp>
+    <NuGetPackageImportStamp></NuGetPackageImportStamp>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|x64' ">
     <DebugSymbols>true</DebugSymbols>
@@ -79,13 +77,14 @@
     <Compile Include="CharacterState.fs" />
     <Compile Include="MetaMap.fs" />
     <Compile Include="FieldMap.fs" />
-    <Compile Include="FieldDispatcher.fs" />
-    <Compile Include="CharacterDispatcher.fs" />
-    <Compile Include="EnemyDispatcher.fs" />
-    <Compile Include="PlayerDispatcher.fs" />
+    <Compile Include="InfinityPickup.fs" />
+    <Compile Include="InfinityField.fs" />
+    <Compile Include="InfinityCharacter.fs" />
+    <Compile Include="InfinityEnemy.fs" />
+    <Compile Include="InfinityPlayer.fs" />
     <Compile Include="OccupationMap.fs" />
-    <Compile Include="GameplayDispatcher.fs" />
-    <Compile Include="InfinityDispatcher.fs" />
+    <Compile Include="InfinityGameplay.fs" />
+    <Compile Include="InfinityGame.fs" />
     <Compile Include="InfinityPlugin.fs" />
     <Compile Include="Program.fs" />
     <None Include="Interactive.fsx" />
