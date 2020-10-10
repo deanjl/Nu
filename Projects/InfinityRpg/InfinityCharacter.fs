@@ -68,8 +68,8 @@ module CharacterDispatcherModule =
     type CharacterDispatcher () =
         inherit EntityDispatcher<CharacterModel, unit, unit> (CharacterModel.initial)
 
-        static let getSpriteInsetOpt (entity : Entity) world =
-            let animationState = (entity.GetCharacterModel world).CharacterAnimationState
+        static let getSpriteInsetOpt model world =
+            let animationState = model.CharacterAnimationState
             let animationFrames =
                 match animationState.AnimationType with
                 | CharacterAnimationFacing -> 2
@@ -123,28 +123,17 @@ module CharacterDispatcherModule =
         override this.Initializers (model, _) =
             [Entity.Position <== model --> fun (model : CharacterModel) -> model.Position]
         
-        override this.Actualize (entity, world) =
-            if entity.GetInView world then
-                let transform =
-                    { RefCount = 0
-                      Position = entity.GetPosition world
-                      Size = entity.GetSize world
-                      Rotation = entity.GetRotation world
-                      Depth = entity.GetDepth world 
-                      Flags = entity.GetFlags world }
-                World.enqueueRenderMessage
-                    (LayeredDescriptorMessage
-                        { Depth = entity.GetDepth world
-                          AssetTag = AssetTag.generalize (entity.GetCharacterModel world).CharacterAnimationSheet
-                          PositionY = (entity.GetPosition world).Y
-                          RenderDescriptor =
-                            SpriteDescriptor
-                                { Transform = transform
-                                  Offset = Vector2.Zero
-                                  InsetOpt = getSpriteInsetOpt entity world
-                                  Image = (entity.GetCharacterModel world).CharacterAnimationSheet
-                                  Color = Color.White
-                                  Glow = Color.Zero
-                                  Flip = FlipNone }})
-                    world
-            else world
+        override this.View (model, entity, world) =
+            if entity.GetVisible world && entity.GetInView world then
+                let transform = entity.GetTransform world
+                let transform = { transform with RefCount = 0 }
+                [Render (transform.Depth, transform.Position.Y, AssetTag.generalize model.CharacterAnimationSheet,
+                     SpriteDescriptor
+                       { Transform = transform
+                         Offset = Vector2.Zero
+                         InsetOpt = getSpriteInsetOpt model world
+                         Image = model.CharacterAnimationSheet
+                         Color = Color.White
+                         Glow = Color.Zero
+                         Flip = FlipNone })]
+            else []

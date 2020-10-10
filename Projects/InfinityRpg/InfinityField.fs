@@ -58,19 +58,20 @@ module FieldDispatcherModule =
         override this.Initializers (model, _) =
             [Entity.Size <== model --> fun (model : FieldModel) -> vmtovf model.FieldMapNp.FieldSizeM]
         
-        override this.Actualize (field, world) =
+        override this.View (model, field, world) =
 
-            let absolute =
-                field.GetAbsolute world
+            let fieldTransform = field.GetTransform world
+            let tileTransform = { fieldTransform with RefCount = 0; Size = Constants.Layout.TileSize }
+            let absolute = field.GetAbsolute world
 
             let bounds =
                 v4BoundsOverflow
-                    (field.GetPosition world)
+                    fieldTransform.Position
                     (Vector2.Multiply (Constants.Layout.TileSize, Constants.Layout.TileSheetSize))
                     (field.GetOverflow world)
 
             if World.isBoundsInView absolute bounds world then
-                let fieldMap = (field.GetFieldModel world).FieldMapNp
+                let fieldMap = model.FieldMapNp
                 let image = fieldMap.FieldTileSheet
                 let mInViewBounds = World.getViewBounds absolute world |> viewBoundsToMapUnits
                 let tiles = fieldMap.FieldTiles
@@ -80,13 +81,7 @@ module FieldDispatcherModule =
                             if tilePositionInView tilePositionM mInViewBounds then
                                 let tilePosition = vmtovf tilePositionM // NOTE: field position assumed at origin
                                 let tileInsetOpt = getTileInsetOpt tile.TileSheetPositionM
-                                let tileTransform =
-                                    { RefCount = 0
-                                      Position = tilePosition
-                                      Size = Constants.Layout.TileSize
-                                      Rotation = 0.0f // NOTE: rotation assumed zero
-                                      Depth = field.GetDepth world
-                                      Flags = field.GetFlags world }
+                                let tileTransform = { tileTransform with Position = tilePosition }
                                 let sprite =
                                     { Transform = tileTransform
                                       Offset = Vector2.Zero
@@ -100,15 +95,8 @@ module FieldDispatcherModule =
                         tiles [] |>
                     Array.ofList
 
-                World.enqueueRenderMessage
-                    (LayeredDescriptorMessage
-                        { Depth = field.GetDepth world
-                          AssetTag = AssetTag.generalize image
-                          PositionY = (field.GetPosition world).Y
-                          RenderDescriptor = SpritesDescriptor sprites })
-
-                    world
-            else world
+                [Render (fieldTransform.Depth, fieldTransform.Position.Y, AssetTag.generalize image, SpritesDescriptor sprites)]
+            else []
 
         override this.GetQuickSize (field, world) =
             vmtovf ((field.GetFieldModel world).FieldMapNp).FieldSizeM

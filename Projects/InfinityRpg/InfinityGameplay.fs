@@ -539,7 +539,7 @@ module GameplayDispatcherModule =
                                 characterAnimationState.UpdateDirection navigationDescriptor.WalkDescriptor.WalkDirection
                             | _ -> failwith "TurnStatus is TurnBeginning; CharacterActivityState should not be NoActivity"
                         let model = GameplayModel.updateCharacterAnimationState index characterAnimationState model
-                        GameplayModel.updateTurnStatus index TurnFinishing model // "TurnProgressing" for normal animation; "TurnFinishing" for roguelike mode
+                        GameplayModel.updateTurnStatus index TurnProgressing model // "TurnProgressing" for normal animation; "TurnFinishing" for roguelike mode
                     | _ -> model
                 
                 let model = GameplayModel.forEachIndex updater indices model
@@ -686,7 +686,7 @@ module GameplayDispatcherModule =
                 let model = GameplayModel.transitionMap direction model
                 let fieldMap = model.MapModeler.GetCurrent.ToFieldMap
                 let model = GameplayModel.setFieldMap fieldMap model
-                let model = GameplayModel.makeEnemies 4 model
+                let model = GameplayModel.makeEnemies 3 model
                 just model
 
             | HandleMapChange playerInput ->
