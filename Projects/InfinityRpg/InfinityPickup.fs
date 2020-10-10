@@ -28,3 +28,30 @@ module PickupDispatcherModule =
 
     type PickupDispatcher () =
         inherit EntityDispatcher<PickupModel, unit, unit> (PickupModel.health)
+
+        static let getSpriteInsetOpt model =
+            let spriteOffset =
+                Vector2
+                    (Constants.Layout.TileSize.X * single model.PickupSheetPositionM.X,
+                     Constants.Layout.TileSize.Y * single model.PickupSheetPositionM.Y)
+            let spriteInset =
+                Vector4
+                    (spriteOffset.X,
+                     spriteOffset.Y,
+                     Constants.Layout.TileSize.X,
+                     Constants.Layout.TileSize.Y)
+            Some spriteInset
+        
+        override this.View (model, entity, world) =
+            if entity.GetVisible world && entity.GetInView world then
+                let transform = entity.GetTransform world
+                [Render (transform.Depth, transform.Position.Y, AssetTag.generalize model.PickupSheet,
+                     SpriteDescriptor
+                       { Transform = transform
+                         Offset = Vector2.Zero
+                         InsetOpt = getSpriteInsetOpt model
+                         Image = model.PickupSheet
+                         Color = Color.White
+                         Glow = Color.Zero
+                         Flip = FlipNone })]
+            else []
