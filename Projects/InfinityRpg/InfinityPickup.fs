@@ -12,10 +12,14 @@ module PickupDispatcherModule =
         | Health
     
     type [<StructuralEquality; NoComparison>] PickupModel =
-        { PickupType : PickupType }
+        { PickupType : PickupType
+          PickupSheet : Image AssetTag
+          PickupSheetPositionM : Vector2i }
 
         static member health =
-            { PickupType = Health }
+            { PickupType = Health
+              PickupSheet = Assets.PickupSheetImage
+              PickupSheetPositionM = Vector2i.Zero }
 
     type Entity with
         member this.GetPickupModel = this.GetModel<PickupModel>

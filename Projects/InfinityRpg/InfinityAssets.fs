@@ -4,6 +4,7 @@ module Assets =
 
     let GuiPackageName = "Gui"
     let GameplayPackageName = "Gameplay"
+    let PickupSheetImage = asset<Image> GameplayPackageName "PickupItems"
     let PlayerImage = asset<Image> GameplayPackageName "Player"
     let GoopyImage = asset<Image> GameplayPackageName "Goopy"
     let BatsyImage = asset<Image> GameplayPackageName "Batsy"
