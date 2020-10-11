@@ -283,7 +283,8 @@ module GameplayDispatcherModule =
         static member addMove index (move : Move) model =
             { model with MoveModeler = model.MoveModeler.AddMove index move }
         
-        static member unpackMove index (move : Move) model =
+        static member unpackMove index model =
+            let move = GameplayModel.getCurrentMove index model
             let turn = GameplayModel.getCoordinates index model |> move.MakeTurn
             let model = GameplayModel.updateTurn index turn model
             GameplayModel.updateTurnStatus index TurnPending model
@@ -307,6 +308,19 @@ module GameplayDispatcherModule =
             | NavigationTurn navigationDescriptor ->
                 GameplayModel.updateTurn reactorIndex (NavigationTurn navigationDescriptor.CancelNavigation) model
             | _ -> model
+        
+        static member applyMove index model =
+            let move = GameplayModel.getCurrentMove index model
+            match move with
+            | SingleRoundMove singleRoundMove ->
+                match singleRoundMove with
+                | Step direction -> GameplayModel.applyStep index direction model
+                | Attack reactorIndex ->
+                    let model = GameplayModel.applyAttack reactorIndex model
+                    GameplayModel.stopTraveler reactorIndex model
+            | MultiRoundMove multiRoundMove ->
+                match multiRoundMove with
+                | Travel (head :: _) -> GameplayModel.relocateCharacter index head.PositionM model
         
         static member activateCharacter index model =
             let activity = GameplayModel.getTurn index model |> Turn.toCharacterActivityState
@@ -349,12 +363,12 @@ module GameplayDispatcherModule =
         | NoInput
 
     type [<StructuralEquality; NoComparison>] GameplayMessage =
-        | TryContinueNavigation
+        | TryContinuePlayerMove
         | FinishTurns of CharacterIndex list
         | ProgressTurns of CharacterIndex list
         | BeginTurns of CharacterIndex list
         | RunCharacterActivation
-        | PlayNewRound of Move
+        | MakeEnemyMoves
         | TryMakePlayerMove of PlayerInput
         | TransitionMap of Direction
         | HandleMapChange of PlayerInput
@@ -428,7 +442,7 @@ module GameplayDispatcherModule =
         override this.Message (model, message, _, world) =
             match message with
             
-            | TryContinueNavigation ->
+            | TryContinuePlayerMove ->
                 let playerMoveOpt =
                     match model.Player.TurnStatus with
                     | TurnFinishing ->
@@ -451,7 +465,9 @@ module GameplayDispatcherModule =
                 match playerMoveOpt with
                 | Some move ->
                     let model = GameplayModel.addMove PlayerIndex move model
-                    withMsg model (PlayNewRound move)
+                    let model = GameplayModel.unpackMove PlayerIndex model
+                    let model = GameplayModel.applyMove PlayerIndex model
+                    withMsg model MakeEnemyMoves
                 | _ -> just model
             
             | FinishTurns indices ->
@@ -481,7 +497,7 @@ module GameplayDispatcherModule =
                     | _ -> failwith "non-finishing turns should be filtered out by this point"
 
                 let model = GameplayModel.forEachIndex updater indices model
-                withMsg model TryContinueNavigation
+                withMsg model TryContinuePlayerMove
             
             | ProgressTurns indices ->
                 
@@ -573,23 +589,7 @@ module GameplayDispatcherModule =
                 
                 withMsg model (BeginTurns indices)
             
-            | PlayNewRound playerMove ->
-                
-                // player makes his move
-                
-                let model = GameplayModel.unpackMove PlayerIndex playerMove model
-                
-                let model =
-                    match playerMove with
-                    | SingleRoundMove singleRoundMove ->
-                        match singleRoundMove with
-                        | Step direction -> GameplayModel.applyStep PlayerIndex direction model
-                        | Attack reactorIndex -> GameplayModel.applyAttack reactorIndex model
-                    | MultiRoundMove multiRoundMove ->
-                        match multiRoundMove with
-                        | Travel (head :: _) -> GameplayModel.relocateCharacter PlayerIndex head.PositionM model
-                
-                // (still standing) enemies make theirs
+            | MakeEnemyMoves ->
                 
                 let indices = GameplayModel.getEnemyIndices model
                 let attackerOpt = List.tryFind (fun x -> Math.arePositionMsAdjacent (GameplayModel.getCoordinates x model) (GameplayModel.getCoordinates PlayerIndex model)) indices
@@ -618,15 +618,8 @@ module GameplayDispatcherModule =
                         match enemyMoveOpt with
                         | Some move ->
                             let model = GameplayModel.addMove index move model
-                            let model = GameplayModel.unpackMove index move model
-                            match move with
-                            | SingleRoundMove singleRoundMove ->
-                                match singleRoundMove with
-                                | Step direction -> GameplayModel.applyStep index direction model
-                                | Attack reactorIndex ->
-                                    let model = GameplayModel.applyAttack reactorIndex model
-                                    GameplayModel.stopTraveler reactorIndex model
-                            | _ -> failwith "enemy not yet capable of multiround move"
+                            let model = GameplayModel.unpackMove index model
+                            GameplayModel.applyMove index model
                         | None -> model)
                         
                 let model = GameplayModel.forEachIndex updater indices model
@@ -669,7 +662,9 @@ module GameplayDispatcherModule =
                 match playerMoveOpt with
                 | Some move ->
                     let model = GameplayModel.addMove PlayerIndex move model
-                    withMsg model (PlayNewRound move)
+                    let model = GameplayModel.unpackMove PlayerIndex model
+                    let model = GameplayModel.applyMove PlayerIndex model
+                    withMsg model MakeEnemyMoves
                 | _ -> just model
 
             | TransitionMap direction ->
