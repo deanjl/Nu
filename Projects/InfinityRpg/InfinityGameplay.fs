@@ -291,10 +291,12 @@ module GameplayDispatcherModule =
             GameplayModel.updatePosition PlayerIndex (vmtovf coordinates) model
 
         static member addMove index (move : Move) model =
+            { model with MoveModeler = model.MoveModeler.AddMove index move }
+        
+        static member unpackMove index (move : Move) model =
             let turn = GameplayModel.getCoordinates index model |> move.MakeTurn
             let model = GameplayModel.updateTurn index turn model
-            let model = GameplayModel.updateTurnStatus index TurnPending model
-            { model with MoveModeler = model.MoveModeler.AddMove index move }
+            GameplayModel.updateTurnStatus index TurnPending model
         
         static member finishMove index model =
             let model = GameplayModel.updateTurn index NoTurn model
@@ -454,7 +456,9 @@ module GameplayDispatcherModule =
                     | _ -> model
                 
                 match playerMoveOpt with
-                | Some move -> withMsg model (PlayNewRound move)
+                | Some move ->
+                    let model = GameplayModel.addMove PlayerIndex move model
+                    withMsg model (PlayNewRound move)
                 | _ -> just model
             
             | FinishTurns indices ->
@@ -580,7 +584,7 @@ module GameplayDispatcherModule =
                 
                 // player makes his move
                 
-                let model = GameplayModel.addMove PlayerIndex playerMove model
+                let model = GameplayModel.unpackMove PlayerIndex playerMove model
                 
                 let model =
                     match playerMove with
@@ -621,6 +625,7 @@ module GameplayDispatcherModule =
                         match enemyMoveOpt with
                         | Some move ->
                             let model = GameplayModel.addMove index move model
+                            let model = GameplayModel.unpackMove index move model
                             match move with
                             | SingleRoundMove singleRoundMove ->
                                 match singleRoundMove with
@@ -669,7 +674,9 @@ module GameplayDispatcherModule =
                     | None -> None
                 
                 match playerMoveOpt with
-                | Some move -> withMsg model (PlayNewRound move)
+                | Some move ->
+                    let model = GameplayModel.addMove PlayerIndex move model
+                    withMsg model (PlayNewRound move)
                 | _ -> just model
 
             | TransitionMap direction ->
