@@ -14,12 +14,14 @@ module PickupDispatcherModule =
     type [<StructuralEquality; NoComparison>] PickupModel =
         { PickupType : PickupType
           PickupSheet : Image AssetTag
-          PickupSheetPositionM : Vector2i }
+          PickupSheetPositionM : Vector2i
+          Position : Vector2 }
 
         static member health =
             { PickupType = Health
               PickupSheet = Assets.PickupSheetImage
-              PickupSheetPositionM = Vector2i.Zero }
+              PickupSheetPositionM = Vector2i.Zero
+              Position = Vector2.Zero }
 
     type Entity with
         member this.GetPickupModel = this.GetModel<PickupModel>
@@ -41,6 +43,14 @@ module PickupDispatcherModule =
                      Constants.Layout.TileSize.X,
                      Constants.Layout.TileSize.Y)
             Some spriteInset
+        
+        static member Properties =
+            [define Entity.Depth Constants.Layout.PickupDepth
+             define Entity.PublishChanges true
+             define Entity.Omnipresent true]
+        
+        override this.Initializers (model, _) =
+            [Entity.Position <== model --> fun (model : PickupModel) -> model.Position]
         
         override this.View (model, entity, world) =
             if entity.GetVisible world && entity.GetInView world then

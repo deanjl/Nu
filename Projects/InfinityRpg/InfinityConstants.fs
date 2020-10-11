@@ -14,6 +14,7 @@ module Constants =
         let TileSheetSize = let t = TileSheetSizeI in t.Vector2
         let FieldUnitSizeM = Vector2i 22
         let CharacterDepth = 1.0f
+        let PickupDepth = 0.5f
         let CharacterWalkSpeed = 4.0f
 
     [<RequireQualifiedAccess>]
