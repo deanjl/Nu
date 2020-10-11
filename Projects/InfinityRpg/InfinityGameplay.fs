@@ -111,14 +111,12 @@ module GameplayDispatcherModule =
     type MoveModeler =
         { PassableCoordinates : Vector2i list
           CharacterCoordinates : Map<CharacterIndex, Vector2i>
-          LatestSingleMoves : Map<CharacterIndex, SingleRoundMove>
-          LatestMultiMoves : Map<CharacterIndex, MultiRoundMove> }
+          CurrentMoves : Map<CharacterIndex, Move> }
 
         static member empty =
             { PassableCoordinates = []
               CharacterCoordinates = Map.empty
-              LatestSingleMoves = Map.empty
-              LatestMultiMoves = Map.empty }
+              CurrentMoves = Map.empty }
 
         member this.AvailableCoordinates =
             let occupiedCoordinates = Map.toValueSeq this.CharacterCoordinates
@@ -144,16 +142,8 @@ module GameplayDispatcherModule =
         member this.ClearEnemies =
             { this with CharacterCoordinates = Map.filter (fun k _ -> not k.isEnemy ) this.CharacterCoordinates }
         
-        member this.AddSingleMove index move =
-            { this with LatestSingleMoves = Map.add index move this.LatestSingleMoves }
-
-        member this.AddMultiMove index move =
-            { this with LatestMultiMoves = Map.add index move this.LatestMultiMoves }
-
         member this.AddMove index move =
-            match move with
-            | SingleRoundMove move -> this.AddSingleMove index move
-            | MultiRoundMove move -> this.AddMultiMove index move
+            { this with CurrentMoves = Map.add index move this.CurrentMoves }
         
         member this.SetPassableCoordinates fieldMap =
             let passableCoordinates = fieldMap.FieldTiles |> Map.filter (fun _ fieldTile -> fieldTile.TileType = Passable) |> Map.toKeyList
@@ -280,8 +270,8 @@ module GameplayDispatcherModule =
         static member getIndexByCoordinates coordinates model =
             Map.findKey (fun _ x -> x = coordinates) model.MoveModeler.CharacterCoordinates
 
-        static member getMultiMove index model =
-            model.MoveModeler.LatestMultiMoves.[index]
+        static member getCurrentMove index model =
+            model.MoveModeler.CurrentMoves.[index]
         
         static member relocateCharacter index coordinates model =
             { model with MoveModeler = model.MoveModeler.RelocateCharacter index coordinates }
@@ -442,12 +432,15 @@ module GameplayDispatcherModule =
                 let playerMoveOpt =
                     match model.Player.TurnStatus with
                     | TurnFinishing ->
-                        match GameplayModel.getMultiMove PlayerIndex model with
-                        | Travel (_ :: navigationPath) ->
-                            let targetPositionM = (List.head navigationPath).PositionM
-                            if List.exists (fun x -> x = targetPositionM) model.MoveModeler.AvailableCoordinates then
-                                Some (MultiRoundMove (Travel navigationPath))
-                            else None
+                        match GameplayModel.getCurrentMove PlayerIndex model with
+                        | MultiRoundMove move ->
+                            match move with
+                            | Travel (_ :: navigationPath) ->
+                                let targetPositionM = (List.head navigationPath).PositionM
+                                if List.exists (fun x -> x = targetPositionM) model.MoveModeler.AvailableCoordinates then
+                                    Some (MultiRoundMove (Travel navigationPath))
+                                else None
+                        | _ -> None
                     | _ -> None
              
                 let model =
