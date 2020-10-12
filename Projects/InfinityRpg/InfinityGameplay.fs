@@ -109,21 +109,26 @@ module GameplayDispatcherModule =
                     Turn.makeNavigation (Some path) positionM direction
 
     type MoveModeler =
-        { PassableCoordinates : Vector2i list
+        { PassableCoordinates : Map<Vector2i, PickupType Option>
           CharacterCoordinates : Map<CharacterIndex, Vector2i>
           CurrentMoves : Map<CharacterIndex, Move> }
 
         static member empty =
-            { PassableCoordinates = []
+            { PassableCoordinates = Map.empty
               CharacterCoordinates = Map.empty
               CurrentMoves = Map.empty }
 
         member this.AvailableCoordinates =
             let occupiedCoordinates = Map.toValueSeq this.CharacterCoordinates
-            List.except occupiedCoordinates this.PassableCoordinates
+            let passableCoordinates = Map.toKeyList this.PassableCoordinates
+            List.except occupiedCoordinates passableCoordinates
 
         member this.OpenDirections coordinates =
             List.filter (fun d -> List.exists (fun x -> x = (coordinates + (dtovm d))) this.AvailableCoordinates) [Upward; Rightward; Downward; Leftward]
+        
+        member this.AddHealth coordinates =
+            let passableCoordinates = Map.add coordinates (Some Health) this.PassableCoordinates
+            { this with PassableCoordinates = passableCoordinates }
         
         member this.AddCharacter index coordinates =
             if List.exists (fun x -> x = coordinates) this.AvailableCoordinates then
@@ -146,7 +151,7 @@ module GameplayDispatcherModule =
             { this with CurrentMoves = Map.add index move this.CurrentMoves }
         
         member this.SetPassableCoordinates fieldMap =
-            let passableCoordinates = fieldMap.FieldTiles |> Map.filter (fun _ fieldTile -> fieldTile.TileType = Passable) |> Map.toKeyList
+            let passableCoordinates = fieldMap.FieldTiles |> Map.filter (fun _ fieldTile -> fieldTile.TileType = Passable) |> Map.toKeyList |> Map.ofListBy (fun x -> (x, None))
             { this with PassableCoordinates = passableCoordinates }                    
     
     type [<StructuralEquality; NoComparison>] GameplayModel =
@@ -154,6 +159,7 @@ module GameplayDispatcherModule =
           MoveModeler : MoveModeler
           ShallLoadGame : bool
           Field : FieldModel
+          PickupItems : PickupModel list
           Enemies : CharacterModel list
           Player : CharacterModel }
 
@@ -162,6 +168,7 @@ module GameplayDispatcherModule =
               MoveModeler = MoveModeler.empty
               ShallLoadGame = false
               Field = FieldModel.initial
+              PickupItems = []
               Enemies = []
               Player = CharacterModel.initial }
 
@@ -235,6 +242,10 @@ module GameplayDispatcherModule =
 
         static member updatePosition index newValue model =
             GameplayModel.updateCharacterBy CharacterModel.updatePosition index newValue model
+        
+        static member addHealth coordinates model =
+            let moveModeler = model.MoveModeler.AddHealth coordinates
+            { model with MoveModeler = moveModeler }
         
         static member removeEnemy index model =
             let enemies = List.filter (fun model -> model.Index <> index) model.Enemies
