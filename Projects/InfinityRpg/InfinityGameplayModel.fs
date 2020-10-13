@@ -195,8 +195,23 @@ module GameplayModelModule =
               Enemies = []
               Player = CharacterModel.initial }
 
+        static member updateMapModeler newValue model =
+            { model with MapModeler = newValue }
+        
+        static member updateMoveModeler newValue model =
+            { model with MoveModeler = newValue }
+
+        static member updateField newValue model =
+            { model with Field = newValue }
+
         static member updatePickupItems newValue model =
             { model with PickupItems = newValue }
+        
+        static member updateEnemies newValue model =
+            { model with Enemies = newValue }
+
+        static member updatePlayer newValue model =
+            { model with Player = newValue }
         
         static member getCharacters model =
             model.Player :: model.Enemies
@@ -244,12 +259,14 @@ module GameplayModelModule =
         
         static member updateCharacterBy updater index newValue model =
             match index with
-            | PlayerIndex -> { model with Player = updater newValue model.Player }
+            | PlayerIndex ->
+                let player = updater newValue model.Player
+                GameplayModel.updatePlayer player model
             | EnemyIndex _ as index ->
                 let enemies =
                     model.Enemies |>
                     List.map (fun model -> if model.Index = index then updater newValue model else model)
-                { model with Enemies = enemies }
+                GameplayModel.updateEnemies enemies model
         
         static member updateTurn index newValue model =
             GameplayModel.updateCharacterBy CharacterModel.updateTurn index newValue model
@@ -271,7 +288,7 @@ module GameplayModelModule =
         
         static member updateEnemiesBy updater newValues model =
             let enemies = List.map2 (fun newValue model -> updater newValue model) newValues model.Enemies
-            { model with Enemies = enemies }
+            GameplayModel.updateEnemies enemies model
 
         static member updateEnemyActivityStates newValues model =
             GameplayModel.updateEnemiesBy CharacterModel.updateCharacterActivityState newValues model
@@ -286,37 +303,42 @@ module GameplayModelModule =
             model.MoveModeler.CurrentMoves.[index]
         
         static member relocateCharacter index coordinates model =
-            { model with MoveModeler = MoveModeler.placeCharacter index coordinates model.MoveModeler }
+            let moveModeler = MoveModeler.placeCharacter index coordinates model.MoveModeler
+            GameplayModel.updateMoveModeler moveModeler model
         
         static member addMove index (move : Move) model =
-            { model with MoveModeler = MoveModeler.addMove index move model.MoveModeler }
+            let moveModeler = MoveModeler.addMove index move model.MoveModeler
+            GameplayModel.updateMoveModeler moveModeler model
         
         static member addHealth coordinates model =
             let pickupItems = PickupModel.makeHealth coordinates :: model.PickupItems
             let model = GameplayModel.updatePickupItems pickupItems model
             let moveModeler = MoveModeler.addHealth coordinates model.MoveModeler
-            { model with MoveModeler = moveModeler }
+            GameplayModel.updateMoveModeler moveModeler model
 
         static member removeHealth coordinates model =
             let pickupItems = List.filter (fun (model : PickupModel) -> model.Position <> vmtovf coordinates) model.PickupItems
             let model = GameplayModel.updatePickupItems pickupItems model
             let moveModeler = MoveModeler.removeHealth coordinates model.MoveModeler
-            { model with MoveModeler = moveModeler }
+            GameplayModel.updateMoveModeler moveModeler model
         
         static member clearPickups model =
             let model = GameplayModel.updatePickupItems [] model
             let moveModeler = MoveModeler.clearPickups model.MoveModeler
-            { model with MoveModeler = moveModeler }
+            GameplayModel.updateMoveModeler moveModeler model
         
         static member removeEnemy index model =
             let coordinates = GameplayModel.getCoordinates index model
             let model = GameplayModel.addHealth coordinates model
             let enemies = List.filter (fun model -> model.Index <> index) model.Enemies
             let moveModeler = MoveModeler.removeCharacter index model.MoveModeler
-            { model with MoveModeler = moveModeler; Enemies = enemies }
+            let model = GameplayModel.updateMoveModeler moveModeler model
+            GameplayModel.updateEnemies enemies model
 
         static member clearEnemies model =
-            { model with MoveModeler = MoveModeler.clearEnemies model.MoveModeler; Enemies = [] }
+            let moveModeler = MoveModeler.clearEnemies model.MoveModeler
+            let model = GameplayModel.updateMoveModeler moveModeler model
+            GameplayModel.updateEnemies [] model
 
         static member unpackMove index model =
             let move = GameplayModel.getCurrentMove index model
@@ -379,10 +401,12 @@ module GameplayModelModule =
         static member setFieldMap fieldMap model =
             let moveModeler = MoveModeler.setPassableCoordinates fieldMap model.MoveModeler
             let fieldModel = { FieldMapNp = fieldMap }
-            { model with MoveModeler = moveModeler; Field = fieldModel }
+            let model = GameplayModel.updateMoveModeler moveModeler model
+            GameplayModel.updateField fieldModel model
 
         static member transitionMap direction model =
-            { model with MapModeler = model.MapModeler.Transition direction }
+            let mapModeler = model.MapModeler.Transition direction
+            GameplayModel.updateMapModeler mapModeler model
 
         static member yankPlayer coordinates model =
             let model = GameplayModel.relocateCharacter PlayerIndex coordinates model
@@ -392,14 +416,17 @@ module GameplayModelModule =
             let coordinates = Vector2i.Zero
             let moveModeler = MoveModeler.placeCharacter PlayerIndex coordinates model.MoveModeler
             let playerModel = CharacterModel.makePlayer coordinates
-            { model with MoveModeler = moveModeler; Player = playerModel }
+            let model = GameplayModel.updateMoveModeler moveModeler model
+            GameplayModel.updatePlayer playerModel model
 
         static member makeEnemy index model =
             let availableCoordinates = model.MoveModeler.AvailableCoordinates
             let coordinates = availableCoordinates.Item(Gen.random1 availableCoordinates.Length)
             let moveModeler = MoveModeler.placeCharacter index coordinates model.MoveModeler
             let enemyModel = CharacterModel.makeEnemy index coordinates
-            { model with MoveModeler = moveModeler; Enemies = enemyModel :: model.Enemies }
+            let enemies = enemyModel :: model.Enemies
+            let model = GameplayModel.updateMoveModeler moveModeler model
+            GameplayModel.updateEnemies enemies model
 
         static member makeEnemies quantity model =
             let quantity = quantity - 1
@@ -408,7 +435,7 @@ module GameplayModelModule =
                 if count = quantity then model
                 else recursion (count + 1) model
             let model = recursion 0 model
-            { model with Enemies = List.rev model.Enemies } // enemy indices in ascending order because enemy turns must be applied in the same order as they are determined
+            GameplayModel.updateEnemies (List.rev model.Enemies) model // enemy indices in ascending order because enemy turns must be applied in the same order as they are determined
         
         static member forEachIndex updater indices model =
             let rec recursion (indices : CharacterIndex list) model =
