@@ -261,6 +261,9 @@ module MathModule =
     let vmtod v =
         v |> vmtovf |> vftod
 
+    let directionToTarget current target =
+        target - current |> vmtod
+
 module Math =
 
     let arePositionMsAdjacent positionM positionM2 =

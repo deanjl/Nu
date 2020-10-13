@@ -294,7 +294,7 @@ module GameplayDispatcherModule =
                         match Math.arePositionMsAdjacent coordinates currentCoordinates with
                         | true ->
                             let openDirections = model.MoveModeler.OpenDirections currentCoordinates
-                            let direction = vmtod (coordinates - currentCoordinates)
+                            let direction = directionToTarget currentCoordinates coordinates
                             let opponents = GameplayModel.getOpponentIndices PlayerIndex model
                             if List.exists (fun x -> x = direction) openDirections then
                                 Some (SingleRoundMove (Step direction))

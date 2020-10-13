@@ -105,7 +105,7 @@ module GameplayModelModule =
             | MultiRoundMove multiRoundMove ->
                 match multiRoundMove with
                 | Travel path ->
-                    let direction = vmtod (path.Head.PositionM - positionM)
+                    let direction = directionToTarget positionM path.Head.PositionM
                     Turn.makeNavigation (Some path) positionM direction
 
     type MoveModeler =
@@ -145,6 +145,11 @@ module GameplayModelModule =
         static member removeHealth coordinates moveModeler =
             MoveModeler.updateCoordinatesValue coordinates None moveModeler
 
+        static member pickupAtCoordinates coordinates moveModeler =
+            match moveModeler.PassableCoordinates.[coordinates] with
+            | Some _ -> true
+            | None -> false
+        
         static member clearPickups moveModeler =
             let passableCoordinates = Map.map (fun _ _ -> None) moveModeler.PassableCoordinates
             MoveModeler.updatePassableCoordinates passableCoordinates moveModeler
@@ -324,8 +329,19 @@ module GameplayModelModule =
             let model = GameplayModel.updateCharacterActivityState index NoActivity model
             GameplayModel.updateTurnStatus index Idle model
         
+        static member tryPickupHealth index coordinates model =
+            match index with
+            | PlayerIndex ->
+                let model = GameplayModel.updateCharacterState index { model.Player.CharacterState with HitPoints = 30 } model
+                GameplayModel.removeHealth coordinates model
+            | _ -> model
+        
         static member applyStep index direction model =
             let coordinates = (GameplayModel.getCoordinates index model) + dtovm direction
+            let model =
+                if MoveModeler.pickupAtCoordinates coordinates model.MoveModeler then
+                    GameplayModel.tryPickupHealth index coordinates model
+                else model
             GameplayModel.relocateCharacter index coordinates model
         
         static member applyAttack reactorIndex model =
@@ -350,7 +366,10 @@ module GameplayModelModule =
                     GameplayModel.stopTraveler reactorIndex model
             | MultiRoundMove multiRoundMove ->
                 match multiRoundMove with
-                | Travel (head :: _) -> GameplayModel.relocateCharacter index head.PositionM model
+                | Travel (head :: _) ->
+                    let currentCoordinates = GameplayModel.getCoordinates index model
+                    let direction = directionToTarget currentCoordinates head.PositionM
+                    GameplayModel.applyStep index direction model
         
         static member activateCharacter index model =
             let activity = GameplayModel.getTurn index model |> Turn.toCharacterActivityState
