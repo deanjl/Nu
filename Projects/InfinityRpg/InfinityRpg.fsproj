@@ -84,6 +84,7 @@
     <Compile Include="InfinityEnemy.fs" />
     <Compile Include="InfinityPlayer.fs" />
     <Compile Include="OccupationMap.fs" />
+    <Compile Include="InfinityGameplayModel.fs" />
     <Compile Include="InfinityGameplay.fs" />
     <Compile Include="InfinityGame.fs" />
     <Compile Include="InfinityPlugin.fs" />
