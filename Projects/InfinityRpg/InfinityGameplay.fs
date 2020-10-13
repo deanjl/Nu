@@ -329,6 +329,7 @@ module GameplayDispatcherModule =
                     | Downward -> currentCoordinates.WithY (Constants.Layout.FieldUnitSizeM.Y - 1)
                     | Leftward -> currentCoordinates.WithX (Constants.Layout.FieldUnitSizeM.X - 1)
                 let model = GameplayModel.clearEnemies model
+                let model = GameplayModel.clearPickups model
                 let model = GameplayModel.yankPlayer newCoordinates model
                 let model = GameplayModel.transitionMap direction model
                 let fieldMap = model.MapModeler.GetCurrent.ToFieldMap
@@ -423,6 +424,10 @@ module GameplayDispatcherModule =
                     [Content.entity<FieldDispatcher> Simulants.Field.Name
                        [Entity.FieldModel <== model --> fun model -> model.Field]
                                         
+                     Content.entities model
+                        (fun model -> model.PickupItems) constant
+                        (fun index model _ -> Content.entity<PickupDispatcher> ("Pickup+" + scstring index) [Entity.PickupModel <== model])
+                     
                      Content.entitiesIndexedBy model
                         (fun model -> model.Enemies) constant
                         (fun model -> model.Index.getEnemyIndex)

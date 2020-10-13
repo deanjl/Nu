@@ -17,11 +17,14 @@ module PickupDispatcherModule =
           PickupSheetPositionM : Vector2i
           Position : Vector2 }
 
-        static member health =
+        static member initial =
             { PickupType = Health
               PickupSheet = Assets.PickupSheetImage
               PickupSheetPositionM = Vector2i.Zero
               Position = Vector2.Zero }
+
+        static member makeHealth positionM =
+            { PickupModel.initial with Position = vmtovf positionM }
 
     type Entity with
         member this.GetPickupModel = this.GetModel<PickupModel>
@@ -29,7 +32,7 @@ module PickupDispatcherModule =
         member this.PickupModel = this.Model<PickupModel> ()
 
     type PickupDispatcher () =
-        inherit EntityDispatcher<PickupModel, unit, unit> (PickupModel.health)
+        inherit EntityDispatcher<PickupModel, unit, unit> (PickupModel.initial)
 
         static let getSpriteInsetOpt model =
             let spriteOffset =

@@ -135,8 +135,18 @@ module GameplayModelModule =
         static member updateCurrentMoves newValue moveModeler =
             { moveModeler with CurrentMoves = newValue }
 
+        static member updateCoordinatesValue coordinates newValue moveModeler =
+            let passableCoordinates = Map.add coordinates newValue moveModeler.PassableCoordinates
+            MoveModeler.updatePassableCoordinates passableCoordinates moveModeler
+        
         static member addHealth coordinates moveModeler =
-            let passableCoordinates = Map.add coordinates (Some Health) moveModeler.PassableCoordinates
+            MoveModeler.updateCoordinatesValue coordinates (Some Health) moveModeler
+
+        static member removeHealth coordinates moveModeler =
+            MoveModeler.updateCoordinatesValue coordinates None moveModeler
+
+        static member clearPickups moveModeler =
+            let passableCoordinates = Map.map (fun _ _ -> None) moveModeler.PassableCoordinates
             MoveModeler.updatePassableCoordinates passableCoordinates moveModeler
         
         // used for both adding and relocating
@@ -159,7 +169,7 @@ module GameplayModelModule =
             MoveModeler.updateCurrentMoves currentMoves moveModeler
         
         static member setPassableCoordinates fieldMap moveModeler =
-            let passableCoordinates = fieldMap.FieldTiles |> Map.filter (fun _ fieldTile -> fieldTile.TileType = Passable) |> Map.toKeyList |> Map.ofListBy (fun x -> (x, None))
+            let passableCoordinates = fieldMap.FieldTiles |> Map.filter (fun _ fieldTile -> fieldTile.TileType = Passable) |> Map.map (fun _ _ -> None)
             MoveModeler.updatePassableCoordinates passableCoordinates moveModeler                    
     
     type [<StructuralEquality; NoComparison>] GameplayModel =
@@ -180,6 +190,9 @@ module GameplayModelModule =
               Enemies = []
               Player = CharacterModel.initial }
 
+        static member updatePickupItems newValue model =
+            { model with PickupItems = newValue }
+        
         static member getCharacters model =
             model.Player :: model.Enemies
         
@@ -274,10 +287,25 @@ module GameplayModelModule =
             { model with MoveModeler = MoveModeler.addMove index move model.MoveModeler }
         
         static member addHealth coordinates model =
+            let pickupItems = PickupModel.makeHealth coordinates :: model.PickupItems
+            let model = GameplayModel.updatePickupItems pickupItems model
             let moveModeler = MoveModeler.addHealth coordinates model.MoveModeler
+            { model with MoveModeler = moveModeler }
+
+        static member removeHealth coordinates model =
+            let pickupItems = List.filter (fun (model : PickupModel) -> model.Position <> vmtovf coordinates) model.PickupItems
+            let model = GameplayModel.updatePickupItems pickupItems model
+            let moveModeler = MoveModeler.removeHealth coordinates model.MoveModeler
+            { model with MoveModeler = moveModeler }
+        
+        static member clearPickups model =
+            let model = GameplayModel.updatePickupItems [] model
+            let moveModeler = MoveModeler.clearPickups model.MoveModeler
             { model with MoveModeler = moveModeler }
         
         static member removeEnemy index model =
+            let coordinates = GameplayModel.getCoordinates index model
+            let model = GameplayModel.addHealth coordinates model
             let enemies = List.filter (fun model -> model.Index <> index) model.Enemies
             let moveModeler = MoveModeler.removeCharacter index model.MoveModeler
             { model with MoveModeler = moveModeler; Enemies = enemies }
