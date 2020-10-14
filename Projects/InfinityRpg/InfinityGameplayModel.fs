@@ -212,7 +212,7 @@ module GameplayModelModule =
         static member updatePickupItems newValue model =
             { model with PickupItems = newValue }
         
-        static member updateEnemies newValue model =
+        static member updateEnemyModels newValue model =
             { model with EnemyModels = newValue }
 
         static member updatePlayer newValue model =
@@ -220,6 +220,9 @@ module GameplayModelModule =
         
         static member getCharacters model =
             model.Player :: model.EnemyModels
+        
+        static member characterExists index model =
+            GameplayModel.getCharacters model |> List.exists (fun model -> model.Index = index)
         
         static member tryGetCharacterByIndex index model =
             GameplayModel.getCharacters model |> List.tryFind (fun model -> model.Index = index)
@@ -271,7 +274,7 @@ module GameplayModelModule =
                 let enemies =
                     model.EnemyModels |>
                     List.map (fun model -> if model.Index = index then updater newValue model else model)
-                GameplayModel.updateEnemies enemies model
+                GameplayModel.updateEnemyModels enemies model
         
         static member updateTurn index newValue model =
             GameplayModel.updateCharacterBy CharacterModel.updateTurn index newValue model
@@ -293,7 +296,7 @@ module GameplayModelModule =
         
         static member updateEnemiesBy updater newValues model =
             let enemies = List.map2 (fun newValue model -> updater newValue model) newValues model.EnemyModels
-            GameplayModel.updateEnemies enemies model
+            GameplayModel.updateEnemyModels enemies model
 
         static member updateEnemyActivityStates newValues model =
             GameplayModel.updateEnemiesBy CharacterModel.updateCharacterActivityState newValues model
@@ -306,6 +309,12 @@ module GameplayModelModule =
 
         static member getCurrentMove index model =
             model.MoveModeler.CurrentMoves.[index]
+        
+        static member createEnemyModels model =
+            let generator k v = CharacterModel.makeEnemy k v
+            let enemies = Map.filter (fun k _ -> not (GameplayModel.characterExists k model)) model.MoveModeler.EnemyCoordinates |> Map.toListBy generator
+            let enemies = enemies @ model.EnemyModels
+            GameplayModel.updateEnemyModels enemies model
         
         static member relocateCharacter index coordinates model =
             let moveModeler = MoveModeler.placeCharacter index coordinates model.MoveModeler
@@ -338,12 +347,12 @@ module GameplayModelModule =
             let enemies = List.filter (fun model -> model.Index <> index) model.EnemyModels
             let moveModeler = MoveModeler.removeCharacter index model.MoveModeler
             let model = GameplayModel.updateMoveModeler moveModeler model
-            GameplayModel.updateEnemies enemies model
+            GameplayModel.updateEnemyModels enemies model
 
         static member clearEnemies model =
             let moveModeler = MoveModeler.clearEnemies model.MoveModeler
             let model = GameplayModel.updateMoveModeler moveModeler model
-            GameplayModel.updateEnemies [] model
+            GameplayModel.updateEnemyModels [] model
 
         static member unpackMove index model =
             let move = GameplayModel.getCurrentMove index model
@@ -428,10 +437,7 @@ module GameplayModelModule =
             let availableCoordinates = model.MoveModeler.AvailableCoordinates
             let coordinates = availableCoordinates.Item(Gen.random1 availableCoordinates.Length)
             let moveModeler = MoveModeler.placeCharacter index coordinates model.MoveModeler
-            let enemyModel = CharacterModel.makeEnemy index coordinates
-            let enemies = enemyModel :: model.EnemyModels
-            let model = GameplayModel.updateMoveModeler moveModeler model
-            GameplayModel.updateEnemies enemies model
+            GameplayModel.updateMoveModeler moveModeler model
 
         static member makeEnemies quantity model =
             let quantity = quantity - 1
@@ -439,7 +445,8 @@ module GameplayModelModule =
                 let model = GameplayModel.makeEnemy (EnemyIndex count) model
                 if count = quantity then model
                 else recursion (count + 1) model
-            recursion 0 model
+            let model = recursion 0 model
+            GameplayModel.createEnemyModels model
         
         static member forEachIndex updater indices model =
             let rec recursion (indices : CharacterIndex list) model =
