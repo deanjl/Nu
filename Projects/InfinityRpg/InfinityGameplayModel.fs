@@ -147,22 +147,16 @@ module GameplayModelModule =
         static member characterExists index moveModeler =
             Map.exists (fun k _ -> k = index) moveModeler.CharacterCoordinates
         
-        static member updateCoordinatesValue coordinates newValue moveModeler =
-            let passableCoordinates = Map.add coordinates newValue moveModeler.PassableCoordinates
-            MoveModeler.updatePassableCoordinates passableCoordinates moveModeler
-        
-        static member addHealth coordinates moveModeler =
-            MoveModeler.updateCoordinatesValue coordinates (Some Health) moveModeler
-
-        static member removeHealth coordinates moveModeler =
-            MoveModeler.updateCoordinatesValue coordinates None moveModeler
-
         static member pickupAtCoordinates coordinates moveModeler =
             match moveModeler.PassableCoordinates.[coordinates] with
             | Some _ -> true
             | None -> false
         
-        static member clearPickups moveModeler =
+        static member updateCoordinatesValue newValue coordinates moveModeler =
+            let passableCoordinates = Map.add coordinates newValue moveModeler.PassableCoordinates
+            MoveModeler.updatePassableCoordinates passableCoordinates moveModeler
+        
+        static member clearPickups _ _ moveModeler =
             let passableCoordinates = Map.map (fun _ _ -> None) moveModeler.PassableCoordinates
             MoveModeler.updatePassableCoordinates passableCoordinates moveModeler
         
@@ -173,11 +167,11 @@ module GameplayModelModule =
                 MoveModeler.updateCharacterCoordinates characterCoordinates moveModeler
             else failwith "character placement failed; coordinates unavailable"
 
-        static member removeCharacter index moveModeler =
+        static member removeCharacter index _ moveModeler =
             let characterCoordinates = Map.remove index moveModeler.CharacterCoordinates
             MoveModeler.updateCharacterCoordinates characterCoordinates moveModeler
         
-        static member clearEnemies (moveModeler : MoveModeler) =
+        static member clearEnemies _ _ (moveModeler : MoveModeler) =
             MoveModeler.updateCharacterCoordinates moveModeler.PlayerCoordinates moveModeler
         
         static member addMove index move moveModeler =
@@ -339,40 +333,39 @@ module GameplayModelModule =
             let enemies = enemies @ model.EnemyModels
             GameplayModel.updateEnemyModels enemies model
         
+        // if updater takes index, index is arg1; if updater takes coordinates, coordinates is arg2
+        static member updateMoveModelerBy updater arg1 arg2 model =
+            let moveModeler = updater arg1 arg2 model.MoveModeler
+            let model = GameplayModel.updateMoveModeler moveModeler model
+
+            // a basic sync mechanism that relies on never adding and removing *at the same time*
+            let model = GameplayModel.cullPickupModels model
+            let model = GameplayModel.createPickupModels model
+            let model = GameplayModel.cullEnemyModels model
+            GameplayModel.createEnemyModels model
+        
         static member relocateCharacter index coordinates model =
-            let moveModeler = MoveModeler.placeCharacter index coordinates model.MoveModeler
-            GameplayModel.updateMoveModeler moveModeler model
+            GameplayModel.updateMoveModelerBy MoveModeler.placeCharacter index coordinates model
         
         static member addMove index (move : Move) model =
-            let moveModeler = MoveModeler.addMove index move model.MoveModeler
-            GameplayModel.updateMoveModeler moveModeler model
+            GameplayModel.updateMoveModelerBy MoveModeler.addMove index move model
         
         static member addHealth coordinates model =
-            let moveModeler = MoveModeler.addHealth coordinates model.MoveModeler
-            let model = GameplayModel.updateMoveModeler moveModeler model
-            GameplayModel.createPickupModels model
+            GameplayModel.updateMoveModelerBy MoveModeler.updateCoordinatesValue (Some Health) coordinates model
 
         static member removeHealth coordinates model =
-            let moveModeler = MoveModeler.removeHealth coordinates model.MoveModeler
-            let model = GameplayModel.updateMoveModeler moveModeler model
-            GameplayModel.cullPickupModels model
+            GameplayModel.updateMoveModelerBy MoveModeler.updateCoordinatesValue None coordinates model
         
         static member clearPickups model =
-            let moveModeler = MoveModeler.clearPickups model.MoveModeler
-            let model = GameplayModel.updateMoveModeler moveModeler model
-            GameplayModel.cullPickupModels model
+            GameplayModel.updateMoveModelerBy MoveModeler.clearPickups () () model
         
         static member removeEnemy index model =
             let coordinates = GameplayModel.getCoordinates index model
             let model = GameplayModel.addHealth coordinates model
-            let moveModeler = MoveModeler.removeCharacter index model.MoveModeler
-            let model = GameplayModel.updateMoveModeler moveModeler model
-            GameplayModel.cullEnemyModels model
+            GameplayModel.updateMoveModelerBy MoveModeler.removeCharacter index () model
 
         static member clearEnemies model =
-            let moveModeler = MoveModeler.clearEnemies model.MoveModeler
-            let model = GameplayModel.updateMoveModeler moveModeler model
-            GameplayModel.cullEnemyModels model
+            GameplayModel.updateMoveModelerBy MoveModeler.clearEnemies () () model
 
         static member unpackMove index model =
             let move = GameplayModel.getCurrentMove index model
@@ -448,16 +441,14 @@ module GameplayModelModule =
         
         static member makePlayer model =
             let coordinates = Vector2i.Zero
-            let moveModeler = MoveModeler.placeCharacter PlayerIndex coordinates model.MoveModeler
+            let model = GameplayModel.updateMoveModelerBy MoveModeler.placeCharacter PlayerIndex coordinates model
             let playerModel = CharacterModel.makePlayer coordinates
-            let model = GameplayModel.updateMoveModeler moveModeler model
             GameplayModel.updatePlayer playerModel model
 
         static member makeEnemy index model =
             let availableCoordinates = model.MoveModeler.AvailableCoordinates
             let coordinates = availableCoordinates.Item(Gen.random1 availableCoordinates.Length)
-            let moveModeler = MoveModeler.placeCharacter index coordinates model.MoveModeler
-            GameplayModel.updateMoveModeler moveModeler model
+            GameplayModel.updateMoveModelerBy MoveModeler.placeCharacter index coordinates model
 
         static member makeEnemies quantity model =
             let quantity = quantity - 1
@@ -465,8 +456,7 @@ module GameplayModelModule =
                 let model = GameplayModel.makeEnemy (EnemyIndex count) model
                 if count = quantity then model
                 else recursion (count + 1) model
-            let model = recursion 0 model
-            GameplayModel.createEnemyModels model
+            recursion 0 model
         
         static member forEachIndex updater indices model =
             let rec recursion (indices : CharacterIndex list) model =
