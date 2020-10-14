@@ -429,7 +429,7 @@ module GameplayDispatcherModule =
                         (fun index model _ -> Content.entity<PickupDispatcher> ("Pickup+" + scstring index) [Entity.PickupModel <== model])
                      
                      Content.entitiesIndexedBy model
-                        (fun model -> model.Enemies) constant
+                        (fun model -> model.EnemyModels) constant
                         (fun model -> model.Index.getEnemyIndex)
                         (fun index model _ -> Content.entity<EnemyDispatcher> ("Enemy+" + scstring index) [Entity.CharacterModel <== model])
 
