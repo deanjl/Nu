@@ -141,6 +141,9 @@ module GameplayModelModule =
         static member updateCurrentMoves newValue moveModeler =
             { moveModeler with CurrentMoves = newValue }
 
+        static member characterExists index moveModeler =
+            Map.exists (fun k _ -> k = index) moveModeler.CharacterCoordinates
+        
         static member updateCoordinatesValue coordinates newValue moveModeler =
             let passableCoordinates = Map.add coordinates newValue moveModeler.PassableCoordinates
             MoveModeler.updatePassableCoordinates passableCoordinates moveModeler
@@ -310,6 +313,10 @@ module GameplayModelModule =
         static member getCurrentMove index model =
             model.MoveModeler.CurrentMoves.[index]
         
+        static member cullEnemyModels model =
+            let enemies = List.filter (fun (characterModel : CharacterModel) -> MoveModeler.characterExists characterModel.Index model.MoveModeler) model.EnemyModels
+            GameplayModel.updateEnemyModels enemies model
+        
         static member createEnemyModels model =
             let generator k v = CharacterModel.makeEnemy k v
             let enemies = Map.filter (fun k _ -> not (GameplayModel.characterExists k model)) model.MoveModeler.EnemyCoordinates |> Map.toListBy generator
@@ -344,15 +351,14 @@ module GameplayModelModule =
         static member removeEnemy index model =
             let coordinates = GameplayModel.getCoordinates index model
             let model = GameplayModel.addHealth coordinates model
-            let enemies = List.filter (fun model -> model.Index <> index) model.EnemyModels
             let moveModeler = MoveModeler.removeCharacter index model.MoveModeler
             let model = GameplayModel.updateMoveModeler moveModeler model
-            GameplayModel.updateEnemyModels enemies model
+            GameplayModel.cullEnemyModels model
 
         static member clearEnemies model =
             let moveModeler = MoveModeler.clearEnemies model.MoveModeler
             let model = GameplayModel.updateMoveModeler moveModeler model
-            GameplayModel.updateEnemyModels [] model
+            GameplayModel.cullEnemyModels model
 
         static member unpackMove index model =
             let move = GameplayModel.getCurrentMove index model
