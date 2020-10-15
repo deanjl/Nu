@@ -47,7 +47,7 @@ module GameplayDispatcherModule =
 
         static let tryGetNavigationPath index positionM model =
             let fieldTiles = model.Field.FieldMapNp.FieldTiles
-            let characterPositions = Map.toValueList model.MoveModeler.CharacterCoordinates |> List.map (fun positionM -> vmtovf positionM)
+            let characterPositions = Map.toValueList model.Chessboard.CharacterCoordinates |> List.map (fun positionM -> vmtovf positionM)
             let currentPositionM = GameplayModel.getCoordinates PlayerIndex model
             let occupationMap = OccupationMap.makeFromFieldTilesAndAdjacentCharacters currentPositionM fieldTiles characterPositions
             let nodes = OccupationMap.makeNavigationNodes occupationMap
@@ -96,21 +96,21 @@ module GameplayDispatcherModule =
             
             | TryContinuePlayerMove ->
                 let playerMoveOpt =
-                    match model.Player.TurnStatus with
+                    match model.PlayerModel.TurnStatus with
                     | TurnFinishing ->
                         match GameplayModel.getCurrentMove PlayerIndex model with
                         | MultiRoundMove move ->
                             match move with
                             | Travel (_ :: navigationPath) ->
                                 let targetPositionM = (List.head navigationPath).PositionM
-                                if List.exists (fun x -> x = targetPositionM) model.MoveModeler.AvailableCoordinates then
+                                if List.exists (fun x -> x = targetPositionM) model.Chessboard.AvailableCoordinates then
                                     Some (MultiRoundMove (Travel navigationPath))
                                 else None
                         | _ -> None
                     | _ -> None
              
                 let model =
-                    match model.Player.TurnStatus with
+                    match model.PlayerModel.TurnStatus with
                     | TurnFinishing -> GameplayModel.updateTurnStatus PlayerIndex Idle model
                     | _ -> model
                 
@@ -139,8 +139,7 @@ module GameplayDispatcherModule =
                                 | EnemyIndex _ -> GameplayModel.removeEnemy reactorIndex model
                             else model
                         | Navigation navigationDescriptor ->
-                            let position = GameplayModel.getCoordinates index model |> vmtovf
-                            let model = GameplayModel.updatePosition index position model
+                            let model = GameplayModel.setCharacterPositionToCoordinates index model
                             match navigationDescriptor.NavigationPathOpt with
                             | None
                             | Some (_ :: []) -> GameplayModel.finishMove index model
@@ -215,7 +214,7 @@ module GameplayDispatcherModule =
                 
                 // player's turn is converted to activity at the beginning of the round, activating the observable playback of his move
                 let model =
-                    if model.Player.TurnStatus = TurnPending then
+                    if model.PlayerModel.TurnStatus = TurnPending then
                         GameplayModel.activateCharacter PlayerIndex model
                     else model
 
@@ -223,7 +222,7 @@ module GameplayDispatcherModule =
                 let indices = GameplayModel.getEnemyIndices model |> List.filter (fun x -> (GameplayModel.getTurnStatus x model) <> Idle)
                 let model =
                     if (List.exists (fun x -> (GameplayModel.getTurnStatus x model) = TurnPending) indices) then
-                        match model.Player.CharacterActivityState with
+                        match model.PlayerModel.CharacterActivityState with
                         | Action _ -> model
                         | Navigation _ 
                         | NoActivity -> // TODO: find out why using activateCharacter here triggered "turn status is TurnBeginning..." exception
@@ -235,7 +234,7 @@ module GameplayDispatcherModule =
                 let indices = List.filter (fun x -> (GameplayModel.getTurnStatus x model) <> TurnPending) indices
                 
                 let indices =
-                    match model.Player.TurnStatus with
+                    match model.PlayerModel.TurnStatus with
                     | Idle -> indices
                     | _ -> PlayerIndex :: indices
                 
@@ -259,7 +258,7 @@ module GameplayDispatcherModule =
                                             Some (SingleRoundMove (Attack PlayerIndex))
                                         else None
                                     | None ->
-                                        let openDirections = GameplayModel.getCoordinates index model |> model.MoveModeler.OpenDirections
+                                        let openDirections = GameplayModel.getCoordinates index model |> model.Chessboard.OpenDirections
                                         let direction = Gen.random1 4 |> Direction.fromInt
                                         if List.exists (fun x -> x = direction) openDirections then
                                             Some (SingleRoundMove (Step direction))
@@ -293,7 +292,7 @@ module GameplayDispatcherModule =
                     | Some coordinates ->
                         match Math.arePositionMsAdjacent coordinates currentCoordinates with
                         | true ->
-                            let openDirections = model.MoveModeler.OpenDirections currentCoordinates
+                            let openDirections = model.Chessboard.OpenDirections currentCoordinates
                             let direction = directionToTarget currentCoordinates coordinates
                             let opponents = GameplayModel.getOpponentIndices PlayerIndex model
                             if List.exists (fun x -> x = direction) openDirections then
@@ -370,12 +369,12 @@ module GameplayDispatcherModule =
         override this.Command (model, command, _, world) =
             match command with
             | ToggleHaltButton ->
-                let world = Simulants.HudHalt.SetEnabled (model.Player.CharacterActivityState.IsNavigatingPath) world
+                let world = Simulants.HudHalt.SetEnabled (model.PlayerModel.CharacterActivityState.IsNavigatingPath) world
                 just world
             | HandlePlayerInput playerInput ->
                 if not (GameplayModel.anyTurnsInProgress model) then
                     let world = Simulants.HudSaveGame.SetEnabled false world
-                    match model.Player.CharacterState.ControlType with
+                    match model.PlayerModel.CharacterState.ControlType with
                     | PlayerControlled -> withMsg world (HandleMapChange playerInput)
                     | _ -> just world
                 else just world
@@ -425,7 +424,7 @@ module GameplayDispatcherModule =
                        [Entity.FieldModel <== model --> fun model -> model.Field]
                                         
                      Content.entities model
-                        (fun model -> model.PickupItems) constant
+                        (fun model -> model.PickupModels) constant
                         (fun index model _ -> Content.entity<PickupDispatcher> ("Pickup+" + scstring index) [Entity.PickupModel <== model])
                      
                      Content.entitiesIndexedBy model
@@ -434,4 +433,4 @@ module GameplayDispatcherModule =
                         (fun index model _ -> Content.entity<EnemyDispatcher> ("Enemy+" + scstring index) [Entity.CharacterModel <== model])
 
                      Content.entity<PlayerDispatcher> Simulants.Player.Name
-                       [Entity.CharacterModel <== model --> fun model -> model.Player]])]
+                       [Entity.CharacterModel <== model --> fun model -> model.PlayerModel]])]

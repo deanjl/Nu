@@ -89,7 +89,7 @@ module GameplayModelModule =
         | Step of Direction
         | Attack of CharacterIndex
 
-    type MultiRoundMove = // must be reducible to SingleRoundMoves e.g. Travel = { Step, Step ...}
+    type MultiRoundMove =
         | Travel of NavigationNode list
 
     type Move =
@@ -108,7 +108,7 @@ module GameplayModelModule =
                     let direction = directionToTarget positionM path.Head.PositionM
                     Turn.makeNavigation (Some path) positionM direction
 
-    type MoveModeler =
+    type ChessboardModel =
         { PassableCoordinates : Map<Vector2i, PickupType Option>
           CharacterCoordinates : Map<CharacterIndex, Vector2i>
           CurrentMoves : Map<CharacterIndex, Move> }
@@ -126,6 +126,12 @@ module GameplayModelModule =
         
         member this.PickupItems =
             Map.filter (fun _ v -> v <> None) this.PassableCoordinates
+
+        member this.EnemyCount =
+            this.EnemyCoordinates.Count
+
+        member this.PickupCount =
+            this.PickupItems.Count
         
         member this.AvailableCoordinates =
             let occupiedCoordinates = Map.toValueSeq this.CharacterCoordinates
@@ -135,94 +141,97 @@ module GameplayModelModule =
         member this.OpenDirections coordinates =
             List.filter (fun d -> List.exists (fun x -> x = (coordinates + (dtovm d))) this.AvailableCoordinates) [Upward; Rightward; Downward; Leftward]
         
-        static member updatePassableCoordinates newValue moveModeler =
-            { moveModeler with PassableCoordinates = newValue }
+        static member updatePassableCoordinates newValue chessboard =
+            { chessboard with PassableCoordinates = newValue }
         
-        static member updateCharacterCoordinates newValue moveModeler =
-            { moveModeler with CharacterCoordinates = newValue }
+        static member updateCharacterCoordinates newValue chessboard =
+            { chessboard with CharacterCoordinates = newValue }
 
-        static member updateCurrentMoves newValue moveModeler =
-            { moveModeler with CurrentMoves = newValue }
+        static member updateCurrentMoves newValue chessboard =
+            { chessboard with CurrentMoves = newValue }
 
-        static member characterExists index moveModeler =
-            Map.exists (fun k _ -> k = index) moveModeler.CharacterCoordinates
+        static member characterExists index chessboard =
+            Map.exists (fun k _ -> k = index) chessboard.CharacterCoordinates
         
-        static member pickupAtCoordinates coordinates moveModeler =
-            match moveModeler.PassableCoordinates.[coordinates] with
+        static member pickupAtCoordinates coordinates chessboard =
+            match chessboard.PassableCoordinates.[coordinates] with
             | Some _ -> true
             | None -> false
         
-        static member updateCoordinatesValue newValue coordinates moveModeler =
-            let passableCoordinates = Map.add coordinates newValue moveModeler.PassableCoordinates
-            MoveModeler.updatePassableCoordinates passableCoordinates moveModeler
+        static member updateCoordinatesValue newValue coordinates chessboard =
+            let passableCoordinates = Map.add coordinates newValue chessboard.PassableCoordinates
+            ChessboardModel.updatePassableCoordinates passableCoordinates chessboard
         
-        static member clearPickups _ _ moveModeler =
-            let passableCoordinates = Map.map (fun _ _ -> None) moveModeler.PassableCoordinates
-            MoveModeler.updatePassableCoordinates passableCoordinates moveModeler
+        static member clearPickups _ _ chessboard =
+            let passableCoordinates = Map.map (fun _ _ -> None) chessboard.PassableCoordinates
+            ChessboardModel.updatePassableCoordinates passableCoordinates chessboard
         
         // used for both adding and relocating
-        static member placeCharacter index coordinates (moveModeler : MoveModeler) =
-            if List.exists (fun x -> x = coordinates) moveModeler.AvailableCoordinates then
-                let characterCoordinates = Map.add index coordinates moveModeler.CharacterCoordinates
-                MoveModeler.updateCharacterCoordinates characterCoordinates moveModeler
+        static member placeCharacter index coordinates (chessboard : ChessboardModel) =
+            if List.exists (fun x -> x = coordinates) chessboard.AvailableCoordinates then
+                let characterCoordinates = Map.add index coordinates chessboard.CharacterCoordinates
+                ChessboardModel.updateCharacterCoordinates characterCoordinates chessboard
             else failwith "character placement failed; coordinates unavailable"
 
-        static member removeCharacter index _ moveModeler =
-            let characterCoordinates = Map.remove index moveModeler.CharacterCoordinates
-            MoveModeler.updateCharacterCoordinates characterCoordinates moveModeler
+        static member removeCharacter index _ chessboard =
+            let characterCoordinates = Map.remove index chessboard.CharacterCoordinates
+            ChessboardModel.updateCharacterCoordinates characterCoordinates chessboard
         
-        static member clearEnemies _ _ (moveModeler : MoveModeler) =
-            MoveModeler.updateCharacterCoordinates moveModeler.PlayerCoordinates moveModeler
+        static member clearEnemies _ _ (chessboard : ChessboardModel) =
+            ChessboardModel.updateCharacterCoordinates chessboard.PlayerCoordinates chessboard
         
-        static member addMove index move moveModeler =
-            let currentMoves = Map.add index move moveModeler.CurrentMoves
-            MoveModeler.updateCurrentMoves currentMoves moveModeler
+        static member addMove index move chessboard =
+            let currentMoves = Map.add index move chessboard.CurrentMoves
+            ChessboardModel.updateCurrentMoves currentMoves chessboard
         
-        static member setPassableCoordinates fieldMap moveModeler =
+        static member setPassableCoordinates _ fieldMap chessboard =
             let passableCoordinates = fieldMap.FieldTiles |> Map.filter (fun _ fieldTile -> fieldTile.TileType = Passable) |> Map.map (fun _ _ -> None)
-            MoveModeler.updatePassableCoordinates passableCoordinates moveModeler                    
+            ChessboardModel.updatePassableCoordinates passableCoordinates chessboard                    
     
     type [<StructuralEquality; NoComparison>] GameplayModel =
         { MapModeler : MapModeler
-          MoveModeler : MoveModeler
+          Chessboard : ChessboardModel
           ShallLoadGame : bool
           Field : FieldModel
-          PickupItems : PickupModel list
+          PickupModels : PickupModel list
           EnemyModels : CharacterModel list
-          Player : CharacterModel }
+          PlayerModel : CharacterModel }
 
         static member initial =
             { MapModeler = MapModeler.make
-              MoveModeler = MoveModeler.empty
+              Chessboard = ChessboardModel.empty
               ShallLoadGame = false
               Field = FieldModel.initial
-              PickupItems = []
+              PickupModels = []
               EnemyModels = []
-              Player = CharacterModel.initial }
+              PlayerModel = CharacterModel.initial }
 
+        member this.PickupModelCount =
+            this.PickupModels.Length
+
+        member this.EnemyModelCount =
+            this.EnemyModels.Length
+        
         static member updateMapModeler newValue model =
             { model with MapModeler = newValue }
         
-        static member updateMoveModeler newValue model =
-            { model with MoveModeler = newValue }
-
         static member updateField newValue model =
             { model with Field = newValue }
 
-        static member updatePickupItems newValue model =
-            { model with PickupItems = newValue }
+        static member updatePickupModels newValue model =
+            { model with PickupModels = newValue }
         
         static member updateEnemyModels newValue model =
             { model with EnemyModels = newValue }
 
-        static member updatePlayer newValue model =
-            { model with Player = newValue }
+        static member updatePlayerModel newValue model =
+            { model with PlayerModel = newValue }
         
         static member getCharacters model =
-            model.Player :: model.EnemyModels
+            model.PlayerModel :: model.EnemyModels
         
         static member pickupAtCoordinates coordinates model =
-            model.PickupItems |> List.exists (fun model -> model.Position = vmtovf coordinates)
+            model.PickupModels |> List.exists (fun model -> model.Position = vmtovf coordinates)
 
         static member characterExists index model =
             GameplayModel.getCharacters model |> List.exists (fun model -> model.Index = index)
@@ -271,8 +280,8 @@ module GameplayModelModule =
         static member updateCharacterBy updater index newValue model =
             match index with
             | PlayerIndex ->
-                let player = updater newValue model.Player
-                GameplayModel.updatePlayer player model
+                let player = updater newValue model.PlayerModel
+                GameplayModel.updatePlayerModel player model
             | EnemyIndex _ as index ->
                 let enemies =
                     model.EnemyModels |>
@@ -305,67 +314,73 @@ module GameplayModelModule =
             GameplayModel.updateEnemiesBy CharacterModel.updateCharacterActivityState newValues model
         
         static member getCoordinates index model =
-            model.MoveModeler.CharacterCoordinates.[index]
+            model.Chessboard.CharacterCoordinates.[index]
 
         static member getIndexByCoordinates coordinates model =
-            Map.findKey (fun _ x -> x = coordinates) model.MoveModeler.CharacterCoordinates
+            Map.findKey (fun _ x -> x = coordinates) model.Chessboard.CharacterCoordinates
 
         static member getCurrentMove index model =
-            model.MoveModeler.CurrentMoves.[index]
+            model.Chessboard.CurrentMoves.[index]
         
-        static member cullPickupModels model =
-            let pickups = List.filter (fun (pickupModel : PickupModel) -> MoveModeler.pickupAtCoordinates (vftovm pickupModel.Position) model.MoveModeler) model.PickupItems
-            GameplayModel.updatePickupItems pickups model
-        
-        static member createPickupModels model =
-            let generator k _ = PickupModel.makeHealth k
-            let pickups = Map.filter (fun k _ -> not (GameplayModel.pickupAtCoordinates k model)) model.MoveModeler.PickupItems |> Map.toListBy generator
-            let pickups = pickups @ model.PickupItems
-            GameplayModel.updatePickupItems pickups model
-        
-        static member cullEnemyModels model =
-            let enemies = List.filter (fun (characterModel : CharacterModel) -> MoveModeler.characterExists characterModel.Index model.MoveModeler) model.EnemyModels
-            GameplayModel.updateEnemyModels enemies model
-        
-        static member createEnemyModels model =
-            let generator k v = CharacterModel.makeEnemy k v
-            let enemies = Map.filter (fun k _ -> not (GameplayModel.characterExists k model)) model.MoveModeler.EnemyCoordinates |> Map.toListBy generator
-            let enemies = enemies @ model.EnemyModels
-            GameplayModel.updateEnemyModels enemies model
-        
-        // if updater takes index, index is arg1; if updater takes coordinates, coordinates is arg2
-        static member updateMoveModelerBy updater arg1 arg2 model =
-            let moveModeler = updater arg1 arg2 model.MoveModeler
-            let model = GameplayModel.updateMoveModeler moveModeler model
+        static member createPlayerModel model =
+            let coordinates = GameplayModel.getCoordinates PlayerIndex model
+            let player = CharacterModel.makePlayer coordinates
+            GameplayModel.updatePlayerModel player model
 
-            // a basic sync mechanism that relies on never adding and removing *at the same time*
-            let model = GameplayModel.cullPickupModels model
-            let model = GameplayModel.createPickupModels model
-            let model = GameplayModel.cullEnemyModels model
-            GameplayModel.createEnemyModels model
+        // a basic sync mechanism that relies on never adding and removing *at the same time*
+        static member syncModelLists (model : GameplayModel) =
+            let chessboard = model.Chessboard
+            let model =
+                if model.PickupModelCount <> chessboard.PickupCount then
+                    let pickups =
+                        if model.PickupModelCount > chessboard.PickupCount then
+                            List.filter (fun (pickupModel : PickupModel) -> ChessboardModel.pickupAtCoordinates (vftovm pickupModel.Position) chessboard) model.PickupModels
+                        else 
+                            let generator k _ = PickupModel.makeHealth k
+                            let pickups = Map.filter (fun k _ -> not (GameplayModel.pickupAtCoordinates k model)) chessboard.PickupItems |> Map.toListBy generator
+                            pickups @ model.PickupModels
+                    GameplayModel.updatePickupModels pickups model
+                else model
+
+            if model.EnemyModelCount <> chessboard.EnemyCount then
+                let enemies =
+                    if model.EnemyModelCount > chessboard.EnemyCount then
+                        List.filter (fun (characterModel : CharacterModel) -> ChessboardModel.characterExists characterModel.Index chessboard) model.EnemyModels
+                    else
+                        let generator k v = CharacterModel.makeEnemy k v
+                        let enemies = Map.filter (fun k _ -> not (GameplayModel.characterExists k model)) chessboard.EnemyCoordinates |> Map.toListBy generator
+                        enemies @ model.EnemyModels
+                GameplayModel.updateEnemyModels enemies model
+            else model
+
+        // if updater takes index, index is arg1; if updater takes coordinates, coordinates is arg2
+        static member updateChessboardBy updater arg1 arg2 model =
+            let chessboard = updater arg1 arg2 model.Chessboard
+            let model = { model with Chessboard = chessboard }
+            GameplayModel.syncModelLists model
         
         static member relocateCharacter index coordinates model =
-            GameplayModel.updateMoveModelerBy MoveModeler.placeCharacter index coordinates model
+            GameplayModel.updateChessboardBy ChessboardModel.placeCharacter index coordinates model
         
         static member addMove index (move : Move) model =
-            GameplayModel.updateMoveModelerBy MoveModeler.addMove index move model
+            GameplayModel.updateChessboardBy ChessboardModel.addMove index move model
         
         static member addHealth coordinates model =
-            GameplayModel.updateMoveModelerBy MoveModeler.updateCoordinatesValue (Some Health) coordinates model
+            GameplayModel.updateChessboardBy ChessboardModel.updateCoordinatesValue (Some Health) coordinates model
 
         static member removeHealth coordinates model =
-            GameplayModel.updateMoveModelerBy MoveModeler.updateCoordinatesValue None coordinates model
+            GameplayModel.updateChessboardBy ChessboardModel.updateCoordinatesValue None coordinates model
         
         static member clearPickups model =
-            GameplayModel.updateMoveModelerBy MoveModeler.clearPickups () () model
+            GameplayModel.updateChessboardBy ChessboardModel.clearPickups () () model
         
         static member removeEnemy index model =
             let coordinates = GameplayModel.getCoordinates index model
             let model = GameplayModel.addHealth coordinates model
-            GameplayModel.updateMoveModelerBy MoveModeler.removeCharacter index () model
+            GameplayModel.updateChessboardBy ChessboardModel.removeCharacter index () model
 
         static member clearEnemies model =
-            GameplayModel.updateMoveModelerBy MoveModeler.clearEnemies () () model
+            GameplayModel.updateChessboardBy ChessboardModel.clearEnemies () () model
 
         static member unpackMove index model =
             let move = GameplayModel.getCurrentMove index model
@@ -381,14 +396,14 @@ module GameplayModelModule =
         static member tryPickupHealth index coordinates model =
             match index with
             | PlayerIndex ->
-                let model = GameplayModel.updateCharacterState index { model.Player.CharacterState with HitPoints = 30 } model
+                let model = GameplayModel.updateCharacterState index { model.PlayerModel.CharacterState with HitPoints = 30 } model
                 GameplayModel.removeHealth coordinates model
             | _ -> model
         
         static member applyStep index direction model =
             let coordinates = (GameplayModel.getCoordinates index model) + dtovm direction
             let model =
-                if MoveModeler.pickupAtCoordinates coordinates model.MoveModeler then
+                if ChessboardModel.pickupAtCoordinates coordinates model.Chessboard then
                     GameplayModel.tryPickupHealth index coordinates model
                 else model
             GameplayModel.relocateCharacter index coordinates model
@@ -426,29 +441,30 @@ module GameplayModelModule =
             GameplayModel.updateTurnStatus PlayerIndex TurnBeginning model
         
         static member setFieldMap fieldMap model =
-            let moveModeler = MoveModeler.setPassableCoordinates fieldMap model.MoveModeler
+            let model = GameplayModel.updateChessboardBy ChessboardModel.setPassableCoordinates () fieldMap model
             let fieldModel = { FieldMapNp = fieldMap }
-            let model = GameplayModel.updateMoveModeler moveModeler model
             GameplayModel.updateField fieldModel model
 
         static member transitionMap direction model =
             let mapModeler = model.MapModeler.Transition direction
             GameplayModel.updateMapModeler mapModeler model
 
+        static member setCharacterPositionToCoordinates index model =
+            let position = GameplayModel.getCoordinates index model |> vmtovf
+            GameplayModel.updatePosition index position model
+        
         static member yankPlayer coordinates model =
             let model = GameplayModel.relocateCharacter PlayerIndex coordinates model
-            GameplayModel.updatePosition PlayerIndex (vmtovf coordinates) model
+            GameplayModel.setCharacterPositionToCoordinates PlayerIndex model
         
         static member makePlayer model =
-            let coordinates = Vector2i.Zero
-            let model = GameplayModel.updateMoveModelerBy MoveModeler.placeCharacter PlayerIndex coordinates model
-            let playerModel = CharacterModel.makePlayer coordinates
-            GameplayModel.updatePlayer playerModel model
+            let model = GameplayModel.updateChessboardBy ChessboardModel.placeCharacter PlayerIndex Vector2i.Zero model
+            GameplayModel.createPlayerModel model
 
         static member makeEnemy index model =
-            let availableCoordinates = model.MoveModeler.AvailableCoordinates
+            let availableCoordinates = model.Chessboard.AvailableCoordinates
             let coordinates = availableCoordinates.Item(Gen.random1 availableCoordinates.Length)
-            GameplayModel.updateMoveModelerBy MoveModeler.placeCharacter index coordinates model
+            GameplayModel.updateChessboardBy ChessboardModel.placeCharacter index coordinates model
 
         static member makeEnemies quantity model =
             let quantity = quantity - 1
