@@ -126,7 +126,6 @@ module CharacterDispatcherModule =
         override this.View (model, entity, world) =
             if entity.GetVisible world && entity.GetInView world then
                 let transform = entity.GetTransform world
-                let transform = { transform with RefCount = 0 }
                 [Render (transform.Depth, transform.Position.Y, AssetTag.generalize model.CharacterAnimationSheet,
                      SpriteDescriptor
                        { Transform = transform

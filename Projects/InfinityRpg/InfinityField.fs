@@ -61,7 +61,7 @@ module FieldDispatcherModule =
         override this.View (model, field, world) =
 
             let fieldTransform = field.GetTransform world
-            let tileTransform = { fieldTransform with RefCount = 0; Size = Constants.Layout.TileSize }
+            let tileTransform = { fieldTransform with Size = Constants.Layout.TileSize }
             let absolute = field.GetAbsolute world
 
             let bounds =

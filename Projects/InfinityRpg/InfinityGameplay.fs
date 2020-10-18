@@ -119,7 +119,7 @@ module GameplayDispatcherModule =
                     let model = GameplayModel.addMove PlayerIndex move model
                     let model = GameplayModel.unpackMove PlayerIndex model
                     let model = GameplayModel.applyMove PlayerIndex model
-                    withMsg model MakeEnemyMoves
+                    withMsg MakeEnemyMoves model
                 | _ -> just model
             
             | FinishTurns indices ->
@@ -148,7 +148,7 @@ module GameplayDispatcherModule =
                     | _ -> failwith "non-finishing turns should be filtered out by this point"
 
                 let model = GameplayModel.forEachIndex updater indices model
-                withMsg model TryContinuePlayerMove
+                withMsg TryContinuePlayerMove model
             
             | ProgressTurns indices ->
                 
@@ -184,7 +184,7 @@ module GameplayDispatcherModule =
                 let model = GameplayModel.forEachIndex updater indices model
                 let indices = List.filter (fun x -> (GameplayModel.getTurnStatus x model) = TurnFinishing) indices
 
-                withMsg model (FinishTurns indices)
+                withMsg (FinishTurns indices) model
             
             | BeginTurns indices ->
 
@@ -208,7 +208,7 @@ module GameplayDispatcherModule =
                 
                 let model = GameplayModel.forEachIndex updater indices model
                 
-                withMsg model (ProgressTurns indices)
+                withMsg (ProgressTurns indices) model
             
             | RunCharacterActivation ->
                 
@@ -238,7 +238,7 @@ module GameplayDispatcherModule =
                     | Idle -> indices
                     | _ -> PlayerIndex :: indices
                 
-                withMsg model (BeginTurns indices)
+                withMsg (BeginTurns indices) model
             
             | MakeEnemyMoves ->
                 
@@ -274,8 +274,7 @@ module GameplayDispatcherModule =
                         | None -> model)
                         
                 let model = GameplayModel.forEachIndex updater indices model
-
-                withMsg model RunCharacterActivation
+                withMsg RunCharacterActivation model
 
             | TryMakePlayerMove playerInput ->
 
@@ -315,7 +314,7 @@ module GameplayDispatcherModule =
                     let model = GameplayModel.addMove PlayerIndex move model
                     let model = GameplayModel.unpackMove PlayerIndex model
                     let model = GameplayModel.applyMove PlayerIndex model
-                    withMsg model MakeEnemyMoves
+                    withMsg MakeEnemyMoves model
                 | _ -> just model
 
             | TransitionMap direction ->
@@ -352,7 +351,7 @@ module GameplayDispatcherModule =
                             TransitionMap direction
                         else TryMakePlayerMove playerInput
                     | _ -> TryMakePlayerMove playerInput
-                withMsg model msg
+                withMsg msg model
             
             | StartGameplay -> // TODO: and fix >1 new games again!
                 if model.ShallLoadGame && File.Exists Assets.SaveFilePath then
@@ -375,7 +374,7 @@ module GameplayDispatcherModule =
                 if not (GameplayModel.anyTurnsInProgress model) then
                     let world = Simulants.HudSaveGame.SetEnabled false world
                     match model.PlayerModel.CharacterState.ControlType with
-                    | PlayerControlled -> withMsg world (HandleMapChange playerInput)
+                    | PlayerControlled -> withMsg (HandleMapChange playerInput) world
                     | _ -> just world
                 else just world
             | SaveGame -> // TODO: fix save once again when the new map handling system is in place
@@ -383,11 +382,11 @@ module GameplayDispatcherModule =
                 File.WriteAllText (Assets.SaveFilePath, modelStr)
                 just world
             | Tick ->
-                if (GameplayModel.anyTurnsInProgress model) then withMsg world RunCharacterActivation
-                elif KeyboardState.isKeyDown KeyboardKey.Up then withCmd world (HandlePlayerInput (DetailInput Upward))
-                elif KeyboardState.isKeyDown KeyboardKey.Right then withCmd world (HandlePlayerInput (DetailInput Rightward))
-                elif KeyboardState.isKeyDown KeyboardKey.Down then withCmd world (HandlePlayerInput (DetailInput Downward))
-                elif KeyboardState.isKeyDown KeyboardKey.Left then withCmd world (HandlePlayerInput (DetailInput Leftward))
+                if (GameplayModel.anyTurnsInProgress model) then withMsg RunCharacterActivation world
+                elif KeyboardState.isKeyDown KeyboardKey.Up then withCmd (HandlePlayerInput (DetailInput Upward)) world
+                elif KeyboardState.isKeyDown KeyboardKey.Right then withCmd (HandlePlayerInput (DetailInput Rightward)) world
+                elif KeyboardState.isKeyDown KeyboardKey.Down then withCmd (HandlePlayerInput (DetailInput Downward)) world
+                elif KeyboardState.isKeyDown KeyboardKey.Left then withCmd (HandlePlayerInput (DetailInput Leftward)) world
                 elif not (Simulants.HudSaveGame.GetEnabled world) then just (Simulants.HudSaveGame.SetEnabled true world)
                 else just world
             | PostTick -> // Note: it appears a slight camera offset has been introduced with this code migration

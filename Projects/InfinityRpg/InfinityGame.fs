@@ -51,7 +51,7 @@ module InfinityDispatcherModule =
             | ShowTitle -> World.transitionScreen Simulants.Title world |> just
             | ShowCredits -> World.transitionScreen Simulants.Credits world |> just
             | ShowGameplay -> World.transitionScreen Simulants.Gameplay world |> just
-            | SetShallLoadGame shallLoadGame -> Simulants.Gameplay.GameplayModel.Update (fun model -> { model with ShallLoadGame = shallLoadGame }) world |> flip withCmd ShowGameplay
+            | SetShallLoadGame shallLoadGame -> Simulants.Gameplay.GameplayModel.Update (fun model -> { model with ShallLoadGame = shallLoadGame }) world |> withCmd ShowGameplay
             | ExitGame -> World.exit world |> just
 
         override this.Content (model, _) =
