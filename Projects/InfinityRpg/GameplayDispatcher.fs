@@ -22,6 +22,7 @@ module GameplayDispatcher =
         | RunCharacterActivation
         | MakeEnemyMoves
         | TryMakePlayerMove of PlayerInput
+        | TryMakePlayerHalt
         | TransitionMap of Direction
         | HandleMapChange of PlayerInput
         | StartGameplay
@@ -91,12 +92,12 @@ module GameplayDispatcher =
                     match gameplay.Player.TurnStatus with
                     | TurnFinishing ->
                         match Gameplay.getCurrentMove PlayerIndex gameplay with
-                        | MultiRoundMove move ->
-                            match move with
-                            | Travel (_ :: navigationPath) ->
+                        | MultiRoundMove path ->
+                            match path with
+                            | _ :: navigationPath ->
                                 let targetPositionM = (List.head navigationPath).PositionM
                                 if List.exists (fun x -> x = targetPositionM) gameplay.Chessboard.AvailableCoordinates then
-                                    Some (MultiRoundMove (Travel navigationPath))
+                                    Some (MultiRoundMove navigationPath)
                                 else None
                         | _ -> None
                     | _ -> None
@@ -297,7 +298,7 @@ module GameplayDispatcher =
                             | Some navigationPath ->
                                 match navigationPath with
                                 | [] -> None
-                                | _ -> Some (MultiRoundMove (Travel navigationPath))
+                                | _ -> Some (MultiRoundMove navigationPath)
                             | None -> None
                     | None -> None
                 
@@ -308,6 +309,16 @@ module GameplayDispatcher =
                     let gameplay = Gameplay.applyMove PlayerIndex gameplay
                     withMsg MakeEnemyMoves gameplay
                 | _ -> just gameplay
+
+            | TryMakePlayerHalt ->
+                match Map.tryFind PlayerIndex gameplay.Chessboard.CurrentMoves with
+                | Some move ->
+                    match move with
+                    | MultiRoundMove path when List.hasAtLeast 2 path ->
+                        let gameplay = Gameplay.addMove PlayerIndex (MultiRoundMove (List.take 2 path)) gameplay
+                        just gameplay
+                    | _ -> just gameplay
+                | None -> just gameplay
 
             | TransitionMap direction ->
                 let currentCoordinates = Gameplay.getCoordinates PlayerIndex gameplay
@@ -432,7 +443,8 @@ module GameplayDispatcher =
                  Content.button Simulants.HudHalt.Name
                     [Entity.Position == v2 88.0f -112.0f; Entity.Size == v2 384.0f 64.0f; Entity.Depth == 10.0f
                      Entity.UpImage == asset "Gui" "HaltUp"; Entity.DownImage == asset "Gui" "HaltDown"
-                     Entity.Enabled <== gameplay --> fun gameplay -> match gameplay.Player.Turn with NavigationTurn _ -> true | _ -> false]
+                     Entity.Enabled <== gameplay --> fun gameplay -> match gameplay.Player.Turn with NavigationTurn _ -> true | _ -> false
+                     Entity.ClickEvent ==> msg TryMakePlayerHalt]
 
                  Content.button Simulants.HudBack.Name
                     [Entity.Position == v2 88.0f -256.0f; Entity.Size == v2 384.0f 64.0f; Entity.Depth == 10.0f

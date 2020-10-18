@@ -55,12 +55,9 @@ type SingleRoundMove =
     | Step of Direction
     | Attack of CharacterIndex
 
-type MultiRoundMove =
-    | Travel of NavigationNode list
-
 type Move =
     | SingleRoundMove of SingleRoundMove
-    | MultiRoundMove of MultiRoundMove
+    | MultiRoundMove of NavigationNode list
 
     member this.MakeTurn positionM =
         match this with
@@ -68,11 +65,9 @@ type Move =
             match singleRoundMove with
             | Step direction -> Turn.makeNavigation None positionM direction
             | Attack index -> Turn.makeAttack index
-        | MultiRoundMove multiRoundMove ->
-            match multiRoundMove with
-            | Travel path ->
-                let direction = Math.directionToTarget positionM path.Head.PositionM
-                Turn.makeNavigation (Some path) positionM direction
+        | MultiRoundMove path ->
+            let direction = Math.directionToTarget positionM path.Head.PositionM
+            Turn.makeNavigation (Some path) positionM direction
 
 type Chessboard =
     { PassableCoordinates : Map<Vector2i, PickupType Option>
@@ -394,9 +389,9 @@ type [<StructuralEquality; NoComparison>] Gameplay =
             | Attack reactorIndex ->
                 let gameplay = Gameplay.applyAttack reactorIndex gameplay
                 Gameplay.stopTraveler reactorIndex gameplay
-        | MultiRoundMove multiRoundMove ->
-            match multiRoundMove with
-            | Travel (head :: _) ->
+        | MultiRoundMove path ->
+            match path with
+            | head :: _ ->
                 let currentCoordinates = Gameplay.getCoordinates index gameplay
                 let direction = Math.directionToTarget currentCoordinates head.PositionM
                 Gameplay.applyStep index direction gameplay
