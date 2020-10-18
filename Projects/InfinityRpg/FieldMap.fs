@@ -23,7 +23,7 @@ module FieldMap =
     let GrassTile = { TileSheetPositionM = Vector2i (3, 3); TileType = Passable }
     let TreeTile = { TileSheetPositionM = Vector2i (1, 1); TileType = Impassable }
     let StoneTile = { TileSheetPositionM = Vector2i (2, 3); TileType = Impassable }
-    let WaterTile = { TileSheetPositionM = Vector2i (0, 0); TileType = Impassable }
+    let WaterTile = { TileSheetPositionM = Vector2i (0, 1); TileType = Impassable }
 
     let makeGrid boundsM =
         seq {
@@ -129,7 +129,7 @@ module FieldMap =
                 grid
         else (generatedMap, rand)
 
-    let spreadWater buildBoundsM generatedMap rand =
+    let spreadWater1 buildBoundsM generatedMap rand =
         let pathTileCount = Map.filter (fun _ v -> v = PathTile) generatedMap |> Map.count
         if pathTileCount < 25 then
             let grid = makeGrid buildBoundsM
@@ -152,6 +152,30 @@ module FieldMap =
                 grid
         else (generatedMap, rand)
 
+    let spreadWater2 buildBoundsM generatedMap rand =
+        let pathTileCount = Map.filter (fun _ v -> v = PathTile) generatedMap |> Map.count
+        if pathTileCount < 25 then
+            let grid = makeGrid buildBoundsM
+            let originalMap = generatedMap
+            Seq.fold
+                (fun (generatedMap, rand) positionM ->
+                    let (n, rand) = Rand.nextIntUnder 1 rand
+                    let upPositionM = positionM + Vector2i.Up
+                    let rightPositionM = positionM + Vector2i.Right
+                    let downPositionM = positionM + Vector2i.Down
+                    let leftPositionM = positionM + Vector2i.Left
+                    if  MapBounds.isPointInBounds upPositionM buildBoundsM && Map.find upPositionM originalMap = WaterTile ||
+                        MapBounds.isPointInBounds rightPositionM buildBoundsM && Map.find rightPositionM originalMap = WaterTile ||
+                        MapBounds.isPointInBounds downPositionM buildBoundsM && Map.find downPositionM originalMap = WaterTile ||
+                        MapBounds.isPointInBounds leftPositionM buildBoundsM && Map.find leftPositionM originalMap = WaterTile then
+                        if n = 0 && Map.find positionM generatedMap <> PathTile
+                        then (Map.add positionM WaterTile generatedMap, rand)
+                        else (generatedMap, rand)
+                    else (generatedMap, rand))
+                (generatedMap, rand)
+                grid
+        else (generatedMap, rand)
+    
     let addStones buildBoundsM generatedMap rand =
         let grid = makeGrid buildBoundsM
         Seq.fold
@@ -180,9 +204,9 @@ module FieldMap =
         let (generatedMap, rand) = spreadTrees buildBoundsM generatedMap rand
         let (generatedMap, rand) = spreadTrees buildBoundsM generatedMap rand
         let (generatedMap, rand) = addWater buildBoundsM generatedMap rand
-        let (generatedMap, rand) = spreadWater buildBoundsM generatedMap rand
-        let (generatedMap, rand) = spreadWater buildBoundsM generatedMap rand
-        let (generatedMap, rand) = spreadWater buildBoundsM generatedMap rand
+        let (generatedMap, rand) = spreadWater1 buildBoundsM generatedMap rand
+        let (generatedMap, rand) = spreadWater1 buildBoundsM generatedMap rand
+        let (generatedMap, rand) = spreadWater2 buildBoundsM generatedMap rand
         let (generatedMap, rand) = addStones buildBoundsM generatedMap rand
         let fieldMap = { FieldSizeM = sizeM; FieldTiles = generatedMap; FieldTileSheet = tileSheet }
         (fieldMap, rand)
