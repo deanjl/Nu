@@ -22,6 +22,8 @@ module FieldMap =
     let PathTile = { TileSheetPositionM = Vector2i (3, 0); TileType = Passable }
     let GrassTile = { TileSheetPositionM = Vector2i (3, 3); TileType = Passable }
     let TreeTile = { TileSheetPositionM = Vector2i (1, 1); TileType = Impassable }
+    let StoneTile = { TileSheetPositionM = Vector2i (2, 3); TileType = Impassable }
+    let WaterTile = { TileSheetPositionM = Vector2i (0, 0); TileType = Impassable }
 
     let makeGrid boundsM =
         seq {
@@ -104,6 +106,71 @@ module FieldMap =
             (generatedMap, rand)
             grid
 
+    let addWater buildBoundsM generatedMap rand =
+        let pathTileCount = Map.filter (fun _ v -> v = PathTile) generatedMap |> Map.count
+        if pathTileCount < 25 then
+            let grid = makeGrid buildBoundsM
+            Seq.fold
+                (fun (generatedMap, rand) positionM ->
+                    let (n, rand) = Rand.nextIntUnder 128 rand
+                    let upPositionM = positionM + Vector2i.Up
+                    let rightPositionM = positionM + Vector2i.Right
+                    let downPositionM = positionM + Vector2i.Down
+                    let leftPositionM = positionM + Vector2i.Left
+                    if  MapBounds.isPointInBounds upPositionM buildBoundsM && Map.find upPositionM generatedMap = GrassTile &&
+                        MapBounds.isPointInBounds rightPositionM buildBoundsM && Map.find rightPositionM generatedMap = GrassTile &&
+                        MapBounds.isPointInBounds downPositionM buildBoundsM && Map.find downPositionM generatedMap = GrassTile &&
+                        MapBounds.isPointInBounds leftPositionM buildBoundsM && Map.find leftPositionM generatedMap = GrassTile then
+                        if n = 0 && Map.find positionM generatedMap = GrassTile
+                        then (Map.add positionM WaterTile generatedMap, rand)
+                        else (generatedMap, rand)
+                    else (generatedMap, rand))
+                (generatedMap, rand)
+                grid
+        else (generatedMap, rand)
+
+    let spreadWater buildBoundsM generatedMap rand =
+        let pathTileCount = Map.filter (fun _ v -> v = PathTile) generatedMap |> Map.count
+        if pathTileCount < 25 then
+            let grid = makeGrid buildBoundsM
+            Seq.fold
+                (fun (generatedMap, rand) positionM ->
+                    let (n, rand) = Rand.nextIntUnder 2 rand
+                    let upPositionM = positionM + Vector2i.Up
+                    let rightPositionM = positionM + Vector2i.Right
+                    let downPositionM = positionM + Vector2i.Down
+                    let leftPositionM = positionM + Vector2i.Left
+                    if  MapBounds.isPointInBounds upPositionM buildBoundsM && Map.find upPositionM generatedMap = WaterTile ||
+                        MapBounds.isPointInBounds rightPositionM buildBoundsM && Map.find rightPositionM generatedMap = WaterTile ||
+                        MapBounds.isPointInBounds downPositionM buildBoundsM && Map.find downPositionM generatedMap = WaterTile ||
+                        MapBounds.isPointInBounds leftPositionM buildBoundsM && Map.find leftPositionM generatedMap = WaterTile then
+                        if n = 0 && Map.find positionM generatedMap <> PathTile
+                        then (Map.add positionM WaterTile generatedMap, rand)
+                        else (generatedMap, rand)
+                    else (generatedMap, rand))
+                (generatedMap, rand)
+                grid
+        else (generatedMap, rand)
+
+    let addStones buildBoundsM generatedMap rand =
+        let grid = makeGrid buildBoundsM
+        Seq.fold
+            (fun (generatedMap, rand) positionM ->
+                if Map.find positionM generatedMap = GrassTile then
+                    let upPositionM = positionM + Vector2i.Up
+                    let rightPositionM = positionM + Vector2i.Right
+                    let downPositionM = positionM + Vector2i.Down
+                    let leftPositionM = positionM + Vector2i.Left
+                    if  Map.find upPositionM generatedMap = PathTile &&
+                        Map.find rightPositionM generatedMap = PathTile &&
+                        Map.find downPositionM generatedMap = PathTile &&
+                        Map.find leftPositionM generatedMap = PathTile then
+                        (Map.add positionM StoneTile generatedMap, Rand.advance rand)
+                    else (generatedMap, Rand.advance rand)
+                else (generatedMap, Rand.advance rand))
+            (generatedMap, rand)
+            grid
+    
     let make tileSheet (offsetM : Vector2i) sizeM pathEdgesM rand =
         let buildBoundsM = { CornerNegative = offsetM + Vector2i.One; CornerPositive = offsetM + sizeM - Vector2i.One * 2 }
         let generatedMap = generateEmptyMap offsetM sizeM
@@ -112,5 +179,10 @@ module FieldMap =
         let (generatedMap, rand) = spreadTrees buildBoundsM generatedMap rand
         let (generatedMap, rand) = spreadTrees buildBoundsM generatedMap rand
         let (generatedMap, rand) = spreadTrees buildBoundsM generatedMap rand
+        let (generatedMap, rand) = addWater buildBoundsM generatedMap rand
+        let (generatedMap, rand) = spreadWater buildBoundsM generatedMap rand
+        let (generatedMap, rand) = spreadWater buildBoundsM generatedMap rand
+        let (generatedMap, rand) = spreadWater buildBoundsM generatedMap rand
+        let (generatedMap, rand) = addStones buildBoundsM generatedMap rand
         let fieldMap = { FieldSizeM = sizeM; FieldTiles = generatedMap; FieldTileSheet = tileSheet }
         (fieldMap, rand)
