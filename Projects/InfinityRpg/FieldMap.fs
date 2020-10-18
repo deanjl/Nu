@@ -11,6 +11,31 @@ type FieldTile =
     { TileSheetPositionM : Vector2i
       TileType : FieldTileType }
 
+type FieldMapUnit =
+    { RandSeed : uint64
+      OffsetCount : Vector2i
+      IsHorizontal : bool
+      PathStart : Vector2i
+      PathEnd : Vector2i }
+
+    static member make fieldMapUnitOpt =
+        let sysrandom = System.Random ()
+        let randSeed = uint64 (sysrandom.Next ())
+        let randResult = Gen.random1 (Constants.Layout.FieldUnitSizeM.X - 4) // assumes X and Y are equal
+        let pathEnd = if randResult % 2 = 0 then Vector2i (randResult + 2, Constants.Layout.FieldUnitSizeM.Y - 2) else Vector2i (Constants.Layout.FieldUnitSizeM.X - 2, randResult + 2)
+        let (offsetCount, pathStart) =
+            match fieldMapUnitOpt with
+            | Some fieldMapUnit ->
+                match fieldMapUnit.IsHorizontal with
+                | true -> (fieldMapUnit.OffsetCount + Vector2i.Right, Vector2i (1, fieldMapUnit.PathEnd.Y))
+                | false -> (fieldMapUnit.OffsetCount + Vector2i.Up, Vector2i (fieldMapUnit.PathEnd.X, 1))
+            | None -> (Vector2i.Zero, Vector2i.One)
+        { RandSeed = randSeed
+          OffsetCount = offsetCount
+          IsHorizontal = pathEnd.X > pathEnd.Y
+          PathStart = pathStart
+          PathEnd = pathEnd }
+
 type [<StructuralEquality; NoComparison>] FieldMap =
     { FieldSizeM : Vector2i
       FieldTiles : Map<Vector2i, FieldTile>
@@ -210,3 +235,7 @@ module FieldMap =
         let (generatedMap, rand) = addStones buildBoundsM generatedMap rand
         let fieldMap = { FieldSizeM = sizeM; FieldTiles = generatedMap; FieldTileSheet = tileSheet }
         (fieldMap, rand)
+
+    let makeFromFieldMapUnit fieldMapUnit =
+        let rand = Rand.makeFromSeedState fieldMapUnit.RandSeed
+        make Assets.FieldTileSheetImage Vector2i.Zero Constants.Layout.FieldUnitSizeM [(fieldMapUnit.PathStart, fieldMapUnit.PathEnd)] rand |> fst

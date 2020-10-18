@@ -330,8 +330,7 @@ module GameplayDispatcher =
                 let gameplay = Gameplay.clearPickups gameplay
                 let gameplay = Gameplay.yankPlayer newCoordinates gameplay
                 let gameplay = Gameplay.transitionMap direction gameplay
-                let fieldMap = gameplay.MapModeler.GetCurrent.ToFieldMap
-                let gameplay = Gameplay.setFieldMap fieldMap gameplay
+                let gameplay = Gameplay.setFieldMap (FieldMap.makeFromFieldMapUnit gameplay.MapModeler.Current) gameplay
                 let gameplay = Gameplay.makeEnemies 1 gameplay
                 just gameplay
 
@@ -353,14 +352,14 @@ module GameplayDispatcher =
                     | _ -> TryMakePlayerMove playerInput
                 withMsg msg gameplay
             
-            | StartGameplay -> // TODO: and fix >1 new games again!
+            | StartGameplay ->
                 if gameplay.ShallLoadGame && File.Exists Assets.SaveFilePath then
                     let gameplayStr = File.ReadAllText Assets.SaveFilePath
                     let gameplay = scvalue<Gameplay> gameplayStr
                     just gameplay
                 else
-                    let fieldMap = gameplay.MapModeler.GetCurrent.ToFieldMap
-                    let gameplay = Gameplay.setFieldMap fieldMap gameplay
+                    let gameplay = Gameplay.initial
+                    let gameplay = Gameplay.setFieldMap (FieldMap.makeFromFieldMapUnit gameplay.MapModeler.Current) gameplay
                     let gameplay = Gameplay.makePlayer gameplay
                     let gameplay = Gameplay.makeEnemies 1 gameplay
                     just gameplay

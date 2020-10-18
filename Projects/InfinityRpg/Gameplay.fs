@@ -5,36 +5,6 @@ open Nu
 open Nu.Declarative
 open InfinityRpg
 
-type FieldMapUnit =
-    { RandSeed : uint64
-      OffsetCount : Vector2i
-      IsHorizontal : bool
-      PathStart : Vector2i
-      PathEnd : Vector2i }
-
-    member this.ToFieldMap =
-        let rand = Rand.makeFromSeedState this.RandSeed
-        FieldMap.make Assets.FieldTileSheetImage Vector2i.Zero Constants.Layout.FieldUnitSizeM [(this.PathStart, this.PathEnd)] rand |> fst
-
-    static member make fieldMapUnitOpt =
-        let sysrandom = System.Random ()
-        let randSeed = uint64 (sysrandom.Next ())
-        let randResult = Gen.random1 (Constants.Layout.FieldUnitSizeM.X - 4) // assumes X and Y are equal
-        let pathEnd = if randResult % 2 = 0 then Vector2i (randResult + 2, Constants.Layout.FieldUnitSizeM.Y - 2) else Vector2i (Constants.Layout.FieldUnitSizeM.X - 2, randResult + 2)
-        let (offsetCount, pathStart) =
-            match fieldMapUnitOpt with
-            | Some fieldMapUnit ->
-                match fieldMapUnit.IsHorizontal with
-                | true -> (fieldMapUnit.OffsetCount + Vector2i.Right, Vector2i (1, fieldMapUnit.PathEnd.Y))
-                | false -> (fieldMapUnit.OffsetCount + Vector2i.Up, Vector2i (fieldMapUnit.PathEnd.X, 1))
-            | None -> (Vector2i.Zero, Vector2i.One)
-        
-        { RandSeed = randSeed
-          OffsetCount = offsetCount
-          IsHorizontal = pathEnd.X > pathEnd.Y
-          PathStart = pathStart
-          PathEnd = pathEnd }
-
 type MapModeler =
     { FieldMapUnits : Map<Vector2i, FieldMapUnit>
       CurrentFieldOffset : Vector2i }
@@ -47,7 +17,7 @@ type MapModeler =
         let fieldMapUnits = Map.add fieldMapUnit.OffsetCount fieldMapUnit this.FieldMapUnits
         { this with FieldMapUnits = fieldMapUnits; CurrentFieldOffset = fieldMapUnit.OffsetCount }
 
-    member this.GetCurrent =
+    member this.Current =
         this.FieldMapUnits.[this.CurrentFieldOffset]
 
     member this.OffsetInDirection direction =
@@ -57,7 +27,7 @@ type MapModeler =
         Map.containsKey (this.OffsetInDirection direction) this.FieldMapUnits
     
     member this.NextOffset =
-        if this.GetCurrent.IsHorizontal then
+        if this.Current.IsHorizontal then
             this.OffsetInDirection Rightward
         else this.OffsetInDirection Upward
     
@@ -71,7 +41,7 @@ type MapModeler =
         { this with CurrentFieldOffset = this.OffsetInDirection direction }
     
     member this.MakeFieldMapUnit =
-        FieldMapUnit.make (Some this.GetCurrent) |> this.AddFieldMapUnit
+        FieldMapUnit.make (Some this.Current) |> this.AddFieldMapUnit
     
     member this.Transition direction =
         if this.ExistsInDirection direction then
