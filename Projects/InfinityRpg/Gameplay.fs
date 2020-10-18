@@ -190,7 +190,7 @@ type [<StructuralEquality; NoComparison>] Gameplay =
       ShallLoadGame : bool
       Field : Field
       Pickups : Pickup list
-      Enemys : Character list
+      Enemies : Character list
       Player : Character }
 
     static member initial =
@@ -199,14 +199,14 @@ type [<StructuralEquality; NoComparison>] Gameplay =
           ShallLoadGame = false
           Field = Field.initial
           Pickups = []
-          Enemys = []
+          Enemies = []
           Player = Character.initial }
 
     member this.PickupCount =
         this.Pickups.Length
 
     member this.EnemyCount =
-        this.Enemys.Length
+        this.Enemies.Length
     
     static member updateMapModeler newValue gameplay =
         { gameplay with MapModeler = newValue }
@@ -217,14 +217,14 @@ type [<StructuralEquality; NoComparison>] Gameplay =
     static member updatePickups newValue gameplay =
         { gameplay with Pickups = newValue }
     
-    static member updateEnemys newValue gameplay =
-        { gameplay with Enemys = newValue }
+    static member updateEnemies newValue gameplay =
+        { gameplay with Enemies = newValue }
 
     static member updatePlayer newValue gameplay =
         { gameplay with Player = newValue }
     
     static member getCharacters gameplay =
-        gameplay.Player :: gameplay.Enemys
+        gameplay.Player :: gameplay.Enemies
     
     static member pickupAtCoordinates coordinates gameplay =
         gameplay.Pickups |> List.exists (fun pickup -> pickup.Position = vmtovf coordinates)
@@ -257,7 +257,7 @@ type [<StructuralEquality; NoComparison>] Gameplay =
         (Gameplay.getCharacterByIndex index gameplay).Position
     
     static member getEnemyIndices gameplay =
-        List.map (fun gameplay -> gameplay.Index) gameplay.Enemys
+        List.map (fun gameplay -> gameplay.Index) gameplay.Enemies
 
     static member getOpponentIndices index gameplay =
         match index with
@@ -265,7 +265,7 @@ type [<StructuralEquality; NoComparison>] Gameplay =
         | _ -> [PlayerIndex]
     
     static member getEnemyTurns gameplay =
-        List.map (fun enemy -> enemy.Turn) gameplay.Enemys
+        List.map (fun enemy -> enemy.Turn) gameplay.Enemies
     
     static member getCharacterTurnStati gameplay =
         Gameplay.getCharacters gameplay |> List.map (fun character -> character.TurnStatus)
@@ -280,9 +280,9 @@ type [<StructuralEquality; NoComparison>] Gameplay =
             Gameplay.updatePlayer player gameplay
         | EnemyIndex _ as index ->
             let enemies =
-                gameplay.Enemys |>
+                gameplay.Enemies |>
                 List.map (fun enemy -> if enemy.Index = index then updater newValue enemy else enemy)
-            Gameplay.updateEnemys enemies gameplay
+            Gameplay.updateEnemies enemies gameplay
     
     static member updateTurn index newValue gameplay =
         Gameplay.updateCharacterBy Character.updateTurn index newValue gameplay
@@ -303,8 +303,8 @@ type [<StructuralEquality; NoComparison>] Gameplay =
         Gameplay.updateCharacterBy Character.updatePosition index newValue gameplay
     
     static member updateEnemiesBy updater newValues gameplay =
-        let enemies = List.map2 (fun newValue gameplay -> updater newValue gameplay) newValues gameplay.Enemys
-        Gameplay.updateEnemys enemies gameplay
+        let enemies = List.map2 (fun newValue gameplay -> updater newValue gameplay) newValues gameplay.Enemies
+        Gameplay.updateEnemies enemies gameplay
 
     static member updateEnemyActivityStates newValues gameplay =
         Gameplay.updateEnemiesBy Character.updateCharacterActivityState newValues gameplay
@@ -341,12 +341,12 @@ type [<StructuralEquality; NoComparison>] Gameplay =
         if gameplay.EnemyCount <> chessboard.EnemyCount then
             let enemies =
                 if gameplay.EnemyCount > chessboard.EnemyCount then
-                    List.filter (fun (character : Character) -> Chessboard.characterExists character.Index chessboard) gameplay.Enemys
+                    List.filter (fun (character : Character) -> Chessboard.characterExists character.Index chessboard) gameplay.Enemies
                 else
                     let generator k v = Character.makeEnemy k v
                     let enemies = Map.filter (fun k _ -> not (Gameplay.characterExists k gameplay)) chessboard.EnemyCoordinates |> Map.toListBy generator
-                    enemies @ gameplay.Enemys
-            Gameplay.updateEnemys enemies gameplay
+                    enemies @ gameplay.Enemies
+            Gameplay.updateEnemies enemies gameplay
         else gameplay
 
     // if updater takes index, index is arg1; if updater takes coordinates, coordinates is arg2

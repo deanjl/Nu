@@ -427,7 +427,7 @@ module GameplayDispatcher =
                         (fun index pickup _ -> Content.entity<PickupDispatcher> ("Pickup+" + scstring index) [Entity.Pickup <== pickup])
                      
                      Content.entitiesIndexedBy gameplay
-                        (fun gameplay -> gameplay.Enemys) constant
+                        (fun gameplay -> gameplay.Enemies) constant
                         (fun character -> match character.Index with EnemyIndex i -> i | _ -> failwithumf ())
                         (fun index character _ -> Content.entity<EnemyDispatcher> ("Enemy+" + scstring index) [Entity.Character <== character])
 
