@@ -30,8 +30,8 @@ module GameplayDispatcher =
     type [<NoEquality; NoComparison>] GameplayCommand =
         | HandlePlayerInput of PlayerInput
         | SaveGame
-        | Tick
-        | PostTick
+        | Update
+        | PostUpdate
         | Nop
 
     type Screen with
@@ -78,8 +78,8 @@ module GameplayDispatcher =
         
         override this.Channel (_, _) =
             [Simulants.Gameplay.SelectEvent => msg StartGameplay
-             Simulants.Gameplay.UpdateEvent => cmd Tick
-             Simulants.Gameplay.PostUpdateEvent => cmd PostTick]
+             Simulants.Gameplay.UpdateEvent => cmd Update
+             Simulants.Gameplay.PostUpdateEvent => cmd PostUpdate]
 
         override this.Message (gameplay, message, _, world) =
             
@@ -349,7 +349,7 @@ module GameplayDispatcher =
                 File.WriteAllText (Assets.SaveFilePath, gameplayStr)
                 just world
 
-            | Tick ->
+            | Update ->
                 if (Gameplay.anyTurnsInProgress gameplay) then withMsg RunCharacterActivation world
                 elif KeyboardState.isKeyDown KeyboardKey.Up then withCmd (HandlePlayerInput (DetailInput Upward)) world
                 elif KeyboardState.isKeyDown KeyboardKey.Right then withCmd (HandlePlayerInput (DetailInput Rightward)) world
@@ -357,13 +357,13 @@ module GameplayDispatcher =
                 elif KeyboardState.isKeyDown KeyboardKey.Left then withCmd (HandlePlayerInput (DetailInput Leftward)) world
                 else just world
 
-            | PostTick ->
-                let eyeCenter = Simulants.Player.GetPosition world + Simulants.Player.GetSize world * 0.5f
+            | PostUpdate ->
+                let playerCenter = Simulants.Player.GetCenter world
                 let eyeCenter =
                     if Simulants.Field.Exists world then
                         let eyeSize = World.getEyeSize world
-                        let eyeCornerNegative = eyeCenter - eyeSize * 0.5f
-                        let eyeCornerPositive = eyeCenter + eyeSize * 0.5f
+                        let eyeCornerNegative = playerCenter - eyeSize * 0.5f
+                        let eyeCornerPositive = playerCenter + eyeSize * 0.5f
                         let fieldCornerNegative = Simulants.Field.GetPosition world
                         let fieldCornerPositive = Simulants.Field.GetPosition world + Simulants.Field.GetSize world
                         let fieldBoundsNegative = fieldCornerNegative + eyeSize * 0.5f
@@ -371,13 +371,13 @@ module GameplayDispatcher =
                         let eyeCenterX =
                             if eyeCornerNegative.X < fieldCornerNegative.X then fieldBoundsNegative.X
                             elif eyeCornerPositive.X > fieldCornerPositive.X then fieldBoundsPositive.X
-                            else eyeCenter.X
+                            else playerCenter.X
                         let eyeCenterY =
                             if eyeCornerNegative.Y < fieldCornerNegative.Y then fieldBoundsNegative.Y
                             elif eyeCornerPositive.Y > fieldCornerPositive.Y then fieldBoundsPositive.Y
-                            else eyeCenter.Y
+                            else playerCenter.Y
                         Vector2 (eyeCenterX, eyeCenterY)
-                    else eyeCenter
+                    else playerCenter
                 let world = World.setEyeCenter eyeCenter world
                 just world
 
