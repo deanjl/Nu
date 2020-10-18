@@ -401,7 +401,7 @@ module GameplayDispatcher =
 
         override this.Content (gameplay, screen) =
 
-            // gameplay layer
+            // scene layer
             [Content.layerIfScreenSelected screen (fun _ _ ->
                 Content.layer Simulants.Scene.Name []
 
@@ -424,31 +424,48 @@ module GameplayDispatcher =
              Content.layer Simulants.Hud.Name []
 
                 [Content.button Simulants.HudSaveGame.Name
-                    [Entity.Position == v2 88.0f -184.0f
-                     Entity.Size == v2 384.0f 64.0f
-                     Entity.Depth == 10.0f
-                     Entity.UpImage == asset "Gui" "SaveGameUp"
-                     Entity.DownImage == asset "Gui" "SaveGameDown"
+                    [Entity.Position == v2 88.0f -184.0f; Entity.Size == v2 384.0f 64.0f; Entity.Depth == 10.0f
+                     Entity.UpImage == asset "Gui" "SaveGameUp"; Entity.DownImage == asset "Gui" "SaveGameDown"
                      Entity.Enabled <== gameplay --> fun gameplay -> not (Gameplay.anyTurnsInProgress gameplay)
                      Entity.ClickEvent ==> cmd SaveGame]
 
                  Content.button Simulants.HudHalt.Name
-                    [Entity.Position == v2 88.0f -112.0f
-                     Entity.Size == v2 384.0f 64.0f
-                     Entity.Depth == 10.0f
-                     Entity.UpImage == asset "Gui" "HaltUp"
-                     Entity.DownImage == asset "Gui" "HaltDown"
+                    [Entity.Position == v2 88.0f -112.0f; Entity.Size == v2 384.0f 64.0f; Entity.Depth == 10.0f
+                     Entity.UpImage == asset "Gui" "HaltUp"; Entity.DownImage == asset "Gui" "HaltDown"
                      Entity.Enabled <== gameplay --> fun gameplay -> match gameplay.Player.Turn with NavigationTurn _ -> true | _ -> false]
 
                  Content.button Simulants.HudBack.Name
-                    [Entity.Position == v2 88.0f -256.0f
-                     Entity.Size == v2 384.0f 64.0f
-                     Entity.Depth == 10.0f
-                     Entity.UpImage == asset "Gui" "BackUp"
-                     Entity.DownImage == asset "Gui" "BackDown"]
+                    [Entity.Position == v2 88.0f -256.0f; Entity.Size == v2 384.0f 64.0f; Entity.Depth == 10.0f
+                     Entity.UpImage == asset "Gui" "BackUp"; Entity.DownImage == asset "Gui" "BackDown"]
+
+                 Content.label Gen.name
+                    [Entity.Position == v2 -448.0f -240.0f; Entity.Size == v2 224.0f 224.0f; Entity.Depth == 9.0f
+                     Entity.LabelImage == asset "Gui" "DetailBacking"]
+
+                 Content.button Simulants.HudDetailUpward.Name
+                    [Entity.Position == v2 -368.0f -88.0f; Entity.Size == v2 64.0f 64.0f; Entity.Depth == 10.0f
+                     Entity.UpImage == asset "Gui" "DetailUpwardUp"; Entity.DownImage == asset "Gui" "DetailUpwardDown"
+                     Entity.ClickSoundOpt == None
+                     Entity.ClickEvent ==> cmd (HandlePlayerInput (DetailInput Upward))]
+
+                 Content.button Simulants.HudDetailRightward.Name
+                    [Entity.Position == v2 -296.0f -160.0f; Entity.Size == v2 64.0f 64.0f; Entity.Depth == 10.0f
+                     Entity.UpImage == asset "Gui" "DetailRightwardUp"; Entity.DownImage == asset "Gui" "DetailRightwardDown"
+                     Entity.ClickSoundOpt == None
+                     Entity.ClickEvent ==> cmd (HandlePlayerInput (DetailInput Rightward))]
+
+                 Content.button Simulants.HudDetailDownward.Name
+                    [Entity.Position == v2 -368.0f -232.0f; Entity.Size == v2 64.0f 64.0f; Entity.Depth == 10.0f
+                     Entity.UpImage == asset "Gui" "DetailDownwardUp"; Entity.DownImage == asset "Gui" "DetailDownwardDown"
+                     Entity.ClickSoundOpt == None
+                     Entity.ClickEvent ==> cmd (HandlePlayerInput (DetailInput Downward))]
+
+                 Content.button Simulants.HudDetailLeftward.Name
+                    [Entity.Position == v2 -440.0f -160.0f; Entity.Size == v2 64.0f 64.0f; Entity.Depth == 10.0f
+                     Entity.UpImage == asset "Gui" "DetailLeftwardUp"; Entity.DownImage == asset "Gui" "DetailLeftwardDown"
+                     Entity.ClickSoundOpt == None
+                     Entity.ClickEvent ==> cmd (HandlePlayerInput (DetailInput Leftward))]
 
                  Content.feeler Simulants.HudFeeler.Name
-                    [Entity.Position == v2 -480.0f -272.0f
-                     Entity.Size == v2 960.0f 544.0f
-                     Entity.Depth == 9.0f
+                    [Entity.Position == v2 -480.0f -272.0f; Entity.Size == v2 960.0f 544.0f; Entity.Depth == 9.0f
                      Entity.TouchEvent ==|> fun evt -> cmd (HandlePlayerInput (TouchInput evt.Data))]]]
