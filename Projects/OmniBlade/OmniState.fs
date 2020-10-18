@@ -11,7 +11,12 @@ type PropState =
     | ShopkeepState of bool
     | NilState
 
-type [<StructuralEquality; NoComparison>] Inventory =
+type [<ReferenceEquality; NoComparison>] PrizePool =
+    { Items : ItemType list
+      Gold : int
+      Exp : int }
+
+type [<ReferenceEquality; NoComparison>] Inventory =
     { Items : Map<ItemType, int>
       Gold : int }
 
@@ -42,6 +47,9 @@ type [<StructuralEquality; NoComparison>] Inventory =
             | None -> { inventory with Items = Map.add item 1 inventory.Items }
         | Stash gold -> { inventory with Gold = inventory.Gold + gold }
 
+    static member addItems items inventory =
+        List.fold (flip Inventory.addItem) inventory items
+
     static member removeItem item inventory =
         match Map.tryFind item inventory.Items with
         | Some itemCount when itemCount > 1 ->
@@ -67,40 +75,110 @@ type [<StructuralEquality; NoComparison>] Inventory =
         | Some count -> count
         | None -> 0
 
-    static member updateGold updater inventory =
+    static member updateGold updater (inventory : Inventory) =
         { inventory with Gold = updater inventory.Gold }
 
-type Legionnaire =
+type [<ReferenceEquality; NoComparison>] Legionnaire =
     { LegionIndex : int // key
       PartyIndexOpt : int option
       CharacterType : CharacterType
+      HitPoints : int
+      TechPoints : int
       ExpPoints : int
       WeaponOpt : string option
       ArmorOpt : string option
       Accessories : string list }
 
+    static member canUseItem itemType legionnaire =
+        match Map.tryFind legionnaire.CharacterType data.Value.Characters with
+        | Some characterData ->
+            match Map.tryFind characterData.ArchetypeType data.Value.Archetypes with
+            | Some archetypeData ->
+                match itemType with
+                | Consumable _ -> true
+                | Equipment equipmentType ->
+                    match equipmentType with
+                    | WeaponType weaponType ->
+                        match Map.tryFind weaponType data.Value.Weapons with
+                        | Some weaponData -> weaponData.WeaponSubtype = archetypeData.WeaponSubtype
+                        | None -> false
+                    | ArmorType armorType ->
+                        match Map.tryFind armorType data.Value.Armors with
+                        | Some armorData -> armorData.ArmorSubtype = archetypeData.ArmorSubtype
+                        | None -> false
+                    | AccessoryType _ -> true
+                | KeyItem _ -> false
+                | Stash _ -> false
+            | None -> false
+        | None -> false
+
+    static member tryUseItem itemType legionnaire =
+        if Legionnaire.canUseItem itemType legionnaire then
+            match Map.tryFind legionnaire.CharacterType data.Value.Characters with
+            | Some characterData ->
+                match itemType with
+                | Consumable consumableType ->
+                    match consumableType with
+                    | GreenHerb ->
+                        let level = Algorithms.expPointsToLevel legionnaire.ExpPoints
+                        let hpm = Algorithms.hitPointsMax legionnaire.ArmorOpt characterData.ArchetypeType level
+                        let legionnaire = { legionnaire with HitPoints = min hpm (legionnaire.HitPoints + 50) } // TODO: pull from data!
+                        (true, None, legionnaire)
+                    | RedHerb ->
+                        let level = Algorithms.expPointsToLevel legionnaire.ExpPoints
+                        let hpm = Algorithms.hitPointsMax legionnaire.ArmorOpt characterData.ArchetypeType level
+                        let legionnaire = { legionnaire with HitPoints = min hpm (legionnaire.HitPoints + 250) } // TODO: pull from data!
+                        (true, None, legionnaire)
+                | Equipment equipmentType ->
+                    match equipmentType with
+                    | WeaponType weaponType -> (true, Option.map (Equipment << WeaponType) legionnaire.WeaponOpt, { legionnaire with WeaponOpt = Some weaponType })
+                    | ArmorType armorType -> (true, Option.map (Equipment << ArmorType) legionnaire.ArmorOpt, { legionnaire with ArmorOpt = Some armorType })
+                    | AccessoryType accessoryType -> (true, Option.map (Equipment << AccessoryType) (List.tryHead legionnaire.Accessories), { legionnaire with Accessories = [accessoryType] })
+                | KeyItem _ -> (false, None, legionnaire)
+                | Stash _ -> (false, None, legionnaire)
+            | None -> (false, None, legionnaire)
+        else (false, None, legionnaire)
+
     static member finn =
-        { LegionIndex = 0
-          PartyIndexOpt = Some 0
-          CharacterType = Ally Finn
-          ExpPoints = 15
-          WeaponOpt = None
-          ArmorOpt = None
+        let index = 0
+        let characterType = Ally Finn
+        let character = Map.find characterType data.Value.Characters
+        let expPoints = Algorithms.levelToExpPoints character.LevelBase
+        let archetypeType = character.ArchetypeType
+        let weaponOpt = None
+        let armorOpt = None
+        { LegionIndex = index
+          PartyIndexOpt = Some index
+          CharacterType = characterType
+          HitPoints = Algorithms.hitPointsMax armorOpt archetypeType character.LevelBase
+          TechPoints = Algorithms.techPointsMax armorOpt archetypeType character.LevelBase
+          ExpPoints = expPoints
+          WeaponOpt = weaponOpt
+          ArmorOpt = armorOpt
           Accessories = [] }
 
     static member glenn =
-        { LegionIndex = 1
-          PartyIndexOpt = Some 1
-          CharacterType = Ally Glenn
-          ExpPoints = 15
-          WeaponOpt = None
-          ArmorOpt = None
+        let index = 1
+        let characterType = Ally Glenn
+        let character = Map.find characterType data.Value.Characters
+        let expPoints = Algorithms.levelToExpPoints character.LevelBase
+        let archetypeType = character.ArchetypeType
+        let weaponOpt = None
+        let armorOpt = None
+        { LegionIndex = index
+          PartyIndexOpt = Some index
+          CharacterType = characterType
+          HitPoints = Algorithms.hitPointsMax armorOpt archetypeType character.LevelBase
+          TechPoints = Algorithms.techPointsMax armorOpt archetypeType character.LevelBase
+          ExpPoints = expPoints
+          WeaponOpt = weaponOpt
+          ArmorOpt = armorOpt
           Accessories = [] }
 
 type Legion =
     Map<int, Legionnaire>
 
-type [<StructuralEquality; StructuralComparison>] CharacterIndex =
+type CharacterIndex =
     | AllyIndex of int
     | EnemyIndex of int
     static member isTeammate index index2 =
@@ -109,7 +187,7 @@ type [<StructuralEquality; StructuralComparison>] CharacterIndex =
         | (EnemyIndex _, EnemyIndex _) -> true
         | (_, _) -> false
 
-type [<StructuralEquality; NoComparison>] CharacterState =
+type [<ReferenceEquality; NoComparison>] CharacterState =
     { ArchetypeType : ArchetypeType
       ExpPoints : int
       WeaponOpt : string option
@@ -123,7 +201,9 @@ type [<StructuralEquality; NoComparison>] CharacterState =
       PowerBuff : single
       ShieldBuff : single
       MagicBuff : single
-      CounterBuff : single }
+      CounterBuff : single
+      GoldPrize : int
+      ExpPrize : int }
 
     member this.Level = Algorithms.expPointsToLevel this.ExpPoints
     member this.IsHealthy = this.HitPoints > 0
@@ -149,17 +229,22 @@ type [<StructuralEquality; NoComparison>] CharacterState =
         { state with HitPoints = hitPoints }
 
     static member updateTechPoints updater state =
-        let specialPoints = updater state.TechPoints
-        let specialPoints = max 0 specialPoints
-        let specialPoints = min state.TechPointsMax specialPoints
-        { state with TechPoints = specialPoints }
+        let techPoints = updater state.TechPoints
+        let techPoints = max 0 techPoints
+        let techPoints = min state.TechPointsMax techPoints
+        { state with TechPoints = techPoints }
+
+    static member updateExpPoints updater state =
+        let expPoints = updater state.ExpPoints
+        let expPoints = max 0 expPoints
+        { state with ExpPoints = expPoints }
 
     static member tryGetTechRandom (state : CharacterState) =
-        let specials = state.Techs
-        if Set.notEmpty specials then
-            let specialIndex = Gen.random1 specials.Count
-            let special = Seq.item specialIndex specials
-            Some special
+        let techs = state.Techs
+        if Set.notEmpty techs then
+            let techIndex = Gen.random1 techs.Count
+            let tech = Seq.item techIndex techs
+            Some tech
         else None
 
     static member getPoiseType state =
@@ -167,28 +252,26 @@ type [<StructuralEquality; NoComparison>] CharacterState =
         elif state.Charging then Charging
         else Poising
 
-    static member make characterData expPoints weaponOpt armorOpt accessories =
-        let levelBase = characterData.LevelBase
+    static member make (characterData : CharacterData) hitPoints techPoints expPoints weaponOpt armorOpt accessories =
         let archetypeType = characterData.ArchetypeType
-        let expPointsTotal = Algorithms.levelToExpPoints levelBase + expPoints
-        let level = Algorithms.expPointsToLevel expPointsTotal
-        let hitPointsMax = Algorithms.hitPointsMax armorOpt archetypeType level
-        let techPointsMax = Algorithms.hitPointsMax armorOpt archetypeType level
+        let level = Algorithms.expPointsToLevel expPoints
         let characterState =
             { ArchetypeType = archetypeType
-              ExpPoints = expPointsTotal
+              ExpPoints = expPoints
               WeaponOpt = weaponOpt
               ArmorOpt = armorOpt
               Accessories = accessories
-              HitPoints = hitPointsMax
-              TechPoints = techPointsMax
+              HitPoints = hitPoints
+              TechPoints = techPoints
               Statuses = Set.empty
               Defending = false
               Charging = false
               PowerBuff = 1.0f
               MagicBuff = 1.0f
               ShieldBuff = 1.0f
-              CounterBuff = 1.0f }
+              CounterBuff = 1.0f
+              GoldPrize = Algorithms.goldPrize characterData.GoldScalar level
+              ExpPrize = Algorithms.expPrize characterData.ExpScalar level }
         characterState
 
     static member empty =
@@ -206,10 +289,12 @@ type [<StructuralEquality; NoComparison>] CharacterState =
               PowerBuff = 1.0f
               MagicBuff = 1.0f
               ShieldBuff = 1.0f
-              CounterBuff = 1.0f }
+              CounterBuff = 1.0f
+              GoldPrize = 0
+              ExpPrize = 0 }
         characterState
 
-type [<StructuralEquality; NoComparison>] CharacterAnimationState =
+type [<ReferenceEquality; NoComparison>] CharacterAnimationState =
     { TimeStart : int64
       AnimationSheet : Image AssetTag
       AnimationCycle : CharacterAnimationCycle
@@ -296,7 +381,7 @@ type [<StructuralEquality; NoComparison>] CharacterAnimationState =
           AnimationCycle = IdleCycle
           Direction = Downward }
 
-type [<StructuralEquality; StructuralComparison>] CharacterInputState =
+type CharacterInputState =
     | NoInput
     | RegularMenu
     | TechMenu

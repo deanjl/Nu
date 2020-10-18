@@ -7,41 +7,52 @@ open Nu.Declarative
 
 #if ECS
 type [<NoEquality; NoComparison; Struct>] StaticSpriteComponent =
-    { mutable RefCount : int
+    { mutable Active : bool
       mutable Entity : Entity
       mutable Sprite : Image AssetTag }
     interface StaticSpriteComponent Component with
-        member this.RefCount with get () = this.RefCount and set value = this.RefCount <- value
-        member this.SystemNames = [||]
+        member this.Active with get () = this.Active and set value = this.Active <- value
+        member this.AllocateJunctions _ = [||]
+        member this.ResizeJunctions _ _ _ = ()
+        member this.MoveJunctions _ _ _ _ = ()
         member this.Junction _ _ _ = this
         member this.Disjunction _ _ _ = ()
 #endif
+
 #if ECS_PURE
 type [<NoEquality; NoComparison; Struct>] Velocity =
-    { mutable RefCount : int
+    { mutable Active : bool
       mutable Velocity : Vector2 }
     interface Velocity Component with
-        member this.RefCount with get () = this.RefCount and set value = this.RefCount <- value
-        member this.SystemNames = [||]
+        member this.Active with get () = this.Active and set value = this.Active <- value
+        member this.AllocateJunctions _ = [||]
+        member this.ResizeJunctions _ _ _ = ()
+        member this.MoveJunctions _ _ _ _ = ()
         member this.Junction _ _ _ = this
         member this.Disjunction _ _ _ = ()
+
 type [<NoEquality; NoComparison; Struct>] Position =
-    { mutable RefCount : int
+    { mutable Active : bool
       mutable Position : Vector2 }
     interface Position Component with
-        member this.RefCount with get () = this.RefCount and set value = this.RefCount <- value
-        member this.SystemNames = [||]
+        member this.Active with get () = this.Active and set value = this.Active <- value
+        member this.AllocateJunctions _ = [||]
+        member this.ResizeJunctions _ _ _ = ()
+        member this.MoveJunctions _ _ _ _ = ()
         member this.Junction _ _ _ = this
         member this.Disjunction _ _ _ = ()
+
 type [<NoEquality; NoComparison; Struct>] Mover =
-    { mutable RefCount : int
+    { mutable Active : bool
       mutable Velocity : Velocity ComponentRef
       mutable Position : Position ComponentRef }
     interface Mover Component with
-        member this.RefCount with get () = this.RefCount and set value = this.RefCount <- value
-        member this.SystemNames = [|"Velocity"; "Position"|]
-        member this.Junction systems registration ecs = { id this with Velocity = ecs.Junction<Velocity> registration systems.[0]; Position = ecs.Junction<Position> registration systems.[1] }
-        member this.Disjunction systems entityId ecs = ecs.Disjunction<Velocity> entityId systems.[0]; ecs.Disjunction<Position> entityId systems.[1]
+        member this.Active with get () = this.Active and set value = this.Active <- value
+        member this.AllocateJunctions ecs = [|ecs.AllocateArray<Velocity> (); ecs.AllocateArray<Position> ()|]
+        member this.ResizeJunctions size junctions ecs = ecs.ResizeJunction<Velocity> size junctions.[0]; ecs.ResizeJunction<Position> size junctions.[1]
+        member this.MoveJunctions src dst junctions ecs = ecs.MoveJunction<Velocity> src dst junctions.[0]; ecs.MoveJunction<Position> src dst junctions.[1]
+        member this.Junction index junctions ecs = { id this with Velocity = ecs.Junction<Velocity> index junctions.[0]; Position = ecs.Junction<Position> index junctions.[1] }
+        member this.Disjunction index junctions ecs = ecs.Disjunction<Velocity> index junctions.[0]; ecs.Disjunction<Position> index junctions.[1]
 #endif
 
 type MetricsEntityDispatcher () =
@@ -65,12 +76,12 @@ type MetricsEntityDispatcher () =
 #if ECS
     override this.Register (entity, world) =
         let ecs = entity.Parent.Parent.GetEcs world
-        let _ : Guid = ecs.RegisterCorrelated<StaticSpriteComponent> { RefCount = 0; Entity = entity; Sprite = AssetTag.make Assets.DefaultPackageName "Image4" } typeof<StaticSpriteComponent>.Name (entity.GetId world)
+        let _ : Guid = ecs.RegisterCorrelated<StaticSpriteComponent> { Active = false; Entity = entity; Sprite = Assets.DefaultImage4 } (entity.GetId world)
         world
 
     override this.Unregister (entity, world) =
         let ecs = entity.Parent.Parent.GetEcs world
-        let _ : bool = ecs.UnregisterCorrelated<StaticSpriteComponent> typeof<StaticSpriteComponent>.Name (entity.GetId world)
+        let _ : bool = ecs.UnregisterCorrelated<StaticSpriteComponent> (entity.GetId world)
         world
 #endif
 
@@ -87,36 +98,36 @@ type MyGameDispatcher () =
         let ecs = screen.GetEcs world
 
         // create static sprite system
-        let staticSprites = ecs.RegisterSystem (SystemCorrelated<StaticSpriteComponent, World> ())
+        ecs.RegisterSystem (SystemCorrelated<StaticSpriteComponent, World> ecs)
 #endif
 #if ECS_PURE
         // get ecs
         let ecs = screen.GetEcs world
 
         // entity count
-        let entityCount = 4000000
+        let entityCount = int (Math.Pow (2.0, 22.0)) // ~4M entities
 
         // create systems
-        let velocities = ecs.RegisterSystem (SystemCorrelated<Velocity, World> entityCount)
-        let positions = ecs.RegisterSystem (SystemCorrelated<Position, World> entityCount)
-        let movers = ecs.RegisterSystem (SystemCorrelated<Mover, World> entityCount)
+        ecs.RegisterSystem (SystemCorrelated<Velocity, World> ecs)
+        ecs.RegisterSystem (SystemCorrelated<Position, World> ecs)
+        ecs.RegisterSystem (SystemCorrelated<Mover, World> ecs)
 
-        // create junctions
+        // create movers
         for _ in 0 .. entityCount - 1 do
-            let entityId = ecs.RegisterCorrelated<Mover> Unchecked.defaultof<Mover> typeof<Mover>.Name Gen.id
-            let mover = ecs.IndexCorrelated<Mover> typeof<Mover>.Name entityId
+            let entityId = ecs.RegisterCorrelated Unchecked.defaultof<Mover> Gen.id
+            let mover = ecs.IndexCorrelated<Mover> entityId
             mover.Index.Velocity.Index.Velocity <- v2One
 
         // define update for movers
         let _ = ecs.Subscribe EcsEvents.Update (fun _ _ _ world ->
-            let arr = movers.Components.Array
-            for i in 0 .. arr.Length - 1 do
-                let comp = &arr.[i]
-                if comp.RefCount > 0 then
-                    let velocity = &comp.Velocity.Index
-                    let position = &comp.Position.Index
-                    position.Position.X <- position.Position.X + velocity.Velocity.X
-                    position.Position.Y <- position.Position.Y + velocity.Velocity.Y
+            for components in ecs.GetComponentArrays<Mover> () do
+                for i in 0 .. components.Length - 1 do
+                    let mutable comp = &components.[i]
+                    if comp.Active then
+                        let velocity = &comp.Velocity.Index
+                        let position = &comp.Position.Index
+                        position.Position.X <- position.Position.X + velocity.Velocity.X
+                        position.Position.Y <- position.Position.Y + velocity.Velocity.Y
             world)
 #endif
         let world = World.createLayer (Some Simulants.DefaultLayer.Name) Simulants.DefaultScreen world |> snd
@@ -143,26 +154,26 @@ type MyGameDispatcher () =
 #if ECS
         // define update for static sprites
         let _ = ecs.Subscribe EcsEvents.Update (fun _ _ _ world ->
-            let comps = staticSprites.Components
-            for i in 0 .. comps.Length - 1 do
-                let comp = &comps.[i]
-                if comp.RefCount > 0 then
-                    let entity = comp.Entity.State world
-                    entity.Rotation <- entity.Rotation + 0.03f
+            for components in ecs.GetComponentArrays<StaticSpriteComponent> () do
+                for i in 0 .. components.Length - 1 do
+                    let mutable comp = &components.[i]
+                    if comp.Active then
+                        let entity = comp.Entity.State world
+                        entity.Rotation <- entity.Rotation + 0.03f
             world)
 
         // define actualize for static sprites
         let _ = ecs.Subscribe EcsEvents.Actualize (fun _ _ _ world ->
             let messages = List ()
-            let comps = staticSprites.Components
-            for i in 0 ..comps.Length - 1 do
-                let comp = &comps.[i]
-                if comp.RefCount > 0 then
-                    let entity = comp.Entity.State world
-                    if entity.Visible then
-                        let spriteDescriptor = SpriteDescriptor { Transform = entity.Transform; Offset = Vector2.Zero; InsetOpt = None; Image = comp.Sprite; Color = Color.White; Glow = Color.Zero; Flip = FlipNone }
-                        let message = LayeredDescriptorMessage { Depth = entity.Depth; PositionY = entity.Position.Y; AssetTag = AssetTag.generalize comp.Sprite; RenderDescriptor = spriteDescriptor }
-                        messages.Add message
+            for components in ecs.GetComponentArrays<StaticSpriteComponent> () do
+                for i in 0 .. components.Length - 1 do
+                    let mutable comp = &components.[i]
+                    if comp.Active then
+                        let entity = comp.Entity.State world
+                        if entity.Visible then
+                            let spriteDescriptor = SpriteDescriptor { Transform = entity.Transform; Offset = Vector2.Zero; InsetOpt = None; Image = comp.Sprite; Color = Color.White; Glow = Color.Zero; Flip = FlipNone }
+                            let message = LayeredDescriptorMessage { Depth = entity.Depth; PositionY = entity.Position.Y; AssetTag = AssetTag.generalize comp.Sprite; RenderDescriptor = spriteDescriptor }
+                            messages.Add message
             World.enqueueRenderMessages messages world)
 #else
         ignore screen

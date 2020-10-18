@@ -341,10 +341,10 @@ module EffectSystem =
                 | SymbolicCompressionA resource -> evalResource resource effectSystem
                 | _ ->
                     Log.info ("Expected Resource for definition '" + definitionName + ".")
-                    scvalue<obj AssetTag> Assets.DefaultImageString
+                    AssetTag.generalize Assets.DefaultImage
             | None ->
                 Log.info ("Could not find definition with name '" + definitionName + "'.")
-                scvalue<obj AssetTag> Assets.DefaultImageString
+                AssetTag.generalize Assets.DefaultImage
 
     let rec private iterateViews incrementAspects content slice effectSystem =
         let effectSystem = { effectSystem with ProgressOffset = 0.0f }
@@ -499,8 +499,7 @@ module EffectSystem =
                       Size = slice.Size
                       Rotation = slice.Rotation
                       Depth = slice.Depth
-                      Flags = 0
-                      RefCount = 0 }
+                      Flags = 0 }
                 transform.Absolute <- effectSystem.Absolute
                 let spriteView =
                     Render (transform.Depth, transform.Position.Y, AssetTag.generalize image,
@@ -544,8 +543,7 @@ module EffectSystem =
                           Size = slice.Size
                           Rotation = slice.Rotation
                           Depth = slice.Depth
-                          Flags = 0
-                          RefCount = 0 }
+                          Flags = 0 }
                     transform.Absolute <- effectSystem.Absolute
                     let animatedSpriteView =
                         Render (transform.Depth, transform.Position.Y, AssetTag.generalize image,
@@ -582,8 +580,7 @@ module EffectSystem =
                       Size = slice.Size
                       Rotation = slice.Rotation
                       Depth = slice.Depth
-                      Flags = 0
-                      RefCount = 0 }
+                      Flags = 0 }
                 transform.Absolute <- effectSystem.Absolute
                 let spriteView =
                     Render (transform.Depth, transform.Position.Y, font,

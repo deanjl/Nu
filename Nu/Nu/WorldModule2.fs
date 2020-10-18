@@ -241,7 +241,10 @@ module WorldModule2 =
                         if selectedScreen.GetTransitionTicks world = 0L then
                             let world =
                                 match (selectedScreen.GetIncoming world).SongOpt with
-                                | Some playSong -> World.playSong playSong.FadeOutMs playSong.Volume playSong.Song world
+                                | Some playSong ->
+                                    if World.getCurrentSongOpt world <> Some playSong
+                                    then World.playSong playSong.FadeOutMs playSong.Volume playSong.Song world
+                                    else world
                                 | None -> world
                             let eventTrace = EventTrace.record4 "World" "updateScreenTransition" "IncomingStart" EventTrace.empty
                             World.publish () (Events.IncomingStart --> selectedScreen) eventTrace selectedScreen false world
@@ -261,7 +264,13 @@ module WorldModule2 =
                     if selectedScreen.GetTransitionTicks world = 0L then
                         let world =
                             match (selectedScreen.GetOutgoing world).SongOpt with
-                            | Some playSong -> World.fadeOutSong playSong.FadeOutMs world
+                            | Some playSong ->
+                                match World.getScreenTransitionDestinationOpt world with
+                                | Some destination ->
+                                    if (selectedScreen.GetIncoming world).SongOpt <> (destination.GetIncoming world).SongOpt
+                                    then World.fadeOutSong playSong.FadeOutMs world
+                                    else world
+                                | None -> world
                             | None -> world
                         let eventTrace = EventTrace.record4 "World" "updateScreenTransition" "OutgoingStart" EventTrace.empty
                         World.publish () (Events.OutgoingStart --> selectedScreen) eventTrace selectedScreen false world
@@ -633,7 +642,7 @@ module WorldModule2 =
             let entityTree = World.getEntityTree world
             let (spatialTree, entityTree) = MutantCache.getMutant (fun () -> World.rebuildEntityTree world) entityTree
             let world = World.setEntityTree entityTree world
-            let entities : Entity HashSet = getElementsFromTree spatialTree
+            let entities : Entity seq = getElementsFromTree spatialTree
             (entities, world)
 
         [<FunctionBinding>]
@@ -773,7 +782,7 @@ module WorldModule2 =
                 let color = Color.White.WithA (byte (alpha * 255.0f))
                 let position = -eyeSize * 0.5f // negation for right-handedness
                 let size = eyeSize
-                let transform = { Position = position; Size = size; Rotation = 0.0f; Depth = Single.MaxValue; Flags = -1; RefCount = 0 }
+                let transform = { Position = position; Size = size; Rotation = 0.0f; Depth = Single.MaxValue; Flags = -1 }
                 World.enqueueRenderMessage
                     (LayeredDescriptorMessage
                         { Depth = transform.Depth
@@ -1112,10 +1121,10 @@ module GameDispatcherModule =
         abstract member Channel : Lens<'model, World> * Game -> Channel<'message, 'command, Game, World> list
         default this.Channel (_, _) = []
 
-        abstract member Message : 'model * 'message * Game * World -> 'model * Signal<'message, 'command> list
+        abstract member Message : 'model * 'message * Game * World -> Signal<'message, 'command> list * 'model
         default this.Message (model, _, _, _) = just model
 
-        abstract member Command : 'model * 'command * Game * World -> World * Signal<'message, 'command> list
+        abstract member Command : 'model * 'command * Game * World -> Signal<'message, 'command> list * World
         default this.Command (_, _, _, world) = just world
 
         abstract member Content : Lens<'model, World> * Game -> ScreenContent list

@@ -1,180 +1,97 @@
 ﻿namespace OmniBlade
+open System
 open Prime
 open Nu
-open Nu.Declarative
-open OmniBlade
 
-[<AutoOpen>]
-module AvatarDispatcherModule =
+[<RequireQualifiedAccess>]
+module Avatar =
 
-    type [<NoComparison>] AvatarMessage =
-        | Update
-        | PostUpdate
-        | Collision of CollisionData
-        | Separation of SeparationData
-        | Face of Direction
-        | Nil
+    type [<ReferenceEquality; NoComparison>] Avatar =
+        private
+            { BoundsOriginal_ : Vector4
+              Bounds_ : Vector4
+              AnimationState_ : CharacterAnimationState
+              CollidedBodyShapes_ : BodyShapeSource list
+              SeparatedBodyShapes_ : BodyShapeSource list
+              IntersectedBodyShapes_ : BodyShapeSource list }
 
-    type [<NoComparison>] AvatarCommand =
-        | Move of Vector2
+        (* Bounds Original Properties *)
+        member this.BoundsOriginal = this.BoundsOriginal_
+        member this.PositionOriginal = this.BoundsOriginal_.Position
+        member this.CenterOriginal = this.BoundsOriginal_.Center
+        member this.BottomOriginal = this.BoundsOriginal_.Bottom
+        member this.SizeOriginal = this.BoundsOriginal_.Size
 
-    type Entity with
+        (* Bounds Properties *)
+        member this.Bounds = this.Bounds_
+        member this.Position = this.Bounds_.Position
+        member this.Center = this.Bounds_.Center
+        member this.Bottom = this.Bounds_.Bottom
+        member this.Size = this.Bounds_.Size
 
-        member this.GetAvatarModel = this.GetModel<AvatarModel>
-        member this.SetAvatarModel = this.SetModel<AvatarModel>
-        member this.AvatarModel = this.Model<AvatarModel> ()
+        (* AnimationState Properties *)
+        member this.TimeStart = this.AnimationState_.TimeStart
+        member this.AnimationSheet = this.AnimationState_.AnimationSheet
+        member this.AnimationCycle = this.AnimationState_.AnimationCycle
+        member this.Direction = this.AnimationState_.Direction
 
-    type AvatarDispatcher () =
-        inherit EntityDispatcher<AvatarModel, AvatarMessage, AvatarCommand>
-            (AvatarModel.make (v4Bounds (v2 128.0f 128.0f) Constants.Gameplay.CharacterSize) Assets.FinnAnimationSheet Downward)
+        (* Local Properties *)
+        member this.CollidedBodyShapes = this.CollidedBodyShapes_
+        member this.SeparatedBodyShapes = this.SeparatedBodyShapes_
+        member this.IntersectedBodyShapes = this.IntersectedBodyShapes_
 
-        static let coreShapeId = Gen.id
-        static let sensorShapeId = Gen.id
+    let getAnimationIndex time avatar =
+        CharacterAnimationState.index time avatar.AnimationState_
 
-        static let getSpriteInset (avatar : Entity) world =
-            let model = avatar.GetAvatarModel world
-            let index = AvatarModel.getAnimationIndex (World.getTickTime world) model
-            let offset = v2 (single index.X) (single index.Y) * Constants.Gameplay.CharacterSize
-            let inset = v4Bounds offset Constants.Gameplay.CharacterSize
-            inset
+    let getAnimationProgressOpt time avatar =
+        CharacterAnimationState.progressOpt time avatar.AnimationState_
 
-        static let isIntersectedBodyShape collider collidee world =
-            if (collider.BodyShapeId = coreShapeId &&
-                collidee.Entity.Exists world &&
-                collidee.Entity.Is<PropDispatcher> world &&
-                match (collidee.Entity.GetPropModel world).PropData with
-                | Portal _ -> true
-                | Sensor _ -> true
-                | _ -> false) then
-                true
-            elif (collider.BodyShapeId = sensorShapeId &&
-                  collidee.Entity.Exists world &&
-                  collidee.Entity.Is<PropDispatcher> world &&
-                  match (collidee.Entity.GetPropModel world).PropData with
-                  | Portal _ -> false
-                  | Sensor _ -> false
-                  | _ -> true) then
-                true
-            else false
+    let getAnimationFinished time avatar =
+        CharacterAnimationState.getFinished time avatar.AnimationState_
 
-        static member Facets =
-            [typeof<RigidBodyFacet>]
+    let updateCollidedBodyShapes updater (avatar : Avatar) =
+        { avatar with CollidedBodyShapes_ = updater avatar.CollidedBodyShapes_ }
 
-        override this.Initializers (model, entity) =
-            let bodyShapes =
-                BodyShapes
-                    [BodyCircle { Radius = 0.22f; Center = v2 0.0f -0.3f; PropertiesOpt = Some { BodyShapeProperties.empty with BodyShapeId = coreShapeId }}
-                     BodyCircle { Radius = 0.33f; Center = v2 0.0f -0.3f; PropertiesOpt = Some { BodyShapeProperties.empty with BodyShapeId = sensorShapeId; IsSensorOpt = Some true }}]
-            [entity.Bounds <== model.Map (fun model -> model.Bounds)
-             entity.FixedRotation == true
-             entity.GravityScale == 0.0f
-             entity.BodyShape == bodyShapes]
+    let updateSeparatedBodyShapes updater (avatar : Avatar) =
+        { avatar with SeparatedBodyShapes_ = updater avatar.SeparatedBodyShapes_ }
 
-        override this.Channel (_, entity) =
-            [entity.UpdateEvent => msg Update
-             entity.Parent.PostUpdateEvent => msg PostUpdate
-             entity.UpdateEvent =|> fun _ ->
-                let force = v2Zero
-                let force = if KeyboardState.isKeyDown KeyboardKey.Right then v2 Constants.Field.WalkForce 0.0f + force else force
-                let force = if KeyboardState.isKeyDown KeyboardKey.Left then v2 -Constants.Field.WalkForce 0.0f + force else force
-                let force = if KeyboardState.isKeyDown KeyboardKey.Up then v2 0.0f Constants.Field.WalkForce + force else force
-                let force = if KeyboardState.isKeyDown KeyboardKey.Down then v2 0.0f -Constants.Field.WalkForce + force else force
-                cmd (Move force)
-             entity.UpdateEvent =|> fun _ ->
-                if KeyboardState.isKeyDown KeyboardKey.Right then msg (Face Rightward)
-                elif KeyboardState.isKeyDown KeyboardKey.Left then msg (Face Leftward)
-                elif KeyboardState.isKeyDown KeyboardKey.Up then msg (Face Upward)
-                elif KeyboardState.isKeyDown KeyboardKey.Down then msg (Face Downward)
-                else msg Nil
-             entity.CollisionEvent =|> fun evt -> msg (Collision evt.Data)
-             entity.SeparationEvent =|> fun evt -> msg (Separation evt.Data)]
+    let updateIntersectedBodyShapes updater (avatar : Avatar) =
+        { avatar with IntersectedBodyShapes_ = updater avatar.IntersectedBodyShapes_ }
 
-        override this.Message (model, message, entity, world) =
-            let time = World.getTickTime world
-            match message with
-            | Update ->
+    let updateBounds updater (avatar : Avatar) =
+        { avatar with Bounds_ = updater avatar.Bounds_ }
 
-                // update animation generally
-                let velocity = World.getBodyLinearVelocity (entity.GetPhysicsId world) world
-                let direction = Direction.fromVector2 velocity
-                let speed = velocity.Length
-                let model =
-                    if speed > 10.0f then
-                        if direction <> model.Direction || model.AnimationCycle = IdleCycle then
-                            let model = AvatarModel.updateDirection (constant direction) model
-                            AvatarModel.animate time WalkCycle model
-                        else model
-                    else AvatarModel.animate time IdleCycle model
+    let updatePosition updater (avatar : Avatar) =
+        { avatar with Bounds_ = avatar.Position |> updater |> avatar.Bounds.WithPosition }
 
-                // update bounds
-                let model = AvatarModel.updateBounds (constant (entity.GetBounds world)) model
-                just model
+    let updateCenter updater (avatar : Avatar) =
+        { avatar with Bounds_ = avatar.Center |> updater |> avatar.Bounds.WithCenter }
 
-            | PostUpdate ->
+    let updateBottom updater (avatar : Avatar) =
+        { avatar with Bounds_ = avatar.Bottom |> updater |> avatar.Bounds.WithBottom }
 
-                // clear all temporary body shapes
-                let model = AvatarModel.updateCollidedBodyShapes (constant []) model
-                let model = AvatarModel.updateSeparatedBodyShapes (constant []) model
-                just model
+    let updateDirection updater (avatar : Avatar) =
+        { avatar with AnimationState_ = { avatar.AnimationState_ with Direction = updater avatar.AnimationState_.Direction }}
 
-            | Face direction ->
+    let animate time cycle avatar =
+        { avatar with AnimationState_ = CharacterAnimationState.setCycle (Some time) cycle avatar.AnimationState_ }
 
-                // update facing if enabled, velocity is zero, and direction pressed
-                let model =
-                    if entity.GetEnabled world then
-                        let velocity = entity.GetLinearVelocity world
-                        if velocity = v2Zero
-                        then AvatarModel.updateDirection (constant direction) model
-                        else model
-                    else model
-                just model
+    let make bounds animationSheet direction =
+        let animationState = { TimeStart = 0L; AnimationSheet = animationSheet; AnimationCycle = IdleCycle; Direction = direction }
+        { BoundsOriginal_ = bounds
+          Bounds_ = bounds
+          AnimationState_ = animationState
+          CollidedBodyShapes_ = []
+          SeparatedBodyShapes_ = []
+          IntersectedBodyShapes_ = [] }
 
-            | Separation separation ->
+    let empty =
+        let bounds = v4Bounds (v2Dup 128.0f) Constants.Gameplay.CharacterSize
+        { BoundsOriginal_ = bounds
+          Bounds_ = bounds
+          AnimationState_ = CharacterAnimationState.empty
+          CollidedBodyShapes_ = []
+          SeparatedBodyShapes_ = []
+          IntersectedBodyShapes_ = [] }
 
-                // add separated body shape
-                let model =
-                    if isIntersectedBodyShape separation.Separator separation.Separatee world then
-                        let model = AvatarModel.updateSeparatedBodyShapes (fun shapes -> separation.Separatee :: shapes) model
-                        let model = AvatarModel.updateIntersectedBodyShapes (List.remove ((=) separation.Separatee)) model
-                        model
-                    else model
-                just model
-
-            | Collision collision ->
-
-                // add collided body shape
-                let model =
-                    if isIntersectedBodyShape collision.Collider collision.Collidee world then
-                        let model = AvatarModel.updateCollidedBodyShapes (fun shapes -> collision.Collidee :: shapes) model
-                        let model = AvatarModel.updateIntersectedBodyShapes (fun shapes -> collision.Collidee :: shapes) model
-                        model
-                    else model
-                just model
-
-            | Nil ->
-
-                // nothing to do
-                just model
-
-        override this.Command (_, command, entity, world) =
-            match command with
-            | Move force ->
-                if entity.GetEnabled world then
-                    let physicsId = Simulants.FieldAvatar.GetPhysicsId world
-                    let world = World.applyBodyForce force physicsId world
-                    just world
-                else just world
-
-        override this.View (model, entity, world) =
-            if entity.GetVisible world && entity.GetInView world then
-                let transform = entity.GetTransform world
-                [Render (transform.Depth, transform.Position.Y, AssetTag.generalize model.AnimationSheet,
-                     SpriteDescriptor
-                        { Transform = transform
-                          Offset = Vector2.Zero
-                          InsetOpt = Some (getSpriteInset entity world)
-                          Image = model.AnimationSheet
-                          Color = Color.White
-                          Glow = Color.Zero
-                          Flip = FlipNone })]
-            else []
+type Avatar = Avatar.Avatar

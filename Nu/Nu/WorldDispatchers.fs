@@ -140,10 +140,10 @@ module FacetModule =
         abstract member Channel : Lens<'model, World> * Entity -> Channel<'message, 'command, Entity, World> list
         default this.Channel (_, _) = []
 
-        abstract member Message : 'model * 'message * Entity * World -> 'model * Signal<'message, 'command> list
+        abstract member Message : 'model * 'message * Entity * World -> Signal<'message, 'command> list * 'model
         default this.Message (model, _, _, _) = just model
 
-        abstract member Command : 'model * 'command * Entity * World -> World * Signal<'message, 'command> list
+        abstract member Command : 'model * 'command * Entity * World -> Signal<'message, 'command> list * World
         default this.Command (_, _, _, world) = just world
 
         abstract member Content : Lens<'model, World> * Entity -> EntityContent list
@@ -407,7 +407,7 @@ module TextFacetModule =
 
         static member Properties =
             [define Entity.Text ""
-             define Entity.Font (AssetTag.make<Font> Assets.DefaultPackageName Assets.DefaultFontName)
+             define Entity.Font Assets.DefaultFont
              define Entity.Margins Vector2.Zero
              define Entity.Justification (Justified (JustifyCenter, JustifyMiddle))
              define Entity.TextColor Color.Black
@@ -421,8 +421,7 @@ module TextFacetModule =
                       Size = text.GetSize world - text.GetMargins world * 2.0f
                       Rotation = 0.0f
                       Depth = text.GetDepth world + 0.5f
-                      Flags = text.GetFlags world
-                      RefCount = 0 }
+                      Flags = text.GetFlags world }
                 World.enqueueRenderMessage
                     (LayeredDescriptorMessage
                         { Depth = transform.Depth
@@ -443,6 +442,9 @@ module RigidBodyFacetModule =
 
     type Entity with
     
+        member this.GetBodyEnabled world : bool = this.Get Property? BodyEnabled world
+        member this.SetBodyEnabled (value : bool) world = this.SetFast Property? BodyEnabled false false value world
+        member this.BodyEnabled = lens Property? BodyEnabled this.GetBodyEnabled this.SetBodyEnabled this
         member this.GetBodyType world : BodyType = this.Get Property? BodyType world
         member this.SetBodyType (value : BodyType) world = this.SetFast Property? BodyType false false value world
         member this.BodyType = lens Property? BodyType this.GetBodyType this.SetBodyType this
@@ -504,6 +506,7 @@ module RigidBodyFacetModule =
 
         static member Properties =
             [define Entity.PublishChanges true
+             define Entity.BodyEnabled true
              define Entity.BodyType Dynamic
              define Entity.Awake true
              define Entity.Density Constants.Physics.NormalDensity
@@ -523,6 +526,7 @@ module RigidBodyFacetModule =
              computed Entity.PhysicsId (fun (entity : Entity) world -> { SourceId = entity.GetId world; CorrelationId = Gen.idEmpty }) None]
 
         override this.Register (entity, world) =
+            let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? BodyEnabled) entity world
             let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? Transform) entity world
             let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? BodyType) entity world
             let world = World.monitor (fun _ world -> (Cascade, entity.PropagatePhysics world)) (entity.ChangeEvent Property? Awake) entity world
@@ -549,7 +553,7 @@ module RigidBodyFacetModule =
                   BodyShape = getBodyShape entity world
                   BodyType = entity.GetBodyType world
                   Awake = entity.GetAwake world
-                  Enabled = entity.GetEnabled world
+                  Enabled = entity.GetBodyEnabled world
                   Density = entity.GetDensity world
                   Friction = entity.GetFriction world
                   Restitution = entity.GetRestitution world
@@ -713,7 +717,7 @@ module TileMapFacetModule =
                   BodyShape = BodyShapes bodyShapes
                   BodyType = BodyType.Static
                   Awake = false
-                  Enabled = true
+                  Enabled = tileMap.GetBodyEnabled world
                   Density = Constants.Physics.NormalDensity
                   Friction = tileMap.GetFriction world
                   Restitution = tileMap.GetRestitution world
@@ -732,16 +736,18 @@ module TileMapFacetModule =
         static member Properties =
             [define Entity.Omnipresent true
              define Entity.PublishChanges true
+             define Entity.BodyEnabled true
              define Entity.Friction 0.0f
              define Entity.Restitution 0.0f
              define Entity.CollisionCategories "1"
              define Entity.CollisionMask "@"
-             define Entity.TileMapAsset (AssetTag.make<TileMap> Assets.DefaultPackageName Assets.DefaultTileMapName)
+             define Entity.TileMapAsset Assets.DefaultTileMap
              define Entity.TileLayerClearance 2.0f
              define Entity.Parallax 0.0f
              computed Entity.PhysicsId (fun (entity : Entity) world -> { SourceId = entity.GetId world; CorrelationId = Gen.idEmpty }) None]
 
         override this.Register (tileMap, world) =
+            let world = World.monitor (fun _ world -> (Cascade, tileMap.PropagatePhysics world)) (tileMap.ChangeEvent Property? BodyEnabled) tileMap world
             let world = World.monitor (fun _ world -> (Cascade, tileMap.PropagatePhysics world)) (tileMap.ChangeEvent Property? Transform) tileMap world
             let world = World.monitor (fun _ world -> (Cascade, tileMap.PropagatePhysics world)) (tileMap.ChangeEvent Property? Friction) tileMap world
             let world = World.monitor (fun _ world -> (Cascade, tileMap.PropagatePhysics world)) (tileMap.ChangeEvent Property? Restitution) tileMap world
@@ -791,8 +797,7 @@ module TileMapFacetModule =
                                           Size = size
                                           Rotation = rotation
                                           Depth = depth
-                                          Flags = tileMap.GetFlags world
-                                          RefCount = 0 }
+                                          Flags = tileMap.GetFlags world }
                                     let image = List.head images // MAGIC_VALUE: I have no idea how to tell which tile set each tile is from...
                                     let tiles =
                                         layer.Tiles |>
@@ -1052,7 +1057,7 @@ module StaticSpriteFacetModule =
         inherit Facet ()
 
         static member Properties =
-            [define Entity.StaticImage (AssetTag.make<Image> Assets.DefaultPackageName "Image4")
+            [define Entity.StaticImage Assets.DefaultImage4
              define Entity.Color Color.White
              define Entity.Glow Color.Zero
              define Entity.InsetOpt None
@@ -1126,7 +1131,7 @@ module AnimatedSpriteFacetModule =
              define Entity.CelRun 4
              define Entity.CelCount 16
              define Entity.AnimationDelay 4L
-             define Entity.AnimationSheet (AssetTag.make<Image> Assets.DefaultPackageName "Image7")
+             define Entity.AnimationSheet Assets.DefaultImage7
              define Entity.Color Color.White
              define Entity.Glow Color.Zero
              define Entity.Flip FlipNone]
@@ -1238,10 +1243,10 @@ module EntityDispatcherModule =
         abstract member Channel : Lens<'model, World> * Entity -> Channel<'message, 'command, Entity, World> list
         default this.Channel (_, _) = []
 
-        abstract member Message : 'model * 'message * Entity * World -> 'model * Signal<'message, 'command> list
+        abstract member Message : 'model * 'message * Entity * World -> Signal<'message, 'command> list * 'model
         default this.Message (model, _, _, _) = just model
 
-        abstract member Command : 'model * 'command * Entity * World -> World * Signal<'message, 'command> list
+        abstract member Command : 'model * 'command * Entity * World -> Signal<'message, 'command> list * World
         default this.Command (_, _, _, world) = just world
 
         abstract member Content : Lens<'model, World> * Entity -> EntityContent list
@@ -1273,7 +1278,7 @@ module StaticSpriteDispatcherModule =
             [typeof<StaticSpriteFacet>]
 
         static member Properties =
-            [define Entity.StaticImage (AssetTag.make<Image> Assets.DefaultPackageName "Image4")
+            [define Entity.StaticImage Assets.DefaultImage4
              define Entity.Color Color.White
              define Entity.Glow Color.Zero
              define Entity.InsetOpt None
@@ -1293,7 +1298,7 @@ module AnimatedSpriteDispatcherModule =
              define Entity.CelRun 4
              define Entity.CelCount 16
              define Entity.AnimationDelay 4L
-             define Entity.AnimationSheet (AssetTag.make<Image> Assets.DefaultPackageName "Image7")
+             define Entity.AnimationSheet Assets.DefaultImage7
              define Entity.Color Color.White
              define Entity.Glow Color.Zero
              define Entity.Flip FlipNone]
@@ -1470,9 +1475,9 @@ module ButtonDispatcherModule =
             [define Entity.Size (Vector2 (256.0f, 64.0f))
              define Entity.SwallowMouseLeft false
              define Entity.Down false
-             define Entity.UpImage (AssetTag.make<Image> Assets.DefaultPackageName "Image")
-             define Entity.DownImage (AssetTag.make<Image> Assets.DefaultPackageName "Image2")
-             define Entity.ClickSoundOpt (Some (AssetTag.make<Sound> Assets.DefaultPackageName "Sound"))
+             define Entity.UpImage Assets.DefaultImage
+             define Entity.DownImage Assets.DefaultImage2
+             define Entity.ClickSoundOpt (Some Assets.DefaultSound)
              define Entity.ClickSoundVolume Constants.Audio.DefaultSoundVolume]
 
         override this.Register (button, world) =
@@ -1521,7 +1526,7 @@ module LabelDispatcherModule =
         static member Properties =
             [define Entity.Size (Vector2 (256.0f, 64.0f))
              define Entity.SwallowMouseLeft false
-             define Entity.LabelImage (AssetTag.make<Image> Assets.DefaultPackageName "Image3")]
+             define Entity.LabelImage Assets.DefaultImage3]
 
         override this.Actualize (label, world) =
             if label.GetVisible world then
@@ -1675,9 +1680,9 @@ module ToggleDispatcherModule =
              define Entity.SwallowMouseLeft false
              define Entity.Open true
              define Entity.Pressed false
-             define Entity.OpenImage (AssetTag.make<Image> Assets.DefaultPackageName "Image")
-             define Entity.ClosedImage (AssetTag.make<Image> Assets.DefaultPackageName "Image2")
-             define Entity.ToggleSoundOpt (Some (AssetTag.make<Sound> Assets.DefaultPackageName "Sound"))
+             define Entity.OpenImage Assets.DefaultImage
+             define Entity.ClosedImage Assets.DefaultImage2
+             define Entity.ToggleSoundOpt (Some Assets.DefaultSound)
              define Entity.ToggleSoundVolume Constants.Audio.DefaultSoundVolume]
 
         override this.Register (toggle, world) =
@@ -1843,8 +1848,8 @@ module FillBarDispatcherModule =
              define Entity.SwallowMouseLeft false
              define Entity.Fill 0.0f
              define Entity.FillInset 0.0f
-             define Entity.FillImage (AssetTag.make<Image> Assets.DefaultPackageName "Image11")
-             define Entity.BorderImage (AssetTag.make<Image> Assets.DefaultPackageName "Image12")]
+             define Entity.FillImage Assets.DefaultImage11
+             define Entity.BorderImage Assets.DefaultImage12]
 
         override this.Actualize (fillBar, world) =
             if fillBar.GetVisible world then
@@ -1853,16 +1858,14 @@ module FillBarDispatcherModule =
                       Size = fillBar.GetSize world
                       Rotation = 0.0f
                       Depth = fillBar.GetDepth world + 0.5f
-                      Flags = fillBar.GetFlags world
-                      RefCount = 0 }
+                      Flags = fillBar.GetFlags world }
                 let (fillBarSpritePosition, fillBarSpriteSize) = getFillBarSpriteDims fillBar world
                 let fillBarSpriteTransform =
                     { Position = fillBarSpritePosition
                       Size = fillBarSpriteSize
                       Rotation = 0.0f
                       Depth = fillBar.GetDepth world
-                      Flags = fillBar.GetFlags world
-                      RefCount = 0 }
+                      Flags = fillBar.GetFlags world }
                 let fillBarColor = if fillBar.GetEnabled world then Color.White else fillBar.GetDisabledColor world
                 World.enqueueRenderMessage
                     (LayeredDescriptorsMessage
@@ -1911,7 +1914,7 @@ module BlockDispatcherModule =
         static member Properties =
             [define Entity.PublishChanges true
              define Entity.BodyType Static
-             define Entity.StaticImage (AssetTag.make<Image> Assets.DefaultPackageName "Image4")]
+             define Entity.StaticImage Assets.DefaultImage4]
 
 [<AutoOpen>]
 module BoxDispatcherModule =
@@ -1925,7 +1928,7 @@ module BoxDispatcherModule =
 
         static member Properties =
             [define Entity.PublishChanges true
-             define Entity.StaticImage (AssetTag.make<Image> Assets.DefaultPackageName "Image4")]
+             define Entity.StaticImage Assets.DefaultImage4]
 
 [<AutoOpen>]
 module CharacterDispatcherModule =
@@ -1967,9 +1970,9 @@ module CharacterDispatcherModule =
              define Entity.FixedRotation true
              define Entity.GravityScale 3.0f
              define Entity.BodyShape (BodyCapsule { Height = 0.5f; Radius = 0.25f; Center = v2Zero; PropertiesOpt = None })
-             define Entity.CharacterIdleImage (AssetTag.make Assets.DefaultPackageName "CharacterIdle")
-             define Entity.CharacterJumpImage (AssetTag.make Assets.DefaultPackageName "CharacterJump")
-             define Entity.CharacterWalkSheet (AssetTag.make Assets.DefaultPackageName "CharacterWalk")
+             define Entity.CharacterIdleImage Assets.DefaultCharacterIdleImage
+             define Entity.CharacterJumpImage Assets.DefaultCharacterJumpImage
+             define Entity.CharacterWalkSheet Assets.DefaultCharacterWalkImage
              define Entity.CharacterFacingLeft false]
 
         override this.Update (entity, world) =
@@ -2034,7 +2037,7 @@ module TileMapDispatcherModule =
              define Entity.Restitution 0.0f
              define Entity.CollisionCategories "1"
              define Entity.CollisionMask "@"
-             define Entity.TileMapAsset (AssetTag.make<TileMap> Assets.DefaultPackageName Assets.DefaultTileMapName)
+             define Entity.TileMapAsset Assets.DefaultTileMap
              define Entity.Parallax 0.0f]
 
 [<AutoOpen>]
@@ -2118,10 +2121,10 @@ module LayerDispatcherModule =
         abstract member Channel : Lens<'model, World> * Layer -> Channel<'message, 'command, Layer, World> list
         default this.Channel (_, _) = []
 
-        abstract member Message : 'model * 'message * Layer * World -> 'model * Signal<'message, 'command> list
+        abstract member Message : 'model * 'message * Layer * World -> Signal<'message, 'command> list * 'model
         default this.Message (model, _, _, _) = just model
 
-        abstract member Command : 'model * 'command * Layer * World -> World * Signal<'message, 'command> list
+        abstract member Command : 'model * 'command * Layer * World -> Signal<'message, 'command> list * World
         default this.Command (_, _, _, world) = just world
 
         abstract member Content : Lens<'model, World> * Layer -> EntityContent list
@@ -2211,10 +2214,10 @@ module ScreenDispatcherModule =
         abstract member Channel : Lens<'model, World> * Screen -> Channel<'message, 'command, Screen, World> list
         default this.Channel (_, _) = []
 
-        abstract member Message : 'model * 'message * Screen * World -> 'model * Signal<'message, 'command> list
+        abstract member Message : 'model * 'message * Screen * World -> Signal<'message, 'command> list * 'model
         default this.Message (model, _, _, _) = just model
 
-        abstract member Command : 'model * 'command * Screen * World -> World * Signal<'message, 'command> list
+        abstract member Command : 'model * 'command * Screen * World -> Signal<'message, 'command> list * World
         default this.Command (_, _, _, world) = just world
 
         abstract member Content : Lens<'model, World> * Screen -> LayerContent list

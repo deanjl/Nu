@@ -34,7 +34,10 @@ module Gaia =
     let private getPickableEntities world =
         let selectedLayer = (getEditorState world).SelectedLayer
         let (entities, world) = World.getEntitiesInView2 world
-        let entitiesInLayer = Enumerable.ToList (Enumerable.Where (entities, fun entity -> entity.Parent = selectedLayer))
+        let entitiesInLayer =
+            Enumerable.ToList
+                (Enumerable.Where
+                    (entities, fun entity -> entity.GetVisible world && entity.Parent = selectedLayer))
         (entitiesInLayer, world)
 
     let private getSnaps (form : GaiaForm) =
@@ -857,8 +860,7 @@ module Gaia =
                       Size = entity.GetQuickSize world
                       Rotation = entity.GetRotation world
                       Depth = getCreationDepth form
-                      Flags = entity.GetFlags world
-                      RefCount = 0 }
+                      Flags = entity.GetFlags world }
                 let world = entity.SetTransformSnapped positionSnap rotationSnap entityTransform world
                 selectEntity entity form world
                 world

@@ -29,6 +29,7 @@ module Simulants =
     let FieldPortalFade = FieldScene / "PortalFade"
     let FieldTileMap = FieldScene / "TileMap"
     let FieldAvatar = FieldScene / "Avatar"
+    let FieldSubmenu = Field / "Submenu"
     let FieldInteract = FieldScene / "Interact"
     let FieldDialog = FieldScene / "Dialog"
     let FieldShop = Field / "Shop"
@@ -44,6 +45,10 @@ module Simulants =
     let FieldShopConfirmOffer = Field / "ShopConfirmOffer"
     let FieldShopConfirmLine1 = Field / "ShopConfirmLine1"
     let FieldShopConfirmLine2 = Field / "ShopConfirmLine2"
+    let SubmenuLegion = Field / "Legion"
+    let SubmenuItem = Field / "Item"
+    let SubmenuClose = Field / "Close"
+    let SubmenuUse = Field / "Use"
 
     // battle
     let Battle = Screen "Battle"

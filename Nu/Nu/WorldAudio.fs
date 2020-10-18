@@ -23,13 +23,20 @@ module WorldAudio =
 
         /// Enqueue an audio message to the world.
         static member enqueueAudioMessage (message : AudioMessage) world =
-            World.updateAudioPlayer (fun audioPlayer -> AudioPlayer.enqueueMessage message audioPlayer; audioPlayer) world
+            AudioPlayer.enqueueMessage message world.Subsystems.AudioPlayer
+            world
 
         /// Enqueue multiple audio messages to the world.
         static member enqueueAudioMessages (messages : AudioMessage seq) world =
             let audioPlayer = World.getAudioPlayer world
             for message in messages do AudioPlayer.enqueueMessage message audioPlayer
             world
+
+        /// Send a message to the audio system to play a song.
+        [<FunctionBinding>]
+        static member getCurrentSongOpt world =
+            let audioPlayer = World.getAudioPlayer world
+            audioPlayer.CurrentSongOpt
 
         /// Send a message to the audio system to play a song.
         [<FunctionBinding>]

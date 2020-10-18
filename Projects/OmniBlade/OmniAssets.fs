@@ -12,12 +12,14 @@ module Assets =
     let DialogThinImage = asset<Image> GuiPackageName "DialogThin"
     let DialogMediumImage = asset<Image> GuiPackageName "DialogMedium"
     let DialogLargeImage = asset<Image> GuiPackageName "DialogLarge"
-    let DialogHugeImage = asset<Image> GuiPackageName "DialogHuge"
+    let DialogXLImage = asset<Image> GuiPackageName "DialogXL"
+    let DialogXXLImage = asset<Image> GuiPackageName "DialogXXL"
     let ButtonUpImage = asset<Image> GuiPackageName "ButtonUp"
     let ButtonDownImage = asset<Image> GuiPackageName "ButtonDown"
     let ButtonShortUpImage = asset<Image> GuiPackageName "ButtonShortUp"
     let ButtonShortDownImage = asset<Image> GuiPackageName "ButtonShortDown"
     let AffirmSound = asset<Sound> GuiPackageName "Affirm"
+    let MistakeSound = asset<Sound> GuiPackageName "Mistake"
     let TitleSong = { Volume = Constants.Audio.DefaultSongVolume; FadeOutMs = Constants.Audio.DefaultFadeOutMs; Song = asset<Song> GuiPackageName "Title" }
 
     // field assets
@@ -35,7 +37,9 @@ module Assets =
     let NpcAnimationSheet = asset<Image> FieldPackageName "Npcs"
     let ShopkeepAnimationSheet = asset<Image> FieldPackageName "Shopkeep"
     let FinnAnimationSheet = asset<Image> FieldPackageName "Finn"
+    let FinnMugImage = asset<Image> FieldPackageName "FinnMug"
     let GlennAnimationSheet = asset<Image> FieldPackageName "Glenn"
+    let GlennMugImage = asset<Image> FieldPackageName "GlennMug"
     let GoblinAnimationSheet = asset<Image> FieldPackageName "Goblin"
     let HitSound = asset<Sound> FieldPackageName "Hit"
     let ExplosionSound = asset<Sound> FieldPackageName "Explosion"
@@ -43,7 +47,6 @@ module Assets =
     let HealSound = asset<Sound> FieldPackageName "Heal"
     let DeathSound = asset<Sound> FieldPackageName "Death"
     let PurchaseSound = asset<Sound> FieldPackageName "Purchase"
-    let ErrorSound = asset<Sound> FieldPackageName "Error"
     let OpenDoorSound = asset<Sound> FieldPackageName "Unlatch"
     let OpenChestSound = asset<Sound> FieldPackageName "Unlatch2"
     let TriggerSound = asset<Sound> FieldPackageName "Unlatch3"
