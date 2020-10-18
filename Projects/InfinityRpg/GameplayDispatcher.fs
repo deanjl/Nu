@@ -377,8 +377,9 @@ module GameplayDispatcher =
                     | PlayerControlled -> withMsg (HandleMapChange playerInput) world
                     | _ -> just world
                 else just world
-            | SaveGame -> // TODO: fix save once again when the new map handling system is in place
-                let gameplayStr = scstring gameplay
+            | SaveGame ->
+                let gameplayWithoutMoves = { gameplay with Chessboard = { gameplay.Chessboard with CurrentMoves = Map.empty }}
+                let gameplayStr = scstring gameplayWithoutMoves
                 File.WriteAllText (Assets.SaveFilePath, gameplayStr)
                 just world
             | Tick ->
