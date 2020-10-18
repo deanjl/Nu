@@ -23,7 +23,7 @@ type [<StructuralEquality; NoComparison>] Character =
           CharacterActivityState = NoActivity
           CharacterAnimationState = CharacterAnimationState.initial
           CharacterAnimationSheet = Assets.PlayerImage
-          Position = Vector2.Zero }
+          Position = v2Zero }
 
     static member updateTurn newValue (character : Character) =
         { character with Turn = newValue }

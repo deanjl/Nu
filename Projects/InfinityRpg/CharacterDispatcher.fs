@@ -27,11 +27,11 @@ module CharacterDispatcherModule =
                 | CharacterAnimationSlain -> 1
             let animationOffsetM =
                 match animationState.AnimationType with
-                | CharacterAnimationFacing -> Vector2i (0, 0)
-                | CharacterAnimationActing -> Vector2i (0, 2)
-                | CharacterAnimationDefending -> Vector2i (4, 0)
-                | CharacterAnimationSpecial -> Vector2i (6, 0)
-                | CharacterAnimationSlain -> Vector2i (4, 2)
+                | CharacterAnimationFacing -> v2i 0 0
+                | CharacterAnimationActing -> v2i 0 2
+                | CharacterAnimationDefending -> v2i 4 0
+                | CharacterAnimationSpecial -> v2i 6 0
+                | CharacterAnimationSlain -> v2i 4 2
             let animationDelay =
                 match animationState.AnimationType with
                 | CharacterAnimationFacing -> Constants.InfinityRpg.CharacterAnimationFacingDelay
@@ -41,26 +41,21 @@ module CharacterDispatcherModule =
                 | CharacterAnimationSlain -> 1L // doesn't matter - no animation frames
             let directionCoordsOffset =
                 match animationState.Direction with
-                | Upward -> Vector2i (0, 0)
-                | Rightward -> Vector2i (animationFrames, 0)
-                | Downward -> Vector2i (0, 1)
-                | Leftward -> Vector2i (animationFrames, 1)
+                | Upward -> v2i 0 0
+                | Rightward -> v2i animationFrames 0
+                | Downward -> v2i 0 1
+                | Leftward -> v2i animationFrames 1
             let animatedXOffsetM =
-                Math.Abs (World.getTickTime world - animationState.StartTime) /
+                abs (World.getTickTime world - animationState.StartTime) /
                 animationDelay % int64 animationFrames |>
                 int
-            let animatedOffsetM = Vector2i (animatedXOffsetM, 0)
+            let animatedOffsetM = v2i animatedXOffsetM 0
             let spriteCoordsinates = animationOffsetM + directionCoordsOffset + animatedOffsetM
             let spriteOffset =
-                Vector2
-                    (Constants.Layout.TileSize.X * single spriteCoordsinates.X,
-                     Constants.Layout.TileSize.Y * single spriteCoordsinates.Y)
-            let spriteInset =
-                Vector4
-                    (spriteOffset.X,
-                     spriteOffset.Y,
-                     Constants.Layout.TileSize.X,
-                     Constants.Layout.TileSize.Y)
+                v2
+                    (Constants.Layout.TileSize.X * single spriteCoordsinates.X)
+                    (Constants.Layout.TileSize.Y * single spriteCoordsinates.Y)
+            let spriteInset = v4Bounds spriteOffset Constants.Layout.TileSize
             Some spriteInset
 
         static member Properties =
@@ -84,8 +79,3 @@ module CharacterDispatcherModule =
                          Glow = Color.Zero
                          Flip = FlipNone })]
             else []
-
-[<AutoOpen>]
-module EnemyDispatcherModule =
-    type EnemyDispatcher () =
-        inherit CharacterDispatcher ()

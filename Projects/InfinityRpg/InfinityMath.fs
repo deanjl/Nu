@@ -164,31 +164,6 @@ module Direction =
         let path = concretizePathOpt maxLength pathOpt rand
         path
 
-    // TODO: transform this into a proper unit test file
-    let printDiagnostics predicate stumbleLimit stumbleBounds biasOpt source destination rand =
-        let printPosition (tuple : (Vector2i * _)) =
-            let position = fst tuple
-            printfn "    %d, %d" position.X position.Y
-        printfn "the following are selective information printed from test invocations of key functions so that their output can be analyzed heuristically, in the context of normal game conditions."
-        printfn "stumbleCandidates :"
-        stumbleCandidates stumbleLimit biasOpt source rand |> Seq.iter printPosition
-        printfn "wander :"
-        wander stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source rand |> Seq.iter printPosition
-        printfn "wanderCandidates :"
-        let paths = wanderCandidates stumbleLimit stumbleBounds NoAdjacentTracking biasOpt 1000 source rand
-        printfn "  number of paths :"
-        printfn "    %d" (Seq.length paths)
-        printfn "  first ten path lengths :"
-        paths |> Seq.take 10 |> Seq.iter (fun x -> printfn "    %d" (Seq.length x))
-        printfn "wanderUntil :"
-        let path = wanderUntil predicate stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source rand
-        printfn "  path length :"
-        printfn "    %d" (Seq.length path)
-        printfn "  contains destination :"
-        printfn "    %b" (Seq.exists (fun (point, _) -> point = destination) path)
-        printfn "  returned object :"
-        printfn "    %O" path        
-    
     let wanderToDestination stumbleBounds source destination rand =
         let biasOpt = Some (destination, 6)
         let maxPathLength = stumbleBounds.CornerPositive.X * stumbleBounds.CornerPositive.Y / 2 + 1
@@ -240,14 +215,14 @@ module MathOperators =
         d |> dtovi |> vitovf
 
     let vftod v =
-        if v <> Vector2.Zero then
+        if v <> v2Zero then
             let atan2 = Math.Atan2 (float v.Y, float v.X)
             let angle = if atan2 < 0.0 then atan2 + Math.PI * 2.0 else atan2
             if angle < Math.PI * 0.75 && angle >= Math.PI * 0.25 then Upward
             elif angle < Math.PI * 0.25 || angle >= Math.PI * 1.75 then Rightward
             elif angle < Math.PI * 1.75 && angle >= Math.PI * 1.25 then Downward
             else Leftward
-        else failwith "Direction cannot be derived from Vector2.Zero."
+        else failwith "Direction cannot be derived from [0.0f 0.0f]."
 
     let vitod v =
         v |> vitovf |> vftod

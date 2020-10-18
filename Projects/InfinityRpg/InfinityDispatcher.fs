@@ -28,14 +28,12 @@ module InfinityDispatcher =
         inherit GameDispatcher<Infinity, unit, InfinityCommand> ({ Gameplay = Gameplay.initial })
 
         override this.Register (game, world) =
-
-            // just pre-load all assets in the application for simplicity
+            // NOTE: just pre-loading all assets in the application for simplicity...
+            // May have to make this more efficient later.
             let world = World.hintRenderPackageUse Assets.GuiPackageName world
             let world = World.hintAudioPackageUse Assets.GuiPackageName world
             let world = World.hintRenderPackageUse Assets.GameplayPackageName world
             let world = World.hintAudioPackageUse Assets.GameplayPackageName world
-
-            // get based
             base.Register (game, world)
 
         override this.Channel (_, _) =

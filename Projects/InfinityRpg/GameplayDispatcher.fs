@@ -44,18 +44,17 @@ module GameplayDispatcher =
 
         static let tryGetNavigationPath (_ : CharacterIndex) positionM gameplay =
             let fieldTiles = gameplay.Field.FieldMapNp.FieldTiles
-            let characterPositions = Map.toValueList gameplay.Chessboard.CharacterCoordinates |> List.map (fun positionM -> vmtovf positionM)
+            let characterPositions = gameplay.Chessboard.CharacterCoordinates |> Map.toValueList |> List.map (fun positionM -> vmtovf positionM)
             let currentPositionM = Gameplay.getCoordinates PlayerIndex gameplay
             let occupationMap = OccupationMap.makeFromFieldTilesAndAdjacentCharacters currentPositionM fieldTiles characterPositions
             let nodes = OccupationMap.makeNavigationNodes occupationMap
             let goalNode = Map.find positionM nodes
             let currentNode = Map.find currentPositionM nodes
             let navigationPathOpt =
-                AStar.FindPath (
-                    currentNode,
-                    goalNode,
-                    (fun n n2 -> if n2.PositionM.Y <> n.PositionM.Y then 2.0f else 1.0f), // prefer horizontal walk to vertical for predictability
-                    (fun _ -> 0.0f))
+                AStar.FindPath
+                    (currentNode, goalNode,
+                     (fun n n2 -> if n2.PositionM.Y <> n.PositionM.Y then 2.0f else 1.0f), // prefer horizontal walk to vertical for predictability
+                     (fun _ -> 0.0f))
             match navigationPathOpt with
             | null -> None
             | navigationPath -> Some (navigationPath |> List.ofSeq |> List.rev |> List.tail)
@@ -71,10 +70,10 @@ module GameplayDispatcher =
             let walkVector = dtovf walkDescriptor.WalkDirection
             let walkDestination = walkOrigin + walkVector
             match walkDescriptor.WalkDirection with
-            | Upward -> let (newY, arrival) = walk3 true position.Y walkDestination.Y in (Vector2 (position.X, newY), arrival)
-            | Rightward -> let (newX, arrival) = walk3 true position.X walkDestination.X in (Vector2 (newX, position.Y), arrival)
-            | Downward -> let (newY, arrival) = walk3 false position.Y walkDestination.Y in (Vector2 (position.X, newY), arrival)
-            | Leftward -> let (newX, arrival) = walk3 false position.X walkDestination.X in (Vector2 (newX, position.Y), arrival)
+            | Upward -> let (newY, arrival) = walk3 true position.Y walkDestination.Y in (v2 position.X newY, arrival)
+            | Rightward -> let (newX, arrival) = walk3 true position.X walkDestination.X in (v2 newX position.Y, arrival)
+            | Downward -> let (newY, arrival) = walk3 false position.Y walkDestination.Y in (v2 position.X newY, arrival)
+            | Leftward -> let (newX, arrival) = walk3 false position.X walkDestination.X in (v2 newX position.Y, arrival)
         
         override this.Channel (_, _) =
             [Simulants.Gameplay.SelectEvent => msg StartGameplay
@@ -189,9 +188,9 @@ module GameplayDispatcher =
                 withMsg (ProgressTurns indices) gameplay
             
             | RunCharacterActivation ->
-                let gameplay = // player's turn is converted to activity at the beginning of the round, activating the observable playback of his move
+                let gameplay = // NOTE: player's turn is converted to activity at the beginning of the round, activating the observable playback of his move
                     if gameplay.Player.TurnStatus = TurnPending then Gameplay.activateCharacter PlayerIndex gameplay else gameplay
-                let indices = // enemies are activated at the same time during player movement, or after player's action has finished playback
+                let indices = // NOTE: enemies are activated at the same time during player movement, or after player's action has finished playback
                     Gameplay.getEnemyIndices gameplay |> List.filter (fun x -> (Gameplay.getTurnStatus x gameplay) <> Idle)
                 let gameplay =
                     if (List.exists (fun x -> (Gameplay.getTurnStatus x gameplay) = TurnPending) indices) then
@@ -212,7 +211,12 @@ module GameplayDispatcher =
 
             | MakeEnemyMoves ->
                 let indices = Gameplay.getEnemyIndices gameplay
-                let attackerOpt = List.tryFind (fun x -> Math.arePositionMsAdjacent (Gameplay.getCoordinates x gameplay) (Gameplay.getCoordinates PlayerIndex gameplay)) indices
+                let attackerOpt =
+                    List.tryFind (fun x ->
+                        Math.arePositionMsAdjacent
+                            (Gameplay.getCoordinates x gameplay)
+                            (Gameplay.getCoordinates PlayerIndex gameplay))
+                        indices
                 let updater =
                     (fun index gameplay ->
                         let characterState = Gameplay.getCharacterState index gameplay
@@ -222,14 +226,14 @@ module GameplayDispatcher =
                                 if characterState.HitPoints > 0 then
                                     match attackerOpt with
                                     | Some attackerIndex ->
-                                        if index = attackerIndex then
-                                            Some (SingleRoundMove (Attack PlayerIndex))
+                                        if index = attackerIndex
+                                        then Some (SingleRoundMove (Attack PlayerIndex))
                                         else None
                                     | None ->
                                         let openDirections = Gameplay.getCoordinates index gameplay |> gameplay.Chessboard.OpenDirections
                                         let direction = Gen.random1 4 |> Direction.fromInt
-                                        if List.exists (fun x -> x = direction) openDirections then
-                                            Some (SingleRoundMove (Step direction))
+                                        if List.exists (fun x -> x = direction) openDirections
+                                        then Some (SingleRoundMove (Step direction))
                                         else None
                                 else None
                             | _ -> None
@@ -316,8 +320,8 @@ module GameplayDispatcher =
                             | Rightward -> currentCoordinates.X = Constants.Layout.FieldUnitSizeM.X - 1
                             | Downward -> currentCoordinates.Y = 0
                             | Leftward -> currentCoordinates.X = 0
-                        if targetOutside && gameplay.MapModeler.PossibleInDirection direction then
-                            TransitionMap direction
+                        if targetOutside && gameplay.MapModeler.PossibleInDirection direction
+                        then TransitionMap direction
                         else TryMakePlayerMove playerInput
                     | _ -> TryMakePlayerMove playerInput
                 withMsg msg gameplay
@@ -377,7 +381,7 @@ module GameplayDispatcher =
                             if eyeCornerNegative.Y < fieldCornerNegative.Y then fieldBoundsNegative.Y
                             elif eyeCornerPositive.Y > fieldCornerPositive.Y then fieldBoundsPositive.Y
                             else playerCenter.Y
-                        Vector2 (eyeCenterX, eyeCenterY)
+                        v2 eyeCenterX eyeCenterY
                     else playerCenter
                 let world = World.setEyeCenter eyeCenter world
                 just world

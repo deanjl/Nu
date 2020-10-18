@@ -7,12 +7,12 @@ module Constants =
     [<RequireQualifiedAccess>]
     module Layout =
 
-        let TileSizeI = Vector2i 64
+        let TileSizeI = v2iDup 64
         let TileSize = let t = TileSizeI in t.Vector2
-        let TileSheetSizeM = Vector2i 4
+        let TileSheetSizeM = v2iDup 4
         let TileSheetSizeI = Vector2i.Multiply (TileSheetSizeM, TileSizeI)
         let TileSheetSize = let t = TileSheetSizeI in t.Vector2
-        let FieldUnitSizeM = Vector2i 22
+        let FieldUnitSizeM = v2iDup 22
         let CharacterDepth = 1.0f
         let PickupDepth = 0.5f
         let CharacterWalkSpeed = 8.0f // original value is 4.0f

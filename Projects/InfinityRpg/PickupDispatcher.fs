@@ -18,15 +18,10 @@ module PickupDispatcher =
 
         static let getSpriteInsetOpt pickup =
             let spriteOffset =
-                Vector2
-                    (Constants.Layout.TileSize.X * single pickup.PickupSheetPositionM.X,
-                     Constants.Layout.TileSize.Y * single pickup.PickupSheetPositionM.Y)
-            let spriteInset =
-                Vector4
-                    (spriteOffset.X,
-                     spriteOffset.Y,
-                     Constants.Layout.TileSize.X,
-                     Constants.Layout.TileSize.Y)
+                v2
+                    (Constants.Layout.TileSize.X * single pickup.PickupSheetPositionM.X)
+                    (Constants.Layout.TileSize.Y * single pickup.PickupSheetPositionM.Y)
+            let spriteInset = v4Bounds spriteOffset Constants.Layout.TileSize
             Some spriteInset
         
         static member Properties =

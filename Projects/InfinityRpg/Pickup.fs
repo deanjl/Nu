@@ -17,8 +17,8 @@ type [<StructuralEquality; NoComparison>] Pickup =
     static member initial =
         { PickupType = Health
           PickupSheet = Assets.PickupSheetImage
-          PickupSheetPositionM = Vector2i.Zero
-          Position = Vector2.Zero }
+          PickupSheetPositionM = v2iZero
+          Position = v2Zero }
 
     static member makeHealth positionM =
         { Pickup.initial with Position = vmtovf positionM }

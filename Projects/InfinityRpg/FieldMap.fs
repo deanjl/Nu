@@ -22,14 +22,17 @@ type FieldMapUnit =
         let sysrandom = System.Random ()
         let randSeed = uint64 (sysrandom.Next ())
         let randResult = Gen.random1 (Constants.Layout.FieldUnitSizeM.X - 4) // assumes X and Y are equal
-        let pathEnd = if randResult % 2 = 0 then Vector2i (randResult + 2, Constants.Layout.FieldUnitSizeM.Y - 2) else Vector2i (Constants.Layout.FieldUnitSizeM.X - 2, randResult + 2)
+        let pathEnd =
+            if randResult % 2 = 0
+            then v2i (randResult + 2) (Constants.Layout.FieldUnitSizeM.Y - 2)
+            else v2i (Constants.Layout.FieldUnitSizeM.X - 2) (randResult + 2)
         let (offsetCount, pathStart) =
             match fieldMapUnitOpt with
             | Some fieldMapUnit ->
                 match fieldMapUnit.IsHorizontal with
-                | true -> (fieldMapUnit.OffsetCount + Vector2i.Right, Vector2i (1, fieldMapUnit.PathEnd.Y))
-                | false -> (fieldMapUnit.OffsetCount + Vector2i.Up, Vector2i (fieldMapUnit.PathEnd.X, 1))
-            | None -> (Vector2i.Zero, Vector2i.One)
+                | true -> (fieldMapUnit.OffsetCount + Vector2i.Right, v2i 1 fieldMapUnit.PathEnd.Y)
+                | false -> (fieldMapUnit.OffsetCount + Vector2i.Up, v2i fieldMapUnit.PathEnd.X 1)
+            | None -> (v2iZero, v2iOne)
         { RandSeed = randSeed
           OffsetCount = offsetCount
           IsHorizontal = pathEnd.X > pathEnd.Y
@@ -44,23 +47,23 @@ type [<StructuralEquality; NoComparison>] FieldMap =
 [<RequireQualifiedAccess>]
 module FieldMap =
 
-    let PathTile = { TileSheetPositionM = Vector2i (3, 0); TileType = Passable }
-    let GrassTile = { TileSheetPositionM = Vector2i (3, 3); TileType = Passable }
-    let TreeTile = { TileSheetPositionM = Vector2i (1, 1); TileType = Impassable }
-    let StoneTile = { TileSheetPositionM = Vector2i (2, 3); TileType = Impassable }
-    let WaterTile = { TileSheetPositionM = Vector2i (0, 1); TileType = Impassable }
+    let PathTile = { TileSheetPositionM = v2i 3 0; TileType = Passable }
+    let GrassTile = { TileSheetPositionM = v2i 3 3; TileType = Passable }
+    let TreeTile = { TileSheetPositionM = v2i 1 1; TileType = Impassable }
+    let StoneTile = { TileSheetPositionM = v2i 2 3; TileType = Impassable }
+    let WaterTile = { TileSheetPositionM = v2i 0 1; TileType = Impassable }
 
     let makeGrid boundsM =
         seq {
             for i in boundsM.CornerNegative.X .. boundsM.CornerPositive.X do
                 for j in boundsM.CornerNegative.Y .. boundsM.CornerPositive.Y do
-                    yield Vector2i (i, j) }
+                    yield v2i i j }
 
     let generateEmptyMap (offsetM : Vector2i) (sizeM : Vector2i) =
         Map.ofList
             [for i in offsetM.X .. offsetM.X + sizeM.X - 1 do
                 for j in offsetM.Y .. offsetM.Y + sizeM.Y - 1 do
-                    let tileCoordsM = Vector2i (i, j)
+                    let tileCoordsM = v2i i j
                     yield (tileCoordsM, GrassTile)]
 
     let addPaths buildBoundsM pathEdgesM generatedMap rand =
@@ -221,7 +224,7 @@ module FieldMap =
             grid
     
     let make tileSheet (offsetM : Vector2i) sizeM pathEdgesM rand =
-        let buildBoundsM = { CornerNegative = offsetM + Vector2i.One; CornerPositive = offsetM + sizeM - Vector2i.One * 2 }
+        let buildBoundsM = { CornerNegative = offsetM + v2iOne; CornerPositive = offsetM + sizeM - v2iOne * 2 }
         let generatedMap = generateEmptyMap offsetM sizeM
         let (generatedMap, rand) = addPaths buildBoundsM pathEdgesM generatedMap rand
         let (generatedMap, rand) = addTrees buildBoundsM generatedMap rand

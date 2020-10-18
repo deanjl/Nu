@@ -27,8 +27,8 @@ type MapModeler =
         Map.containsKey (this.OffsetInDirection direction) this.FieldMapUnits
     
     member this.NextOffset =
-        if this.Current.IsHorizontal then
-            this.OffsetInDirection Rightward
+        if this.Current.IsHorizontal
+        then this.OffsetInDirection Rightward
         else this.OffsetInDirection Upward
     
     member this.NextOffsetInDirection direction =
@@ -41,15 +41,15 @@ type MapModeler =
         { this with CurrentFieldOffset = this.OffsetInDirection direction }
     
     member this.MakeFieldMapUnit =
-        FieldMapUnit.make (Some this.Current) |> this.AddFieldMapUnit
+        this.AddFieldMapUnit (FieldMapUnit.make (Some this.Current))
     
     member this.Transition direction =
-        if this.ExistsInDirection direction then
-            this.MoveCurrent direction
+        if this.ExistsInDirection direction
+        then this.MoveCurrent direction
         else this.MakeFieldMapUnit
     
     static member make =
-        FieldMapUnit.make None |> MapModeler.empty.AddFieldMapUnit
+        MapModeler.empty.AddFieldMapUnit (FieldMapUnit.make None)
 
 type SingleRoundMove =
     | Step of Direction

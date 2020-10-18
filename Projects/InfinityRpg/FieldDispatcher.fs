@@ -9,7 +9,6 @@ open InfinityRpg
 module FieldDispatcher =
 
     type Entity with
-    
         member this.GetField = this.GetModel<Field>
         member this.SetField = this.SetModel<Field>
         member this.Field = this.Model<Field> ()
@@ -19,22 +18,17 @@ module FieldDispatcher =
 
         static let getTileInsetOpt (tileSheetPositionM : Vector2i) =
             let tileOffset = vmtovf tileSheetPositionM
-            let tileInset =
-                Vector4
-                    (tileOffset.X,
-                     tileOffset.Y,
-                     Constants.Layout.TileSize.X,
-                     Constants.Layout.TileSize.Y)
+            let tileInset = v4Bounds tileOffset Constants.Layout.TileSize
             Some tileInset
 
         static let viewBoundsToMapUnits (viewBounds : Vector4) =
             let right = int viewBounds.X + int viewBounds.Z
             let top = int viewBounds.Y + int viewBounds.W
-            Vector4i
-                (itom (int viewBounds.X),
-                 itom (int viewBounds.Y),
-                 (if Math.isSnapped right then (itom right) - 1 else itom right),
-                 (if Math.isSnapped top then (itom top) - 1 else itom top))
+            v4i
+                (itom (int viewBounds.X))
+                (itom (int viewBounds.Y))
+                (if Math.isSnapped right then (itom right) - 1 else itom right)
+                (if Math.isSnapped top then (itom top) - 1 else itom top)
 
         static let tilePositionInView (tilePositionM : Vector2i) (mInViewBounds : Vector4i) =
             tilePositionM.X >= mInViewBounds.X &&
@@ -49,17 +43,14 @@ module FieldDispatcher =
             [Entity.Size <== field --> fun field -> vmtovf field.FieldMapNp.FieldSizeM]
         
         override this.View (field, entity, world) =
-
             let fieldTransform = entity.GetTransform world
             let tileTransform = { fieldTransform with Size = Constants.Layout.TileSize }
             let absolute = entity.GetAbsolute world
-
             let bounds =
                 v4BoundsOverflow
                     fieldTransform.Position
                     (Vector2.Multiply (Constants.Layout.TileSize, Constants.Layout.TileSheetSize))
                     (entity.GetOverflow world)
-
             if World.isBoundsInView absolute bounds world then
                 let fieldMap = field.FieldMapNp
                 let image = fieldMap.FieldTileSheet
@@ -74,7 +65,7 @@ module FieldDispatcher =
                                 let tileTransform = { tileTransform with Position = tilePosition }
                                 let sprite =
                                     { Transform = tileTransform
-                                      Offset = Vector2.Zero
+                                      Offset = v2Zero
                                       InsetOpt = tileInsetOpt
                                       Image = image
                                       Color = Color.White
@@ -84,7 +75,6 @@ module FieldDispatcher =
                             else sprites)
                         tiles [] |>
                     Array.ofList
-
                 [Render (fieldTransform.Depth, fieldTransform.Position.Y, AssetTag.generalize image, SpritesDescriptor sprites)]
             else []
 
