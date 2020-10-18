@@ -333,7 +333,7 @@ module GameplayDispatcherModule =
                 let model = GameplayModel.transitionMap direction model
                 let fieldMap = model.MapModeler.GetCurrent.ToFieldMap
                 let model = GameplayModel.setFieldMap fieldMap model
-                let model = GameplayModel.makeEnemies 3 model
+                let model = GameplayModel.makeEnemies 1 model
                 just model
 
             | HandleMapChange playerInput ->
@@ -363,7 +363,7 @@ module GameplayDispatcherModule =
                     let fieldMap = model.MapModeler.GetCurrent.ToFieldMap
                     let model = GameplayModel.setFieldMap fieldMap model
                     let model = GameplayModel.makePlayer model
-                    let model = GameplayModel.makeEnemies 4 model
+                    let model = GameplayModel.makeEnemies 1 model
                     just model
 
         override this.Command (model, command, _, world) =

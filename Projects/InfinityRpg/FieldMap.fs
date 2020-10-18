@@ -62,9 +62,18 @@ module FieldMap =
 
     let addTrees buildBoundsM generatedMap rand =
         let grid = makeGrid buildBoundsM
+        let pathTileCount = Map.filter (fun _ v -> v = PathTile) generatedMap |> Map.count
+        let treeDilution =
+            if pathTileCount < 25 then 32
+            elif pathTileCount < 50 then 16
+            elif pathTileCount < 60 then 8
+            elif pathTileCount < 70 then 4
+            elif pathTileCount < 80 then 3
+            elif pathTileCount < 90 then 2
+            else 1
         Seq.fold
             (fun (generatedMap, rand) positionM ->
-                let (n, rand) = Rand.nextIntUnder 16 rand
+                let (n, rand) = Rand.nextIntUnder treeDilution rand // original value is 16
                 if n = 0 && Map.find positionM generatedMap <> PathTile
                 then (Map.add positionM TreeTile generatedMap, rand)
                 else (generatedMap, Rand.advance rand))
