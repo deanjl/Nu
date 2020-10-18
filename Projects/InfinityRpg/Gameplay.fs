@@ -402,7 +402,7 @@ type [<StructuralEquality; NoComparison>] Gameplay =
                 Gameplay.applyStep index direction gameplay
     
     static member activateCharacter index gameplay =
-        let activity = Gameplay.getTurn index gameplay |> Turn.toCharacterActivityState
+        let activity = CharacterActivityState.makeFromTurn (Gameplay.getTurn index gameplay)
         let gameplay = Gameplay.updateCharacterActivityState index activity gameplay
         Gameplay.updateTurnStatus PlayerIndex TurnBeginning gameplay
     

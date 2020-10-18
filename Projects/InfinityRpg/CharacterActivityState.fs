@@ -79,6 +79,31 @@ type [<StructuralEquality; NoComparison>] ActionDescriptor =
     static member computeActionDirection currentPosition targetPositionM =
         targetPositionM - vftovm currentPosition |> vmtod
 
+type TurnStatus =
+    | TurnPending
+    | TurnBeginning
+    | TurnProgressing
+    | TurnFinishing
+    | Idle
+
+type [<StructuralEquality; NoComparison>] Turn =
+    | ActionTurn of ActionDescriptor
+    | NavigationTurn of NavigationDescriptor
+    | CancelTurn
+    | NoTurn
+
+    member this.IsAction =
+        match this with ActionTurn _ -> true | _ -> false
+    
+    static member makeAttack index =
+        ActionTurn
+            { ActionTicks = 0L
+              ActionTargetIndexOpt = Some index
+              ActionDataName = Constants.InfinityRpg.AttackName }
+
+    static member makeNavigation pathOpt origin direction =
+        NavigationTurn (NavigationDescriptor.make pathOpt origin direction)
+
 type [<StructuralEquality; NoComparison>] CharacterActivityState =
     | Action of ActionDescriptor
     | Navigation of NavigationDescriptor
@@ -105,38 +130,9 @@ type [<StructuralEquality; NoComparison>] CharacterActivityState =
         | Navigation navigationDescriptor -> Option.isSome navigationDescriptor.NavigationPathOpt
         | Action _ | NoActivity -> false
 
-type [<StructuralEquality; NoComparison>] Turn =
-    | ActionTurn of ActionDescriptor
-    | NavigationTurn of NavigationDescriptor
-    | CancelTurn
-    | NoTurn
-
-    member this.IsAction =
-        match this with
-        | ActionTurn _ -> true
-        | _ -> false
-
-    static member isAction (turn : Turn) = turn.IsAction
-    
-    static member makeAttack index =
-        ActionTurn
-            { ActionTicks = 0L
-              ActionTargetIndexOpt = Some index
-              ActionDataName = Constants.InfinityRpg.AttackName }
-
-    static member makeNavigation pathOpt origin direction =
-        NavigationTurn (NavigationDescriptor.make pathOpt origin direction)
-
-    static member toCharacterActivityState turn = // static for mapping
+    static member makeFromTurn turn =
         match turn with
         | ActionTurn actionDescriptor -> Action actionDescriptor
         | NavigationTurn navigationDescriptor -> Navigation navigationDescriptor
         | CancelTurn -> NoActivity
         | NoTurn -> NoActivity
-
-type TurnStatus =
-    | TurnPending
-    | TurnBeginning
-    | TurnProgressing
-    | TurnFinishing
-    | Idle

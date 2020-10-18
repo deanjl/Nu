@@ -27,7 +27,6 @@ module GameplayDispatcher =
         | StartGameplay
     
     type [<NoEquality; NoComparison>] GameplayCommand =
-        | ToggleHaltButton // TODO: reimplement once game is properly elmified
         | HandlePlayerInput of PlayerInput
         | SaveGame
         | Tick
@@ -80,8 +79,7 @@ module GameplayDispatcher =
             | Leftward -> let (newX, arrival) = walk3 false position.X walkDestination.X in (Vector2 (newX, position.Y), arrival)
         
         override this.Channel (_, _) =
-            [//Simulants.Player.CharacterActivityState.ChangeEvent => cmd ToggleHaltButton
-             Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSelected Simulants.HudFeeler =|> fun evt -> cmd (HandlePlayerInput (TouchInput evt.Data))
+            [Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSelected Simulants.HudFeeler =|> fun evt -> cmd (HandlePlayerInput (TouchInput evt.Data))
              Stream.make Simulants.HudDetailUp.DownEvent |> Stream.isSelected Simulants.HudDetailUp => cmd (HandlePlayerInput (DetailInput Upward))
              Stream.make Simulants.HudDetailRight.DownEvent |> Stream.isSelected Simulants.HudDetailRight => cmd (HandlePlayerInput (DetailInput Rightward))
              Stream.make Simulants.HudDetailDown.DownEvent |> Stream.isSelected Simulants.HudDetailDown => cmd (HandlePlayerInput (DetailInput Downward))
@@ -226,7 +224,7 @@ module GameplayDispatcher =
                         | Action _ -> gameplay
                         | Navigation _ 
                         | NoActivity -> // TODO: find out why using activateCharacter here triggered "turn status is TurnBeginning..." exception
-                            let enemyActivities = Gameplay.getEnemyTurns gameplay |> List.map Turn.toCharacterActivityState
+                            let enemyActivities = Gameplay.getEnemyTurns gameplay |> List.map CharacterActivityState.makeFromTurn
                             let gameplay = Gameplay.forEachIndex (fun index gameplay -> Gameplay.updateTurnStatus index TurnBeginning gameplay) indices gameplay
                             Gameplay.updateEnemyActivityStates enemyActivities gameplay
                     else gameplay
@@ -366,9 +364,6 @@ module GameplayDispatcher =
 
         override this.Command (gameplay, command, _, world) =
             match command with
-            | ToggleHaltButton ->
-                let world = Simulants.HudHalt.SetEnabled (gameplay.Player.CharacterActivityState.IsNavigatingPath) world
-                just world
             | HandlePlayerInput playerInput ->
                 if not (Gameplay.anyTurnsInProgress gameplay) then
                     let world = Simulants.HudSaveGame.SetEnabled false world
