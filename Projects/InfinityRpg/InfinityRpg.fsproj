@@ -80,12 +80,13 @@
     <Compile Include="MetaMap.fs" />
     <Compile Include="FieldMap.fs" />
     <Compile Include="OccupationMap.fs" />
+    <Compile Include="Pickup.fs" />
+    <Compile Include="Field.fs" />
+    <Compile Include="Character.fs" />
+    <Compile Include="Gameplay.fs" />
     <Compile Include="PickupDispatcher.fs" />
     <Compile Include="FieldDispatcher.fs" />
     <Compile Include="CharacterDispatcher.fs" />
-    <Compile Include="EnemyDispatcher.fs" />
-    <Compile Include="PlayerDispatcher.fs" />
-    <Compile Include="Gameplay.fs" />
     <Compile Include="GameplayDispatcher.fs" />
     <Compile Include="InfinityDispatcher.fs" />
     <Compile Include="InfinityPlugin.fs" />

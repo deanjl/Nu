@@ -42,7 +42,7 @@ module GameplayDispatcher =
     type GameplayDispatcher () =
         inherit ScreenDispatcher<Gameplay, GameplayMessage, GameplayCommand> (Gameplay.initial)
 
-        static let tryGetNavigationPath index positionM gameplay =
+        static let tryGetNavigationPath (_ : CharacterIndex) positionM gameplay =
             let fieldTiles = gameplay.Field.FieldMapNp.FieldTiles
             let characterPositions = Map.toValueList gameplay.Chessboard.CharacterCoordinates |> List.map (fun positionM -> vmtovf positionM)
             let currentPositionM = Gameplay.getCoordinates PlayerIndex gameplay
@@ -96,6 +96,7 @@ module GameplayDispatcher =
                                 if List.exists (fun x -> x = targetPositionM) gameplay.Chessboard.AvailableCoordinates
                                 then Some (MultiRoundMove navigationPath)
                                 else None
+                            | [] -> failwithumf ()
                         | _ -> None
                     | _ -> None
                 let gameplay =
@@ -400,9 +401,9 @@ module GameplayDispatcher =
                      Content.entitiesIndexedBy gameplay
                         (fun gameplay -> gameplay.Enemies) constant
                         (fun character -> match character.Index with EnemyIndex i -> i | _ -> failwithumf ())
-                        (fun index character _ -> Content.entity<EnemyDispatcher> ("Enemy+" + scstring index) [Entity.Character <== character])
+                        (fun index character _ -> Content.entity<CharacterDispatcher> ("Enemy+" + scstring index) [Entity.Character <== character])
 
-                     Content.entity<PlayerDispatcher> Simulants.Player.Name
+                     Content.entity<CharacterDispatcher> Simulants.Player.Name
                        [Entity.Character <== gameplay --> fun gameplay -> gameplay.Player]])
 
              // hud layer

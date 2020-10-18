@@ -8,24 +8,6 @@ open InfinityRpg
 [<AutoOpen>]
 module PickupDispatcher =
 
-    type PickupType =
-        | Health
-
-    type [<StructuralEquality; NoComparison>] Pickup =
-        { PickupType : PickupType
-          PickupSheet : Image AssetTag
-          PickupSheetPositionM : Vector2i
-          Position : Vector2 }
-
-        static member initial =
-            { PickupType = Health
-              PickupSheet = Assets.PickupSheetImage
-              PickupSheetPositionM = Vector2i.Zero
-              Position = Vector2.Zero }
-
-        static member makeHealth positionM =
-            { Pickup.initial with Position = vmtovf positionM }
-
     type Entity with
         member this.GetPickup = this.GetModel<Pickup>
         member this.SetPickup = this.SetModel<Pickup>

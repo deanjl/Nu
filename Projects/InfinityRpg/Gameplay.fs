@@ -55,7 +55,7 @@ type SingleRoundMove =
     | Step of Direction
     | Attack of CharacterIndex
 
-type Move =
+type [<NoComparison>] Move =
     | SingleRoundMove of SingleRoundMove
     | MultiRoundMove of NavigationNode list
 
@@ -69,7 +69,7 @@ type Move =
             let direction = Math.directionToTarget positionM path.Head.PositionM
             Turn.makeNavigation (Some path) positionM direction
 
-type Chessboard =
+type [<NoComparison>] Chessboard =
     { PassableCoordinates : Map<Vector2i, PickupType Option>
       CharacterCoordinates : Map<CharacterIndex, Vector2i>
       CurrentMoves : Map<CharacterIndex, Move> }
@@ -395,6 +395,7 @@ type [<StructuralEquality; NoComparison>] Gameplay =
                 let currentCoordinates = Gameplay.getCoordinates index gameplay
                 let direction = Math.directionToTarget currentCoordinates head.PositionM
                 Gameplay.applyStep index direction gameplay
+            | [] -> failwithumf ()
     
     static member activateCharacter index gameplay =
         let activity = CharacterActivityState.makeFromTurn (Gameplay.getTurn index gameplay)

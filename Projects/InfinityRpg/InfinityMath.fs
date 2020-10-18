@@ -165,7 +165,7 @@ module Direction =
         path
 
     // TODO: transform this into a proper unit test file
-    let printDiagnostics predicate stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source destination rand =
+    let printDiagnostics predicate stumbleLimit stumbleBounds biasOpt source destination rand =
         let printPosition (tuple : (Vector2i * _)) =
             let position = fst tuple
             printfn "    %d, %d" position.X position.Y
