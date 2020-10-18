@@ -14,5 +14,4 @@ module Assets =
     let ButterflyGirlSong = { Volume = Constants.Audio.DefaultSongVolume; FadeOutMs = Constants.Audio.DefaultFadeOutMs; Song = asset<Song> GuiPackageName "ButterflyGirl" }
     let TitleLayerFilePath = "Assets/Gui/Title.nulyr"
     let CreditsLayerFilePath = "Assets/Gui/Credits.nulyr"
-    let HudLayerFilePath = "Assets/Gui/Hud.nulyr"
     let SaveFilePath = "InfinityRpg.sav"

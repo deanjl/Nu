@@ -79,15 +79,9 @@ module GameplayDispatcher =
             | Leftward -> let (newX, arrival) = walk3 false position.X walkDestination.X in (Vector2 (newX, position.Y), arrival)
         
         override this.Channel (_, _) =
-            [Stream.make Simulants.HudFeeler.TouchEvent |> Stream.isSelected Simulants.HudFeeler =|> fun evt -> cmd (HandlePlayerInput (TouchInput evt.Data))
-             Stream.make Simulants.HudDetailUp.DownEvent |> Stream.isSelected Simulants.HudDetailUp => cmd (HandlePlayerInput (DetailInput Upward))
-             Stream.make Simulants.HudDetailRight.DownEvent |> Stream.isSelected Simulants.HudDetailRight => cmd (HandlePlayerInput (DetailInput Rightward))
-             Stream.make Simulants.HudDetailDown.DownEvent |> Stream.isSelected Simulants.HudDetailDown => cmd (HandlePlayerInput (DetailInput Downward))
-             Stream.make Simulants.HudDetailLeft.DownEvent |> Stream.isSelected Simulants.HudDetailLeft => cmd (HandlePlayerInput (DetailInput Leftward))
-             Simulants.Gameplay.SelectEvent => msg StartGameplay
+            [Simulants.Gameplay.SelectEvent => msg StartGameplay
              Simulants.Gameplay.UpdateEvent => cmd Tick
-             Simulants.Gameplay.PostUpdateEvent => cmd PostTick
-             Simulants.HudSaveGame.ClickEvent => cmd SaveGame]
+             Simulants.Gameplay.PostUpdateEvent => cmd PostTick]
 
         override this.Message (gameplay, message, _, world) =
             match message with
@@ -316,7 +310,6 @@ module GameplayDispatcher =
                 | _ -> just gameplay
 
             | TransitionMap direction ->
-
                 let currentCoordinates = Gameplay.getCoordinates PlayerIndex gameplay
                 let newCoordinates =
                     match direction with
@@ -333,7 +326,6 @@ module GameplayDispatcher =
                 just gameplay
 
             | HandleMapChange playerInput ->
-                
                 let msg =
                     match playerInput with
                     | DetailInput direction ->
@@ -366,7 +358,6 @@ module GameplayDispatcher =
             match command with
             | HandlePlayerInput playerInput ->
                 if not (Gameplay.anyTurnsInProgress gameplay) then
-                    let world = Simulants.HudSaveGame.SetEnabled false world
                     match gameplay.Player.CharacterState.ControlType with
                     | PlayerControlled -> withMsg (HandleMapChange playerInput) world
                     | _ -> just world
@@ -382,7 +373,6 @@ module GameplayDispatcher =
                 elif KeyboardState.isKeyDown KeyboardKey.Right then withCmd (HandlePlayerInput (DetailInput Rightward)) world
                 elif KeyboardState.isKeyDown KeyboardKey.Down then withCmd (HandlePlayerInput (DetailInput Downward)) world
                 elif KeyboardState.isKeyDown KeyboardKey.Left then withCmd (HandlePlayerInput (DetailInput Leftward)) world
-                elif not (Simulants.HudSaveGame.GetEnabled world) then just (Simulants.HudSaveGame.SetEnabled true world)
                 else just world
             | PostTick -> // Note: it appears a slight camera offset has been introduced with this code migration
                 let eyeCenter = Simulants.Player.GetPosition world + Simulants.Player.GetSize world * 0.5f
@@ -410,21 +400,55 @@ module GameplayDispatcher =
             | Nop -> just world
 
         override this.Content (gameplay, screen) =
-        
+
+            // gameplay layer
             [Content.layerIfScreenSelected screen (fun _ _ ->
                 Content.layer Simulants.Scene.Name []
 
                     [Content.entity<FieldDispatcher> Simulants.Field.Name
                        [Entity.Field <== gameplay --> fun gameplay -> gameplay.Field]
-                                        
+
                      Content.entities gameplay
                         (fun gameplay -> gameplay.Pickups) constant
                         (fun index pickup _ -> Content.entity<PickupDispatcher> ("Pickup+" + scstring index) [Entity.Pickup <== pickup])
-                     
+
                      Content.entitiesIndexedBy gameplay
                         (fun gameplay -> gameplay.Enemies) constant
                         (fun character -> match character.Index with EnemyIndex i -> i | _ -> failwithumf ())
                         (fun index character _ -> Content.entity<EnemyDispatcher> ("Enemy+" + scstring index) [Entity.Character <== character])
 
                      Content.entity<PlayerDispatcher> Simulants.Player.Name
-                       [Entity.Character <== gameplay --> fun gameplay -> gameplay.Player]])]
+                       [Entity.Character <== gameplay --> fun gameplay -> gameplay.Player]])
+
+             // hud layer
+             Content.layer Simulants.Hud.Name []
+
+                [Content.button Simulants.HudSaveGame.Name
+                    [Entity.Position == v2 88.0f -184.0f
+                     Entity.Size == v2 384.0f 64.0f
+                     Entity.Depth == 10.0f
+                     Entity.UpImage == asset "Gui" "SaveGameUp"
+                     Entity.DownImage == asset "Gui" "SaveGameDown"
+                     Entity.Enabled <== gameplay --> fun gameplay -> not (Gameplay.anyTurnsInProgress gameplay)
+                     Entity.ClickEvent ==> cmd SaveGame]
+
+                 Content.button Simulants.HudHalt.Name
+                    [Entity.Position == v2 88.0f -112.0f
+                     Entity.Size == v2 384.0f 64.0f
+                     Entity.Depth == 10.0f
+                     Entity.UpImage == asset "Gui" "HaltUp"
+                     Entity.DownImage == asset "Gui" "HaltDown"
+                     Entity.Enabled <== gameplay --> fun gameplay -> match gameplay.Player.Turn with NavigationTurn _ -> true | _ -> false]
+
+                 Content.button Simulants.HudBack.Name
+                    [Entity.Position == v2 88.0f -256.0f
+                     Entity.Size == v2 384.0f 64.0f
+                     Entity.Depth == 10.0f
+                     Entity.UpImage == asset "Gui" "BackUp"
+                     Entity.DownImage == asset "Gui" "BackDown"]
+
+                 Content.feeler Simulants.HudFeeler.Name
+                    [Entity.Position == v2 -480.0f -272.0f
+                     Entity.Size == v2 960.0f 544.0f
+                     Entity.Depth == 9.0f
+                     Entity.TouchEvent ==|> fun evt -> cmd (HandlePlayerInput (TouchInput evt.Data))]]]
