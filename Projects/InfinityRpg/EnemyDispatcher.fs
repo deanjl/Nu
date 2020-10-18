@@ -7,6 +7,5 @@ open InfinityRpg
 
 [<AutoOpen>]
 module EnemyDispatcherModule =
-
     type EnemyDispatcher () =
         inherit CharacterDispatcher ()

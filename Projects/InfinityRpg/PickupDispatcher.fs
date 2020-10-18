@@ -6,12 +6,12 @@ open Nu.Declarative
 open InfinityRpg
 
 [<AutoOpen>]
-module PickupDispatcherModule =
+module PickupDispatcher =
 
     type PickupType =
         | Health
-    
-    type [<StructuralEquality; NoComparison>] PickupModel =
+
+    type [<StructuralEquality; NoComparison>] Pickup =
         { PickupType : PickupType
           PickupSheet : Image AssetTag
           PickupSheetPositionM : Vector2i
@@ -24,21 +24,21 @@ module PickupDispatcherModule =
               Position = Vector2.Zero }
 
         static member makeHealth positionM =
-            { PickupModel.initial with Position = vmtovf positionM }
+            { Pickup.initial with Position = vmtovf positionM }
 
     type Entity with
-        member this.GetPickupModel = this.GetModel<PickupModel>
-        member this.SetPickupModel = this.SetModel<PickupModel>
-        member this.PickupModel = this.Model<PickupModel> ()
+        member this.GetPickup = this.GetModel<Pickup>
+        member this.SetPickup = this.SetModel<Pickup>
+        member this.Pickup = this.Model<Pickup> ()
 
     type PickupDispatcher () =
-        inherit EntityDispatcher<PickupModel, unit, unit> (PickupModel.initial)
+        inherit EntityDispatcher<Pickup, unit, unit> (Pickup.initial)
 
-        static let getSpriteInsetOpt model =
+        static let getSpriteInsetOpt pickup =
             let spriteOffset =
                 Vector2
-                    (Constants.Layout.TileSize.X * single model.PickupSheetPositionM.X,
-                     Constants.Layout.TileSize.Y * single model.PickupSheetPositionM.Y)
+                    (Constants.Layout.TileSize.X * single pickup.PickupSheetPositionM.X,
+                     Constants.Layout.TileSize.Y * single pickup.PickupSheetPositionM.Y)
             let spriteInset =
                 Vector4
                     (spriteOffset.X,
@@ -52,18 +52,18 @@ module PickupDispatcherModule =
              define Entity.PublishChanges true
              define Entity.Omnipresent true]
         
-        override this.Initializers (model, _) =
-            [Entity.Position <== model --> fun (model : PickupModel) -> model.Position]
+        override this.Initializers (pickup, _) =
+            [Entity.Position <== pickup --> fun pickup -> pickup.Position]
         
-        override this.View (model, entity, world) =
+        override this.View (pickup, entity, world) =
             if entity.GetVisible world && entity.GetInView world then
                 let transform = entity.GetTransform world
-                [Render (transform.Depth, transform.Position.Y, AssetTag.generalize model.PickupSheet,
+                [Render (transform.Depth, transform.Position.Y, AssetTag.generalize pickup.PickupSheet,
                      SpriteDescriptor
                        { Transform = transform
                          Offset = Vector2.Zero
-                         InsetOpt = getSpriteInsetOpt model
-                         Image = model.PickupSheet
+                         InsetOpt = getSpriteInsetOpt pickup
+                         Image = pickup.PickupSheet
                          Color = Color.White
                          Glow = Color.Zero
                          Flip = FlipNone })]

@@ -6,10 +6,10 @@ open Nu.Declarative
 open InfinityRpg
 
 [<AutoOpen>]
-module InfinityDispatcherModule =
+module InfinityDispatcher =
 
-    type [<StructuralEquality; NoComparison>] InfinityModel =
-        { GameplayModel : GameplayModel }
+    type [<StructuralEquality; NoComparison>] Infinity =
+        { Gameplay : Gameplay }
     
     type InfinityCommand =
         | ShowTitle
@@ -20,12 +20,12 @@ module InfinityDispatcherModule =
 
     type Game with
 
-        member this.GetInfinityModel = this.GetModel<InfinityModel>
-        member this.SetInfinityModel = this.SetModel<InfinityModel>
-        member this.InfinityModel = this.Model<InfinityModel> ()
+        member this.GetInfinity = this.GetModel<Infinity>
+        member this.SetInfinity = this.SetModel<Infinity>
+        member this.Infinity = this.Model<Infinity> ()
     
     type InfinityDispatcher () =
-        inherit GameDispatcher<InfinityModel, unit, InfinityCommand> ({ GameplayModel = GameplayModel.initial })
+        inherit GameDispatcher<Infinity, unit, InfinityCommand> ({ Gameplay = Gameplay.initial })
 
         override this.Register (game, world) =
 
@@ -51,13 +51,13 @@ module InfinityDispatcherModule =
             | ShowTitle -> World.transitionScreen Simulants.Title world |> just
             | ShowCredits -> World.transitionScreen Simulants.Credits world |> just
             | ShowGameplay -> World.transitionScreen Simulants.Gameplay world |> just
-            | SetShallLoadGame shallLoadGame -> Simulants.Gameplay.GameplayModel.Update (fun model -> { model with ShallLoadGame = shallLoadGame }) world |> withCmd ShowGameplay
+            | SetShallLoadGame shallLoadGame -> Simulants.Gameplay.Gameplay.Update (fun infinity -> { infinity with ShallLoadGame = shallLoadGame }) world |> withCmd ShowGameplay
             | ExitGame -> World.exit world |> just
 
-        override this.Content (model, _) =
+        override this.Content (infinity, _) =
             [Content.screen Simulants.Splash.Name (Splash (Constants.InfinityRpg.DissolveDescriptor, Constants.InfinityRpg.SplashData, Simulants.Title)) [] []
              Content.screenFromLayerFile Simulants.Title.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None (* Some Assets.ButterflyGirlSong *) )) Assets.TitleLayerFilePath
              Content.screenFromLayerFile Simulants.Credits.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, Some Assets.ButterflyGirlSong)) Assets.CreditsLayerFilePath
              Content.screen<GameplayDispatcher> Simulants.Gameplay.Name (Dissolve (Constants.InfinityRpg.DissolveDescriptor, None (* Some Assets.HerosVengeanceSong *) ))
-                 [Screen.GameplayModel <== model --> fun model -> model.GameplayModel]
+                 [Screen.Gameplay <== infinity --> fun infinity -> infinity.Gameplay]
                  [Content.layerFromFile Simulants.Hud.Name Assets.HudLayerFilePath]]

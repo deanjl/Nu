@@ -8,7 +8,7 @@ open InfinityRpg
 [<AutoOpen>]
 module CharacterDispatcherModule =
 
-    type [<StructuralEquality; NoComparison>] CharacterModel =
+    type [<StructuralEquality; NoComparison>] Character =
         { Index : CharacterIndex
           Turn : Turn
           CharacterState : CharacterState
@@ -28,48 +28,48 @@ module CharacterDispatcherModule =
               CharacterAnimationSheet = Assets.PlayerImage
               Position = Vector2.Zero }
 
-        static member updateTurn newValue (model : CharacterModel) =
-            { model with Turn = newValue }
+        static member updateTurn newValue (character : Character) =
+            { character with Turn = newValue }
 
-        static member updateCharacterState newValue (model : CharacterModel) =
-            { model with CharacterState = newValue }
+        static member updateCharacterState newValue (character : Character) =
+            { character with CharacterState = newValue }
         
-        static member updateTurnStatus newValue (model : CharacterModel) =
-            { model with TurnStatus = newValue }
+        static member updateTurnStatus newValue (character : Character) =
+            { character with TurnStatus = newValue }
         
-        static member updateCharacterActivityState newValue (model : CharacterModel) =
-            { model with CharacterActivityState = newValue }
+        static member updateCharacterActivityState newValue (character : Character) =
+            { character with CharacterActivityState = newValue }
 
-        static member updateCharacterAnimationState newValue (model : CharacterModel) =
-            { model with CharacterAnimationState = newValue }
+        static member updateCharacterAnimationState newValue (character : Character) =
+            { character with CharacterAnimationState = newValue }
 
-        static member updatePosition newValue (model : CharacterModel) =
-            { model with Position = newValue }
+        static member updatePosition newValue (character : Character) =
+            { character with Position = newValue }
         
         static member makePlayer positionM =
             let characterState = { CharacterState.empty with HitPoints = 30; ControlType = PlayerControlled }
-            { CharacterModel.initial with
+            { Character.initial with
                 CharacterState = characterState
                 Position = vmtovf positionM }
 
         static member makeEnemy index positionM =
             let characterState = { CharacterState.empty with HitPoints = 10; ControlType = Chaos }
-            { CharacterModel.initial with
+            { Character.initial with
                 Index = index
                 CharacterState = characterState
                 CharacterAnimationSheet = Assets.GoopyImage
                 Position = vmtovf positionM }
     
     type Entity with
-        member this.GetCharacterModel = this.GetModel<CharacterModel>
-        member this.SetCharacterModel = this.SetModel<CharacterModel>
-        member this.CharacterModel = this.Model<CharacterModel> ()
+        member this.GetCharacter = this.GetModel<Character>
+        member this.SetCharacter = this.SetModel<Character>
+        member this.Character = this.Model<Character> ()
     
     type CharacterDispatcher () =
-        inherit EntityDispatcher<CharacterModel, unit, unit> (CharacterModel.initial)
+        inherit EntityDispatcher<Character, unit, unit> (Character.initial)
 
-        static let getSpriteInsetOpt model world =
-            let animationState = model.CharacterAnimationState
+        static let getSpriteInsetOpt character world =
+            let animationState = character.CharacterAnimationState
             let animationFrames =
                 match animationState.AnimationType with
                 | CharacterAnimationFacing -> 2
@@ -120,18 +120,18 @@ module CharacterDispatcherModule =
              define Entity.PublishChanges true
              define Entity.Omnipresent true]
 
-        override this.Initializers (model, _) =
-            [Entity.Position <== model --> fun (model : CharacterModel) -> model.Position]
+        override this.Initializers (character, _) =
+            [Entity.Position <== character --> fun character -> character.Position]
         
-        override this.View (model, entity, world) =
+        override this.View (character, entity, world) =
             if entity.GetVisible world && entity.GetInView world then
                 let transform = entity.GetTransform world
-                [Render (transform.Depth, transform.Position.Y, AssetTag.generalize model.CharacterAnimationSheet,
+                [Render (transform.Depth, transform.Position.Y, AssetTag.generalize character.CharacterAnimationSheet,
                      SpriteDescriptor
                        { Transform = transform
                          Offset = Vector2.Zero
-                         InsetOpt = getSpriteInsetOpt model world
-                         Image = model.CharacterAnimationSheet
+                         InsetOpt = getSpriteInsetOpt character world
+                         Image = character.CharacterAnimationSheet
                          Color = Color.White
                          Glow = Color.Zero
                          Flip = FlipNone })]

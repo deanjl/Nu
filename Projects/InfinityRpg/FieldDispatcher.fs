@@ -6,9 +6,9 @@ open Nu.Declarative
 open InfinityRpg
 
 [<AutoOpen>]
-module FieldDispatcherModule =
+module FieldDispatcher =
 
-    type [<StructuralEquality; NoComparison>] FieldModel =
+    type [<StructuralEquality; NoComparison>] Field =
         { FieldMapNp : FieldMap }
 
         static member initial =
@@ -20,12 +20,12 @@ module FieldDispatcherModule =
     
     type Entity with
     
-        member this.GetFieldModel = this.GetModel<FieldModel>
-        member this.SetFieldModel = this.SetModel<FieldModel>
-        member this.FieldModel = this.Model<FieldModel> ()
+        member this.GetField = this.GetModel<Field>
+        member this.SetField = this.SetModel<Field>
+        member this.Field = this.Model<Field> ()
 
     type FieldDispatcher () =
-        inherit EntityDispatcher<FieldModel, unit, unit> (FieldModel.initial)
+        inherit EntityDispatcher<Field, unit, unit> (Field.initial)
 
         static let getTileInsetOpt (tileSheetPositionM : Vector2i) =
             let tileOffset = vmtovf tileSheetPositionM
@@ -55,23 +55,23 @@ module FieldDispatcherModule =
         static member Properties =
             [define Entity.Omnipresent true]
 
-        override this.Initializers (model, _) =
-            [Entity.Size <== model --> fun (model : FieldModel) -> vmtovf model.FieldMapNp.FieldSizeM]
+        override this.Initializers (field, _) =
+            [Entity.Size <== field --> fun field -> vmtovf field.FieldMapNp.FieldSizeM]
         
-        override this.View (model, field, world) =
+        override this.View (field, entity, world) =
 
-            let fieldTransform = field.GetTransform world
+            let fieldTransform = entity.GetTransform world
             let tileTransform = { fieldTransform with Size = Constants.Layout.TileSize }
-            let absolute = field.GetAbsolute world
+            let absolute = entity.GetAbsolute world
 
             let bounds =
                 v4BoundsOverflow
                     fieldTransform.Position
                     (Vector2.Multiply (Constants.Layout.TileSize, Constants.Layout.TileSheetSize))
-                    (field.GetOverflow world)
+                    (entity.GetOverflow world)
 
             if World.isBoundsInView absolute bounds world then
-                let fieldMap = model.FieldMapNp
+                let fieldMap = field.FieldMapNp
                 let image = fieldMap.FieldTileSheet
                 let mInViewBounds = World.getViewBounds absolute world |> viewBoundsToMapUnits
                 let tiles = fieldMap.FieldTiles
@@ -98,5 +98,5 @@ module FieldDispatcherModule =
                 [Render (fieldTransform.Depth, fieldTransform.Position.Y, AssetTag.generalize image, SpritesDescriptor sprites)]
             else []
 
-        override this.GetQuickSize (field, world) =
-            vmtovf ((field.GetFieldModel world).FieldMapNp).FieldSizeM
+        override this.GetQuickSize (entity, world) =
+            vmtovf ((entity.GetField world).FieldMapNp).FieldSizeM
