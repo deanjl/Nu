@@ -180,21 +180,6 @@ type CharacterState =
       ArmorOpt : ArmorType option
       Accessories : AccessoryType list }
 
-    static member empty =
-        { CharacterType = Ally Avatar
-          ControlType = PlayerControlled
-          ExpPoints = 0
-          HitPoints = 10 // note this is an arbitrary number as hp max is calculated
-          SpecialPoints = 1 // sp max is calculated
-          PowerBuff = 1.0f // rate at which power is buffed / debuffed
-          MagicBuff = 1.0f // rate at which magic is buffed / debuffed
-          ShieldBuff = 1.0f // rate at which shield is buffed / debuffed
-          CounterBuff = 1.0f // rate at which counter is buffed / debuffed
-          Statuses = Set.empty<StatusType>
-          WeaponOpt = Option<WeaponType>.None
-          ArmorOpt = Option<ArmorType>.None
-          Accessories = [] } // level is calculated from base experience + added experience
-
     member this.IsAlly =
         match this.CharacterType with Ally _ -> true | Enemy _ -> false
 
@@ -222,3 +207,18 @@ type CharacterState =
         elif this.ExpPoints < 7500 then 18
         elif this.ExpPoints < 10000 then 19
         else 20
+
+    static member empty =
+        { CharacterType = Ally Avatar
+          ControlType = PlayerControlled
+          ExpPoints = 0
+          HitPoints = 10 // note this is an arbitrary number as hp max is calculated
+          SpecialPoints = 1 // sp max is calculated
+          PowerBuff = 1.0f // rate at which power is buffed / debuffed
+          MagicBuff = 1.0f // rate at which magic is buffed / debuffed
+          ShieldBuff = 1.0f // rate at which shield is buffed / debuffed
+          CounterBuff = 1.0f // rate at which counter is buffed / debuffed
+          Statuses = Set.empty<StatusType>
+          WeaponOpt = Option<WeaponType>.None
+          ArmorOpt = Option<ArmorType>.None
+          Accessories = [] } // level is calculated from base experience + added experience

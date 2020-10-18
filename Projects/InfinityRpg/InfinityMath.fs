@@ -13,10 +13,7 @@ type MapBounds =
     { CornerNegative : Vector2i
       CornerPositive : Vector2i }
 
-[<RequireQualifiedAccess>]
-module MapBounds =
-
-    let isPointInBounds (point : Vector2i) bounds =
+    static member isPointInBounds (point : Vector2i) bounds =
         not
             (point.X < bounds.CornerNegative.X ||
              point.X > bounds.CornerPositive.X ||
@@ -167,7 +164,7 @@ module Direction =
         let path = concretizePathOpt maxLength pathOpt rand
         path
 
-// TODO: transform this into a proper unit test file
+    // TODO: transform this into a proper unit test file
     let printDiagnostics predicate stumbleLimit stumbleBounds NoAdjacentTracking biasOpt source destination rand =
         let printPosition (tuple : (Vector2i * _)) =
             let position = fst tuple
@@ -206,10 +203,7 @@ module Direction =
         path
 
 [<AutoOpen>]
-module MathModule =
-
-    let isSnapped i =
-        i % Constants.Layout.TileSizeI.X = 0
+module MathOperators =
     
     let itom i =
         i / Constants.Layout.TileSizeI.X
@@ -261,10 +255,14 @@ module MathModule =
     let vmtod v =
         v |> vmtovf |> vftod
 
+[<RequireQualifiedAccess>]
+module Math =
+
+    let isSnapped i =
+        i % Constants.Layout.TileSizeI.X = 0
+
     let directionToTarget current target =
         target - current |> vmtod
-
-module Math =
 
     let arePositionMsAdjacent positionM positionM2 =
         positionM = positionM2 + Vector2i.Up ||

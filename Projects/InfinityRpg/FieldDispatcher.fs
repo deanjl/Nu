@@ -43,8 +43,8 @@ module FieldDispatcher =
             Vector4i
                 (itom (int viewBounds.X),
                  itom (int viewBounds.Y),
-                 (if isSnapped right then (itom right) - 1 else itom right),
-                 (if isSnapped top then (itom top) - 1 else itom top))
+                 (if Math.isSnapped right then (itom right) - 1 else itom right),
+                 (if Math.isSnapped top then (itom top) - 1 else itom top))
 
         static let tilePositionInView (tilePositionM : Vector2i) (mInViewBounds : Vector4i) =
             tilePositionM.X >= mInViewBounds.X &&

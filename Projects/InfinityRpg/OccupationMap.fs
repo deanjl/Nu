@@ -3,15 +3,18 @@ open System
 open Prime
 open Nu
 
+type OccupationMap =
+    Map<Vector2i, bool>
+
 [<RequireQualifiedAccess>]
 module OccupationMap =
 
-    let isOpenAtPositionM positionM occupationMap =
+    let isOpenAtPositionM positionM (occupationMap : OccupationMap) =
         match Map.tryFind positionM occupationMap with
         | Some occupied -> not occupied
         | None -> false
 
-    let getOpenDirectionsAtPositionM positionM occupationMap =
+    let getOpenDirectionsAtPositionM positionM (occupationMap : OccupationMap) =
         Set.ofSeq $
             seq {
                 if isOpenAtPositionM (positionM + Vector2i.Up) occupationMap then yield Upward
@@ -23,21 +26,21 @@ module OccupationMap =
         let openDirections = getOpenDirectionsAtPositionM positionM occupationMap
         Set.map (fun direction -> positionM + dtovm direction) openDirections
 
-    let occupyByDesiredTurn desiredTurn occupationMap =
+    let occupyByDesiredTurn desiredTurn (occupationMap : OccupationMap) =
         match desiredTurn with
         | ActionTurn _ -> occupationMap
         | NavigationTurn navigationDescriptor -> Map.add navigationDescriptor.NextPositionM true occupationMap
         | CancelTurn -> occupationMap
         | NoTurn -> occupationMap
 
-    let occupyByCharacter characterPosition occupationMap =
+    let occupyByCharacter characterPosition (occupationMap : OccupationMap) =
         let characterPositionM = vftovm characterPosition
         Map.add characterPositionM true occupationMap
 
     let occupyByCharacters characterPositions occupationMap =
         Seq.fold (flip occupyByCharacter) occupationMap characterPositions
 
-    let occupyByAdjacentCharacter positionM characterPosition occupationMap =
+    let occupyByAdjacentCharacter positionM characterPosition (occupationMap : OccupationMap) =
         let characterPositionM = vftovm characterPosition
         if Math.arePositionMsAdjacent characterPositionM positionM
         then Map.add characterPositionM true occupationMap
@@ -46,7 +49,7 @@ module OccupationMap =
     let occupyByAdjacentCharacters positionM characterPositions occupationMap =
         Seq.fold (flip (occupyByAdjacentCharacter positionM)) occupationMap characterPositions
 
-    let unoccupyByCharacter characterPosition occupationMap =
+    let unoccupyByCharacter characterPosition (occupationMap : OccupationMap) =
         let characterPositionM = vftovm characterPosition
         Map.add characterPositionM false occupationMap
 

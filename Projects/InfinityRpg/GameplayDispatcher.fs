@@ -292,7 +292,7 @@ module GameplayDispatcher =
                         match Math.arePositionMsAdjacent coordinates currentCoordinates with
                         | true ->
                             let openDirections = gameplay.Chessboard.OpenDirections currentCoordinates
-                            let direction = directionToTarget currentCoordinates coordinates
+                            let direction = Math.directionToTarget currentCoordinates coordinates
                             let opponents = Gameplay.getOpponentIndices PlayerIndex gameplay
                             if List.exists (fun x -> x = direction) openDirections then
                                 Some (SingleRoundMove (Step direction))
@@ -428,7 +428,7 @@ module GameplayDispatcher =
                      
                      Content.entitiesIndexedBy gameplay
                         (fun gameplay -> gameplay.Enemys) constant
-                        (fun character -> character.Index.getEnemyIndex)
+                        (fun character -> match character.Index with EnemyIndex i -> i | _ -> failwithumf ())
                         (fun index character _ -> Content.entity<EnemyDispatcher> ("Enemy+" + scstring index) [Entity.Character <== character])
 
                      Content.entity<PlayerDispatcher> Simulants.Player.Name

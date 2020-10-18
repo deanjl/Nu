@@ -101,7 +101,7 @@ type Move =
         | MultiRoundMove multiRoundMove ->
             match multiRoundMove with
             | Travel path ->
-                let direction = directionToTarget positionM path.Head.PositionM
+                let direction = Math.directionToTarget positionM path.Head.PositionM
                 Turn.makeNavigation (Some path) positionM direction
 
 type Chessboard =
@@ -115,10 +115,10 @@ type Chessboard =
           CurrentMoves = Map.empty }
 
     member this.EnemyCoordinates =
-        Map.filter (fun (k : CharacterIndex) _ -> k.isEnemy ) this.CharacterCoordinates
+        Map.filter (fun (k : CharacterIndex) _ -> k.IsEnemy) this.CharacterCoordinates
 
     member this.PlayerCoordinates =
-        Map.filter (fun (k : CharacterIndex) _ -> not k.isEnemy ) this.CharacterCoordinates
+        Map.filter (fun (k : CharacterIndex) _ -> not k.IsEnemy) this.CharacterCoordinates
     
     member this.PickupItems =
         Map.filter (fun _ v -> v <> None) this.PassableCoordinates
@@ -428,7 +428,7 @@ type [<StructuralEquality; NoComparison>] Gameplay =
             match multiRoundMove with
             | Travel (head :: _) ->
                 let currentCoordinates = Gameplay.getCoordinates index gameplay
-                let direction = directionToTarget currentCoordinates head.PositionM
+                let direction = Math.directionToTarget currentCoordinates head.PositionM
                 Gameplay.applyStep index direction gameplay
     
     static member activateCharacter index gameplay =

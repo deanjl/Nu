@@ -8,15 +8,11 @@ type CharacterIndex =
     | EnemyIndex of int
     | PlayerIndex
 
-    member this.getEnemyIndex =
-        match this with
-        | EnemyIndex index -> index
-        | _ -> failwith "must be enemy index."
+    member this.IsEnemy =
+        match this with EnemyIndex _ -> true | PlayerIndex -> false
 
-    member this.isEnemy =
-        match this with
-        | EnemyIndex _ -> true
-        | _ -> false
+    member this.IsAlly =
+        not this.IsEnemy
 
 type [<CustomEquality; NoComparison>] NavigationNode =
     { PositionM : Vector2i
@@ -77,11 +73,11 @@ type [<StructuralEquality; NoComparison>] ActionDescriptor =
       ActionTargetIndexOpt : CharacterIndex option
       ActionDataName : string }
 
-    static member computeActionDirection currentPosition targetPositionM =
-        targetPositionM - vftovm currentPosition |> vmtod
-
     member this.Inc =
         { this with ActionTicks = inc this.ActionTicks }
+
+    static member computeActionDirection currentPosition targetPositionM =
+        targetPositionM - vftovm currentPosition |> vmtod
 
 type [<StructuralEquality; NoComparison>] CharacterActivityState =
     | Action of ActionDescriptor
