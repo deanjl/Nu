@@ -70,10 +70,10 @@
     <DisableFastUpToDateCheck>true</DisableFastUpToDateCheck>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="InfinityAssets.fs" />
-    <Compile Include="InfinityConstants.fs" />
-    <Compile Include="InfinitySimulants.fs" />
-    <Compile Include="InfinityMath.fs" />
+    <Compile Include="Assets.fs" />
+    <Compile Include="Constants.fs" />
+    <Compile Include="Simulants.fs" />
+    <Compile Include="Math.fs" />
     <Compile Include="CharacterActivityState.fs" />
     <Compile Include="CharacterAnimationState.fs" />
     <Compile Include="CharacterState.fs" />
